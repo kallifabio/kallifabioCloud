@@ -1,0 +1,12 @@
+Cluster:
+  Enabled: true
+  Mode: MULTI_MASTER
+  HeartbeatInterval: 5000
+  HeartbeatTimeout: 15000
+  ElectionTimeout: 5000
+  Discovery:
+    Method: STATIC
+    Peers: []
+  SplitBrain:
+    PreventionEnabled: true
+    QuorumSize: 2

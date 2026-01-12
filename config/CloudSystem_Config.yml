@@ -1,0 +1,9 @@
+CloudMaster:
+  Max_Ram: '16384'
+  Default_Ram: '16384'
+  Hostname: 192.168.178.32
+  Port: '9000'
+  API:
+    Enabled: true
+    Port: 8080
+    AllowedOrigins: '*'

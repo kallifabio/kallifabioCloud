@@ -1,6 +1,6 @@
 <component name="ArtifactManager">
-  <artifact type="jar" name="CloudSystemTest:jar">
-    <output-path>$PROJECT_DIR$/out/artifacts/CloudSystemTest_jar</output-path>
+  <artifact type="jar" build-on-make="true" name="CloudSystemTest:jar">
+    <output-path>$PROJECT_DIR$/../../Plugin Output/CloudSystemTest</output-path>
     <root id="archive" name="CloudSystemTest.jar">
       <element id="module-output" name="CloudSystemTest" />
       <element id="extracted-dir" path="$MAVEN_REPOSITORY$/com/google/code/gson/gson/2.10.1/gson-2.10.1.jar" path-in-jar="/" />

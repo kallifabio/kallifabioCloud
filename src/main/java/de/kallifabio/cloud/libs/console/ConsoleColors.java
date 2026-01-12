@@ -5,11 +5,10 @@
  * Packagename: de.kallifabio.cloudsystem.libs
  */
 
-package de.kallifabio.cloudsystem.libs;
+package de.kallifabio.cloud.libs.console;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Date;
 
 public class ConsoleColors {
 

@@ -1,0 +1,22 @@
+ServerGroup:
+  Lobby:
+    Ram: '2048'
+    MaxPlayers: '200'
+    Maintenance: 'false'
+    Dynamic: 'true'
+    MinServerOnline: '1'
+    MaxServerOnline: '10'
+    AutoScaling: 'true'
+    ScaleUpThreshold: '0.75'
+    ScaleDownThreshold: '0.30'
+    Priority: HIGH
+  Proxy:
+    Ram: '4096'
+    MaxPlayers: '500'
+    Maintenance: 'false'
+    MinProxyOnline: '1'
+    MaxProxyOnline: '3'
+    AutoScaling: 'true'
+    ScaleUpThreshold: '0.85'
+    ScaleDownThreshold: '0.40'
+    Priority: CRITICAL

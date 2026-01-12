@@ -1,2 +1,2 @@
 Manifest-Version: 1.0
-Main-Class: de.kallifabio.cloudsystem.Launcher
+Main-Class: de.kallifabio.cloud.Launcher

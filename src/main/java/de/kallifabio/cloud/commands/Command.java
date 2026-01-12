@@ -5,9 +5,11 @@
  * Packagename: de.kallifabio.cloudsystem.commands
  */
 
-package de.kallifabio.cloudsystem.commands;
+package de.kallifabio.cloud.commands;
 
 public interface Command {
 
     boolean execute(String sender, String[] args);
+    String getDescription();
+    String getUsage();
 }

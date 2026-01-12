@@ -5,9 +5,7 @@
  * Packagename: de.kallifabio.cloudsystem.libs
  */
 
-package de.kallifabio.cloudsystem.libs;
-
-import de.kallifabio.cloudsystem.managers.ConsoleScreenManager;
+package de.kallifabio.cloud.libs.console;
 
 import java.util.LinkedList;
 import java.util.Queue;
