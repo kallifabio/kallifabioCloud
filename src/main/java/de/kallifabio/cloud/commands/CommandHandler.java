@@ -36,7 +36,7 @@ public class CommandHandler {
         registerCommand("restart", new RestartServerCommand());
         registerCommand("ls", new ListCommand());
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " Commands registriert: " + commands.size());
     }
 
@@ -69,9 +69,9 @@ public class CommandHandler {
         Command command = commands.get(commandName);
 
         if (command == null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.RED +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.RED +
                     "Unbekannter Befehl: " + commandName);
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.YELLOW +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW +
                     "Tippe 'help' für eine Liste aller Commands");
             return false;
         }
@@ -83,7 +83,7 @@ public class CommandHandler {
         try {
             return command.execute(sender, commandArgs);
         } catch (Exception e) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.RED +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.RED +
                     "Fehler beim Ausführen von '" + commandName + "': " + e.getMessage());
             e.printStackTrace();
             return false;

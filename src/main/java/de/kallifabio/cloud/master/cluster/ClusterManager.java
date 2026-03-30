@@ -65,7 +65,7 @@ public class ClusterManager {
         // Check for existing cluster
         discoverClusterPeers();
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Cluster Manager initialisiert - Master ID: " + masterId);
     }
 
@@ -79,7 +79,7 @@ public class ClusterManager {
                 // Attempt to connect to peer
                 connectToPeer(peerAddress);
             } catch (Exception e) {
-                ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                         " Konnte nicht zu Peer verbinden: " + peerAddress);
             }
         }
@@ -120,7 +120,7 @@ public class ClusterManager {
             syncClusterState();
         }, STATE_SYNC_INTERVAL_MS, STATE_SYNC_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Cluster-Services gestartet");
     }
 
@@ -158,7 +158,7 @@ public class ClusterManager {
 
             ClusterNode node = entry.getValue();
             if (now - node.lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
-                ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                         " Cluster-Knoten " + node.masterId + " antwortet nicht mehr");
                 failedNodes.add(entry.getKey());
             }
@@ -174,12 +174,12 @@ public class ClusterManager {
         ClusterNode failedNode = clusterNodes.remove(failedNodeId);
         if (failedNode == null) return;
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Master-Knoten ausgefallen: " + failedNodeId);
 
         // If primary master failed, trigger election
         if (failedNodeId.equals(primaryMasterId)) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Primary Master ausgefallen - starte Wahl");
             startElection();
         }
@@ -214,7 +214,7 @@ public class ClusterManager {
         receivedVotes.clear();
         receivedVotes.add(masterId);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Starte Master-Wahl - Term: " + electionTerm);
 
         // Send election request to all peers
@@ -247,11 +247,11 @@ public class ClusterManager {
         int quorum = (clusterNodes.size() / 2) + 1;
 
         if (receivedVotes.size() >= quorum) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Wahl gewonnen mit " + receivedVotes.size() + " Stimmen (Quorum: " + quorum + ")");
             becomePrimary();
         } else {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Wahl verloren - nicht genug Stimmen erhalten");
             currentState = ClusterState.FOLLOWER;
         }
@@ -262,7 +262,7 @@ public class ClusterManager {
         primaryMasterId = masterId;
         currentState = ClusterState.PRIMARY;
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Dieser Master ist jetzt PRIMARY");
 
         // Notify all cluster nodes
@@ -282,7 +282,7 @@ public class ClusterManager {
         // Rebalance wrappers if needed
         // Sync state from other masters
         // Resume auto-scaling decisions
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Primary-Verantwortlichkeiten übernommen");
     }
 
@@ -290,7 +290,7 @@ public class ClusterManager {
         currentState = ClusterState.FOLLOWER;
         master.setPrimaryMaster(false);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Cluster beigetreten als FOLLOWER");
 
         // Request state sync from primary
@@ -329,7 +329,7 @@ public class ClusterManager {
         }
 
         // Update local state from primary
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " State-Sync von Primary Master " + sync.masterId + " empfangen");
 
         // Sync would update local maps with received data
@@ -350,7 +350,7 @@ public class ClusterManager {
                     System.currentTimeMillis()
             );
             clusterNodes.put(senderId, node);
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Neuer Cluster-Knoten entdeckt: " + senderId);
         }
 
@@ -373,7 +373,7 @@ public class ClusterManager {
             currentState = ClusterState.FOLLOWER;
             master.setPrimaryMaster(false);
 
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Neuer Primary Master: " + sync.masterId + " (Term: " + newTerm + ")");
         }
     }

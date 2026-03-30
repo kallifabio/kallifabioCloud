@@ -43,7 +43,7 @@ public class LoadBalancerManager {
         strategyMap.put("Lobby", LoadBalancingStrategy.LEAST_LOADED);
         strategyMap.put("Proxy", LoadBalancingStrategy.ROUND_ROBIN);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Load Balancer initialisiert");
     }
 

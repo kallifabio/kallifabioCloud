@@ -49,7 +49,7 @@ public class PlayerQueueManager {
         groupQueues.put("Lobby", new PriorityBlockingQueue<>());
         groupQueues.put("Proxy", new PriorityBlockingQueue<>());
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Player Queue Manager initialisiert");
     }
 
@@ -60,7 +60,7 @@ public class PlayerQueueManager {
     public void addToQueue(String playerUuid, String playerName, String groupName, int priority) {
         PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(groupName);
         if (queue == null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " FEHLER: Queue für Gruppe " + groupName + " nicht gefunden");
             return;
         }
@@ -78,7 +78,7 @@ public class PlayerQueueManager {
 
         updateQueueStats(groupName);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Spieler zur Queue hinzugefügt: " + playerName + " (" + groupName + ") - Position: " +
                 getQueuePosition(playerUuid));
 
@@ -116,7 +116,7 @@ public class PlayerQueueManager {
     }
 
     private void sendPlayerToServer(QueuedPlayer player, String targetServer) {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Sende Spieler aus Queue: " + player.playerName + " -> " + targetServer);
 
         Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();

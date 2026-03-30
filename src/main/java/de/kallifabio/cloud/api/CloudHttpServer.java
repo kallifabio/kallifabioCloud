@@ -35,7 +35,7 @@ public class CloudHttpServer {
         try {
             startServer();
         } catch (IOException e) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " FEHLER beim Starten des HTTP-Servers: " + e.getMessage());
         }
     }
@@ -43,7 +43,7 @@ public class CloudHttpServer {
     private void initializeApiKeys() {
         // Generate default API key (in production, load from config)
         apiKeys.put("admin", UUID.randomUUID().toString());
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Admin API Key: " + apiKeys.get("admin"));
     }
 
@@ -55,7 +55,7 @@ public class CloudHttpServer {
         setupEndpoints();
 
         server.start();
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " REST API gestartet auf Port " + PORT);
     }
 
@@ -654,7 +654,7 @@ public class CloudHttpServer {
     public void stop() {
         if (server != null) {
             server.stop(0);
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " HTTP-Server gestoppt");
         }
     }

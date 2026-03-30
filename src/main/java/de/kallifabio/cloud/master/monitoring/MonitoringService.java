@@ -40,7 +40,7 @@ public class MonitoringService {
 
     public MonitoringService(Master master) {
         this.master = master;
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Monitoring Service initialisiert");
     }
 
@@ -148,7 +148,7 @@ public class MonitoringService {
                 alertHistory.remove(0);
             }
 
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " [" + severity + "] " + componentType + " " + componentId + ": " + message);
         }
     }

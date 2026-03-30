@@ -7,12 +7,17 @@
 
 package de.kallifabio.cloud.config;
 
+import de.kallifabio.cloud.libs.console.ConsoleColors;
+import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
 import de.kallifabio.cloud.master.Master;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class ConfigManager {
 
@@ -110,6 +115,8 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.API.AllowedOrigins", "*");
 
             masterConfigData.save(masterConfigFile);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " CloudSystem_Config.yml erstellt");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -120,30 +127,49 @@ public class ConfigManager {
             serverGroupsFile.getParentFile().mkdirs();
             serverGroupsFile.createNewFile();
 
-            // Lobby Configuration
-            serverGroupsData.set("ServerGroup.Lobby.Ram", "2048");
-            serverGroupsData.set("ServerGroup.Lobby.MaxPlayers", "200");
-            serverGroupsData.set("ServerGroup.Lobby.Maintenance", "false");
-            serverGroupsData.set("ServerGroup.Lobby.Dynamic", "true");
-            serverGroupsData.set("ServerGroup.Lobby.MinServerOnline", "1");
-            serverGroupsData.set("ServerGroup.Lobby.MaxServerOnline", "10");
-            serverGroupsData.set("ServerGroup.Lobby.AutoScaling", "true");
-            serverGroupsData.set("ServerGroup.Lobby.ScaleUpThreshold", "0.75");
-            serverGroupsData.set("ServerGroup.Lobby.ScaleDownThreshold", "0.30");
-            serverGroupsData.set("ServerGroup.Lobby.Priority", "HIGH");
+            // ========================================
+            // Auto-Start Configuration
+            // ========================================
+            serverGroupsData.set("AutoStart.Enabled", true);
+            serverGroupsData.set("AutoStart.Groups", "Proxy:1,Lobby:1");
+            serverGroupsData.set("AutoStart.DelaySeconds", 10);
 
-            // Proxy Configuration
-            serverGroupsData.set("ServerGroup.Proxy.Ram", "4096");
-            serverGroupsData.set("ServerGroup.Proxy.MaxPlayers", "500");
-            serverGroupsData.set("ServerGroup.Proxy.Maintenance", "false");
-            serverGroupsData.set("ServerGroup.Proxy.MinProxyOnline", "1");
-            serverGroupsData.set("ServerGroup.Proxy.MaxProxyOnline", "3");
-            serverGroupsData.set("ServerGroup.Proxy.AutoScaling", "true");
-            serverGroupsData.set("ServerGroup.Proxy.ScaleUpThreshold", "0.85");
-            serverGroupsData.set("ServerGroup.Proxy.ScaleDownThreshold", "0.40");
+            // ========================================
+            // Port Configuration
+            // ========================================
+            serverGroupsData.set("Ports.FirstProxy", 25577);
+            serverGroupsData.set("Ports.FirstLobby", 25565);
+            serverGroupsData.set("Ports.DynamicStart", 25566);
+
+            // ========================================
+            // Proxy Server Group (BungeeCord)
+            // ========================================
+            serverGroupsData.set("ServerGroup.Proxy.Ram", 512);
+            serverGroupsData.set("ServerGroup.Proxy.MaxPlayers", 500);
+            serverGroupsData.set("ServerGroup.Proxy.Dynamic", false);
+            serverGroupsData.set("ServerGroup.Proxy.MinServers", 1);
+            serverGroupsData.set("ServerGroup.Proxy.MaxServers", 1);
+            serverGroupsData.set("ServerGroup.Proxy.Maintenance", false);
+            serverGroupsData.set("ServerGroup.Proxy.AutoScaling", false);
             serverGroupsData.set("ServerGroup.Proxy.Priority", "CRITICAL");
 
+            // ========================================
+            // Lobby Server Group
+            // ========================================
+            serverGroupsData.set("ServerGroup.Lobby.Ram", 1024);
+            serverGroupsData.set("ServerGroup.Lobby.MaxPlayers", 100);
+            serverGroupsData.set("ServerGroup.Lobby.Dynamic", true);
+            serverGroupsData.set("ServerGroup.Lobby.MinServers", 1);
+            serverGroupsData.set("ServerGroup.Lobby.MaxServers", 5);
+            serverGroupsData.set("ServerGroup.Lobby.Maintenance", false);
+            serverGroupsData.set("ServerGroup.Lobby.AutoScaling", true);
+            serverGroupsData.set("ServerGroup.Lobby.ScaleUpThreshold", 0.75);
+            serverGroupsData.set("ServerGroup.Lobby.ScaleDownThreshold", 0.30);
+            serverGroupsData.set("ServerGroup.Lobby.Priority", "HIGH");
+
             serverGroupsData.save(serverGroupsFile);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " ServerGroups.yml erstellt");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -166,6 +192,8 @@ public class ConfigManager {
             signLayoutData.set("Layout.Animations.Interval", "10");
 
             signLayoutData.save(signLayoutFile);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " SignLayout.yml erstellt");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -176,6 +204,8 @@ public class ConfigManager {
             signsFile.getParentFile().mkdirs();
             signsFile.createNewFile();
             signsData.save(signsFile);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Signs.yml erstellt");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -194,19 +224,64 @@ public class ConfigManager {
             clusterConfigData.set("Cluster.ElectionTimeout", 5000);
 
             // Peer Discovery
-            clusterConfigData.set("Cluster.Discovery.Method", "STATIC"); // STATIC, MULTICAST, CONSUL, ETCD
-            clusterConfigData.set("Cluster.Discovery.Peers", new String[]{}); // e.g., ["192.168.1.100:9000", "192.168.1.101:9000"]
+            clusterConfigData.set("Cluster.Discovery.Method", "STATIC");
+            clusterConfigData.set("Cluster.Discovery.Peers", new String[]{});
 
             // Split-Brain Prevention
             clusterConfigData.set("Cluster.SplitBrain.PreventionEnabled", true);
             clusterConfigData.set("Cluster.SplitBrain.QuorumSize", 2);
 
             clusterConfigData.save(clusterConfigFile);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Cluster.yml erstellt");
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
+    // ========================================
+    // Auto-Start Configuration Methods
+    // ========================================
+    public boolean isAutoStartEnabled() {
+        return serverGroupsData.getBoolean("AutoStart.Enabled", true);
+    }
+
+    public List<String> getAutoStartGroups() {
+        List<String> groups = new ArrayList<>();
+        String autoStartConfig = serverGroupsData.getString("AutoStart.Groups", "Proxy:1,Lobby:2");
+
+        if (autoStartConfig != null && !autoStartConfig.isEmpty()) {
+            String[] groupConfigs = autoStartConfig.split(",");
+            for (String config : groupConfigs) {
+                groups.add(config.trim());
+            }
+        }
+
+        return groups;
+    }
+
+    public int getAutoStartDelay() {
+        return serverGroupsData.getInt("AutoStart.DelaySeconds", 10);
+    }
+
+    // ========================================
+    // Port Configuration Methods
+    // ========================================
+    public int getFirstProxyPort() {
+        return serverGroupsData.getInt("Ports.FirstProxy", 25577);
+    }
+
+    public int getFirstLobbyPort() {
+        return serverGroupsData.getInt("Ports.FirstLobby", 25565);
+    }
+
+    public int getDynamicPortStart() {
+        return serverGroupsData.getInt("Ports.DynamicStart", 25566);
+    }
+
+    // ========================================
+    // Server Group Configuration Methods
+    // ========================================
     public String getMaster(String key) {
         return masterConfigData.getString(key);
     }
@@ -220,59 +295,63 @@ public class ConfigManager {
     }
 
     public Integer getMaxPlayersForGroup(String groupName) {
-        String key = "ServerGroup." + groupName + ".MaxPlayers";
-        String value = getServergroup(key);
-
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                e.printStackTrace();
-            }
-        }
-        return 100; // Default
+        return serverGroupsData.getInt("ServerGroup." + groupName + ".MaxPlayers", 100);
     }
 
     public Integer getRamForGroup(String groupName) {
-        String key = "ServerGroup." + groupName + ".Ram";
-        String value = getServergroup(key);
+        return serverGroupsData.getInt("ServerGroup." + groupName + ".Ram", 1024);
+    }
 
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                e.printStackTrace();
-            }
-        }
-        return 1024; // Default
+    public boolean isDynamicGroup(String groupName) {
+        return serverGroupsData.getBoolean("ServerGroup." + groupName + ".Dynamic", false);
+    }
+
+    public int getMinServersForGroup(String groupName) {
+        return serverGroupsData.getInt("ServerGroup." + groupName + ".MinServers", 1);
+    }
+
+    public int getMaxServersForGroup(String groupName) {
+        return serverGroupsData.getInt("ServerGroup." + groupName + ".MaxServers", 5);
     }
 
     public boolean isAutoScalingEnabled(String groupName) {
-        String key = "ServerGroup." + groupName + ".AutoScaling";
-        return "true".equalsIgnoreCase(getServergroup(key));
+        return serverGroupsData.getBoolean("ServerGroup." + groupName + ".AutoScaling", false);
     }
 
     public double getScaleUpThreshold(String groupName) {
-        String key = "ServerGroup." + groupName + ".ScaleUpThreshold";
-        String value = getServergroup(key);
-        try {
-            return value != null ? Double.parseDouble(value) : 0.75;
-        } catch (NumberFormatException e) {
-            return 0.75;
-        }
+        return serverGroupsData.getDouble("ServerGroup." + groupName + ".ScaleUpThreshold", 0.75);
     }
 
     public double getScaleDownThreshold(String groupName) {
-        String key = "ServerGroup." + groupName + ".ScaleDownThreshold";
-        String value = getServergroup(key);
-        try {
-            return value != null ? Double.parseDouble(value) : 0.30;
-        } catch (NumberFormatException e) {
-            return 0.30;
-        }
+        return serverGroupsData.getDouble("ServerGroup." + groupName + ".ScaleDownThreshold", 0.30);
     }
 
-    // Getters
+    public String getServerGroupPriority(String groupName) {
+        return serverGroupsData.getString("ServerGroup." + groupName + ".Priority", "NORMAL");
+    }
+
+    public boolean isMaintenanceMode(String groupName) {
+        return serverGroupsData.getBoolean("ServerGroup." + groupName + ".Maintenance", false);
+    }
+
+    // ========================================
+    // Get all server groups
+    // ========================================
+    public List<String> getAllServerGroups() {
+        List<String> groups = new ArrayList<>();
+
+        if (serverGroupsData.contains("ServerGroup")) {
+            for (String key : serverGroupsData.getConfigurationSection("ServerGroup").getKeys(false)) {
+                groups.add(key);
+            }
+        }
+
+        return groups;
+    }
+
+    // ========================================
+    // Getters for file access
+    // ========================================
     public File getMasterConfigFile() { return masterConfigFile; }
     public FileConfiguration getMasterConfigData() { return masterConfigData; }
     public File getServerGroupsFile() { return serverGroupsFile; }

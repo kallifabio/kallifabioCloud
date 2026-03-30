@@ -54,9 +54,13 @@ public class Master {
     private final Map<String, ServerInstance> runningServers = new ConcurrentHashMap<>();
 
     // Port Management
-    private int nextAvailablePort = 25566;
+    private int nextAvailablePort;
     private final Set<Integer> usedPorts = ConcurrentHashMap.newKeySet();
     private final Map<String, Integer> serverPorts = new ConcurrentHashMap<>();
+
+    // Feste Ports für erste Server
+    private int FIRST_PROXY_PORT;
+    private int FIRST_LOBBY_PORT;
 
     // Cluster State
     private String masterId = UUID.randomUUID().toString();
@@ -67,8 +71,13 @@ public class Master {
         instance = this;
         executorService = Executors.newScheduledThreadPool(10);
 
-        // Initialize Configuration
+        // Initialize Configuration ZUERST
         this.configManager = new ConfigManager();
+
+        // Lade Port-Konfiguration aus Config
+        this.FIRST_PROXY_PORT = configManager.getFirstProxyPort();
+        this.FIRST_LOBBY_PORT = configManager.getFirstLobbyPort();
+        this.nextAvailablePort = configManager.getDynamicPortStart();
 
         // Initialize Server
         server = new Server(32768, 8192);
@@ -87,7 +96,7 @@ public class Master {
         try {
             server.bind(54555, 54777);
         } catch (IOException e) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " FEHLER: Konnte Server nicht binden: " + e.getMessage());
             throw new RuntimeException(e);
         }
@@ -99,10 +108,13 @@ public class Master {
         // Add Shutdown Hook
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Cloud-Master gestartet auf IP: " + masterHost + " | Master-ID: " + masterId);
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Port-Range für Server: " + nextAvailablePort + " - " + (nextAvailablePort + 100));
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                " Port-Konfiguration:");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + "  - Proxy-1: " + FIRST_PROXY_PORT);
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + "  - Lobby-1: " + FIRST_LOBBY_PORT);
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + "  - Dynamisch ab: " + nextAvailablePort);
     }
 
     private void registerKryoClasses(Kryo kryo) {
@@ -187,7 +199,23 @@ public class Master {
     }
 
     // Port Management Methods
-    public synchronized int assignPort() {
+    public synchronized int assignPort(String serverName, String groupName) {
+        // Feste Ports für erste Server (aus Config)
+        if (serverName.equals("Proxy-1")) {
+            usedPorts.add(FIRST_PROXY_PORT);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Fester Port zugewiesen: " + serverName + " -> " + FIRST_PROXY_PORT);
+            return FIRST_PROXY_PORT;
+        }
+
+        if (serverName.equals("Lobby-1")) {
+            usedPorts.add(FIRST_LOBBY_PORT);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Fester Port zugewiesen: " + serverName + " -> " + FIRST_LOBBY_PORT);
+            return FIRST_LOBBY_PORT;
+        }
+
+        // Für alle anderen Server: Dynamische Zuweisung
         int port = nextAvailablePort;
         while (usedPorts.contains(port) || !isPortAvailable(port)) {
             port++;
@@ -197,12 +225,15 @@ public class Master {
         }
         usedPorts.add(port);
         nextAvailablePort = port + 1;
+
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                " Dynamischer Port zugewiesen: " + serverName + " -> " + port);
         return port;
     }
 
     public synchronized void releasePort(int port) {
         usedPorts.remove(port);
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Port freigegeben: " + port);
     }
 
@@ -220,7 +251,7 @@ public class Master {
     }
 
     private void initializeEnterpriseComponents() {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Initialisiere Enterprise-Komponenten...");
 
         clusterManager = new ClusterManager(this, masterId);
@@ -229,7 +260,7 @@ public class Master {
         loadBalancerManager = new LoadBalancerManager(this);
         playerQueueManager = new PlayerQueueManager(this, loadBalancerManager);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Enterprise-Komponenten initialisiert");
     }
 
@@ -242,7 +273,7 @@ public class Master {
 
             @Override
             public void connected(Connection connection) {
-                ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                         " Neue Verbindung: " + connection.getRemoteAddressTCP());
             }
 
@@ -255,7 +286,7 @@ public class Master {
             public void idle(Connection connection) {
                 WrapperConnection wrapper = connectedWrappers.get(connection.getID());
                 if (wrapper != null && System.currentTimeMillis() - wrapper.lastHeartbeat > 30000) {
-                    ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                             " Wrapper " + wrapper.wrapperId + " ist idle - Trennung wird eingeleitet");
                     connection.close();
                 }
@@ -263,10 +294,10 @@ public class Master {
 
             public void exceptionCaught(Connection connection, Throwable cause) {
                 if (cause instanceof IOException) {
-                    ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                             " IO-Fehler: " + cause.getMessage());
                 } else {
-                    ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                             " Unerwarteter Fehler: " + cause.getMessage());
                     cause.printStackTrace();
                 }
@@ -348,7 +379,7 @@ public class Master {
 
         connectedWrappers.put(connection.getID(), wrapper);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Wrapper registriert: " + message.wrapperId + " | RAM: " +
                 message.availableMemory + "MB / " + message.maxMemory + "MB");
 
@@ -379,7 +410,7 @@ public class Master {
             instance.status = message.status;
             instance.lastUpdate = System.currentTimeMillis();
 
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Server Status: " + message.serverName + " -> " + message.status);
 
             if ("ONLINE".equals(message.status)) {
@@ -404,15 +435,15 @@ public class Master {
 
     private void handleServerCommand(Connection connection, Message.ServerCommand command) {
         if ("START".equalsIgnoreCase(command.command)) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Starte Server: " + command.serverName);
             startServer(command.serverName, command.groupName);
         } else if ("STOP".equalsIgnoreCase(command.command)) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Stoppe Server: " + command.serverName);
             stopServer(command.serverName);
         } else if ("RESTART".equalsIgnoreCase(command.command)) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Starte Server neu: " + command.serverName);
             restartServer(command.serverName);
         }
@@ -445,7 +476,7 @@ public class Master {
     private void handleDisconnection(Connection connection) {
         WrapperConnection wrapper = connectedWrappers.remove(connection.getID());
         if (wrapper != null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Wrapper getrennt: " + wrapper.wrapperId);
 
             runningServers.values().stream()
@@ -477,15 +508,74 @@ public class Master {
             playerQueueManager.processQueue();
         }, 1, 1, TimeUnit.SECONDS);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Enterprise-Services gestartet");
+        // Auto-Start configured servers after 10 seconds
+        int autoStartDelay = configManager.getAutoStartDelay();
+        executorService.schedule(() -> {
+            autoStartServers();
+        }, autoStartDelay, TimeUnit.SECONDS);
+
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                " Enterprise-Services gestartet (Auto-Start in " + autoStartDelay + "s)");
+    }
+
+    private void autoStartServers() {
+        // Prüfe ob Auto-Start aktiviert ist
+        if (!configManager.isAutoStartEnabled()) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Auto-Start ist deaktiviert");
+            return;
+        }
+
+        // Warte bis mindestens ein Wrapper verbunden ist
+        if (connectedWrappers.isEmpty()) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Kein Wrapper verfügbar für Auto-Start - Retry in 5s");
+
+            executorService.schedule(() -> {
+                autoStartServers();
+            }, 5, TimeUnit.SECONDS);
+            return;
+        }
+
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                " Starte Auto-Start für konfigurierte Server...");
+
+        // Aus Config laden
+        List<String> autoStartGroups = configManager.getAutoStartGroups();
+
+        for (String groupConfig : autoStartGroups) {
+            String[] parts = groupConfig.split(":");
+            String groupName = parts[0].trim();
+            int count = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 1;
+
+            for (int i = 1; i <= count; i++) {
+                String serverName = groupName + "-" + i;
+
+                // Nur starten wenn noch nicht läuft
+                if (!runningServers.containsKey(serverName)) {
+                    try {
+                        startServer(serverName, groupName);
+
+                        // Warte 2 Sekunden zwischen Starts
+                        Thread.sleep(2000);
+                    } catch (Exception e) {
+                        ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                                ConsoleColors.getCurrentTime() + " Fehler beim Auto-Start von " +
+                                serverName + ": " + e.getMessage());
+                    }
+                }
+            }
+        }
+
+        ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
+                ConsoleColors.getCurrentTime() + " ✓ Auto-Start abgeschlossen");
     }
 
     private void checkWrapperHealth() {
         long now = System.currentTimeMillis();
         connectedWrappers.values().forEach(wrapper -> {
             if (now - wrapper.lastHeartbeat > 30000) {
-                ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                         " Wrapper " + wrapper.wrapperId + " antwortet nicht - wird als offline markiert");
                 wrapper.connection.close();
             }
@@ -493,7 +583,7 @@ public class Master {
     }
 
     private void handleServerFailure(ServerInstance server) {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server-Ausfall erkannt: " + server.serverName + " - Initiiere Wiederherstellung");
 
         // Release port
@@ -513,13 +603,13 @@ public class Master {
         WrapperConnection bestWrapper = loadBalancerManager.getBestWrapperForServer(groupName);
 
         if (bestWrapper == null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " FEHLER: Kein verfügbarer Wrapper für Server " + serverName);
             return;
         }
 
-        // Assign port for this server
-        int assignedPort = assignPort();
+        // Assign port for this server - MIT SERVER-NAMEN
+        int assignedPort = assignPort(serverName, groupName);
         serverPorts.put(serverName, assignedPort);
 
         ServerInstance instance = new ServerInstance(
@@ -532,13 +622,16 @@ public class Master {
 
         runningServers.put(serverName, instance);
 
+        // Send start command to wrapper
         Message.ServerCommand command = new Message.ServerCommand();
         command.command = "START";
         command.serverName = serverName;
         command.groupName = groupName;
+        command.port = assignedPort;  // Port wird jetzt korrekt gesetzt!
+
         bestWrapper.connection.sendTCP(command);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server " + serverName + " wird auf Wrapper " + bestWrapper.wrapperId +
                 " gestartet (Port: " + assignedPort + ")");
     }
@@ -546,7 +639,7 @@ public class Master {
     public void stopServer(String serverName) {
         ServerInstance instance = runningServers.get(serverName);
         if (instance == null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " FEHLER: Server " + serverName + " nicht gefunden");
             return;
         }
@@ -586,8 +679,8 @@ public class Master {
                 .orElse(null);
     }
 
-    private void shutdown() {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+    public void shutdown() {
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Cloud-System wird heruntergefahren...");
 
         if (executorService != null) {
@@ -603,7 +696,7 @@ public class Master {
 
         if (server != null) {
             server.stop();
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Server erfolgreich geschlossen");
         }
     }
@@ -635,5 +728,12 @@ public class Master {
     public String getMasterId() { return masterId; }
     public boolean isPrimaryMaster() { return isPrimaryMaster; }
     public void setPrimaryMaster(boolean primary) { this.isPrimaryMaster = primary; }
-}
 
+    public int getFIRST_LOBBY_PORT() {
+        return FIRST_LOBBY_PORT;
+    }
+
+    public int getFIRST_PROXY_PORT() {
+        return FIRST_PROXY_PORT;
+    }
+}

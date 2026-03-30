@@ -68,12 +68,12 @@ public class Serverprocess {
 
     public void start() throws IOException {
         if (running) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Server " + serverName + " läuft bereits");
             return;
         }
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Starte Server: " + serverName + " (" + groupName + ") auf Port " + port);
 
         // Setup server directory
@@ -135,7 +135,7 @@ public class Serverprocess {
         // Start metrics collection
         startMetricsCollection();
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.GREEN + ConsoleColors.PREFIX +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " Server " + serverName + " gestartet auf Port " + port);
     }
 
@@ -161,14 +161,14 @@ public class Serverprocess {
         File templateDir = new File("./templates/" + groupName);
 
         if (!templateDir.exists()) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Template-Verzeichnis nicht gefunden, erstelle es: " +
                     templateDir.getAbsolutePath());
             templateDir.mkdirs();
             return;
         }
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Kopiere Template-Dateien für " + serverName + "...");
 
         Files.walk(templateDir.toPath()).forEach(source -> {
@@ -182,7 +182,7 @@ public class Serverprocess {
                     Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
                 }
             } catch (IOException e) {
-                ConsoleScreenManager.logToMainScreen(ConsoleColors.RED +
+                ConsoleScreenManager.printToTerminal(ConsoleColors.RED +
                         "Fehler beim Kopieren: " + e.getMessage());
             }
         });
@@ -197,7 +197,7 @@ public class Serverprocess {
         );
         Files.write(eulaFile.toPath(), eulaLines);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " EULA akzeptiert für " + serverName);
     }
 
@@ -245,7 +245,7 @@ public class Serverprocess {
             Files.write(propertiesFile.toPath(), newLines);
         }
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " server.properties aktualisiert (Port: " + port + ", Max-Players: " + maxPlayers + ")");
     }
 
@@ -276,23 +276,25 @@ public class Serverprocess {
     }
 
     private void setupProcessIO() {
-        // Setup input stream to send commands to server
         processInput = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
 
-        // Setup output stream to read server logs
         outputThread = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream()))) {
 
                 String line;
                 while ((line = reader.readLine()) != null && running) {
-                    // Log to screen
+                    // NEU: Nur wichtige Logs an Main-Screen
+                    if (shouldprintToTerminal(line)) {
+                        ConsoleScreenManager.printToTerminal(
+                                ConsoleColors.RED + "[" + serverName + "] " + line);
+                    }
+
+                    // Immer an Server-Screen
                     ConsoleScreenManager.logToServerScreen(serverName, line);
 
-                    // Parse for metrics
                     parseLogLine(line);
 
-                    // Check for server ready
                     if (line.contains("Done (") || line.contains("Listening on")) {
                         onServerReady();
                     }
@@ -303,9 +305,8 @@ public class Serverprocess {
                             ConsoleColors.RED + "Fehler beim Lesen der Ausgabe: " + e.getMessage());
                 }
             } finally {
-                // Server process ended
                 if (running) {
-                    ConsoleScreenManager.logToMainScreen(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                             ConsoleColors.getCurrentTime() + " Server " + serverName + " wurde unerwartet beendet");
                     running = false;
                     wrapper.sendServerStatus(serverName, "CRASHED");
@@ -314,6 +315,17 @@ public class Serverprocess {
         }, "ServerOutput-" + serverName);
 
         outputThread.start();
+    }
+
+    private boolean shouldprintToTerminal(String line) {
+        // Nur wichtige Events loggen
+        return line.contains("Done (")
+                || line.contains("Listening on")
+                || line.contains("logged in")
+                || line.contains("lost connection")
+                || line.contains("WARN")
+                || line.contains("ERROR")
+                || line.contains("SEVERE");
     }
 
     private void parseLogLine(String line) {
@@ -341,7 +353,7 @@ public class Serverprocess {
     }
 
     private void onServerReady() {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.GREEN + ConsoleColors.PREFIX +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " ✓ Server " + serverName + " ist bereit!");
 
         wrapper.sendServerStatus(serverName, "ONLINE");
@@ -370,7 +382,7 @@ public class Serverprocess {
             return;
         }
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Stoppe Server: " + serverName);
 
         running = false;
@@ -381,7 +393,7 @@ public class Serverprocess {
         // Wait for graceful shutdown
         try {
             if (!process.waitFor(30, TimeUnit.SECONDS)) {
-                ConsoleScreenManager.logToMainScreen(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " Server " + serverName +
                         " reagiert nicht, erzwinge Beendigung...");
                 process.destroyForcibly();
@@ -397,7 +409,7 @@ public class Serverprocess {
         // Send status to master
         wrapper.sendServerStatus(serverName, "OFFLINE");
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server " + serverName + " gestoppt");
     }
 

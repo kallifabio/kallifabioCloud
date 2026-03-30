@@ -56,7 +56,7 @@ public class Launcher {
             keepAlive();
 
         } catch (Exception e) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.RED + ConsoleColors.PREFIX +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " KRITISCHER FEHLER beim Start: " + e.getMessage());
             e.printStackTrace();
             System.exit(1);
@@ -69,86 +69,86 @@ public class Launcher {
             switch (mode) {
                 case "--master" -> {
                     launchMode = LaunchMode.MASTER_ONLY;
-                    ConsoleScreenManager.logToMainScreen(ConsoleColors.BLUE +
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.BLUE +
                             "Launch-Modus: MASTER_ONLY");
                 }
                 case "--wrapper" -> {
                     launchMode = LaunchMode.WRAPPER_ONLY;
-                    ConsoleScreenManager.logToMainScreen(ConsoleColors.BLUE +
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.BLUE +
                             "Launch-Modus: WRAPPER_ONLY");
                 }
                 case "--combined" -> {
                     launchMode = LaunchMode.COMBINED;
-                    ConsoleScreenManager.logToMainScreen(ConsoleColors.BLUE +
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.BLUE +
                             "Launch-Modus: COMBINED");
                 }
-                default -> ConsoleScreenManager.logToMainScreen(ConsoleColors.YELLOW +
+                default -> ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW +
                         "Unbekannter Modus '" + mode + "', verwende COMBINED");
             }
         }
     }
 
     private static void printBanner() {
-        ConsoleScreenManager.logToMainScreen(" ");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.YELLOW +
+        ConsoleScreenManager.printToTerminal(" ");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW +
                 " __  __     ______     __         __         __     ______     __         ______     __  __     _____   \n" +
                 "/\\ \\/ /    /\\  __ \\   /\\ \\       /\\ \\       /\\ \\   /\\  ___\\   /\\ \\       /\\  __ \\   /\\ \\/\\ \\   /\\  __-. \n" +
                 "\\ \\  _\"-.  \\ \\  __ \\  \\ \\ \\____  \\ \\ \\____  \\ \\ \\  \\ \\ \\____  \\ \\ \\____  \\ \\ \\/\\ \\  \\ \\ \\_\\ \\  \\ \\ \\/\\ \\\n" +
                 " \\ \\_\\ \\_\\  \\ \\_\\ \\_\\  \\ \\_____\\  \\ \\_____\\  \\ \\_\\  \\ \\_____\\  \\ \\_____\\  \\ \\_____\\  \\ \\_____\\  \\ \\____-\n" +
                 "  \\/_/\\/_/   \\/_/\\/_/   \\/_____/   \\/_____/   \\/_/   \\/_____/   \\/_____/   \\/_____/   \\/_____/   \\/____/\n");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.RESET + " ");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "╔════════════════════════════════════════════════════════════════╗");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.RESET + " ");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╔════════════════════════════════════════════════════════════════╗");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
                 "          KalliCloud Enterprise - Version 1.0.0                " + ConsoleColors.CYAN + "║");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.WHITE +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.WHITE +
                 "     Multi-Master Cluster • Smart Auto-Scaling • REST API     " + ConsoleColors.CYAN + "║");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "╚════════════════════════════════════════════════════════════════╝");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.RESET + " ");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╚════════════════════════════════════════════════════════════════╝");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.RESET + " ");
     }
 
     private static void startMasterOnly() {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Starte im MASTER-ONLY Modus...");
 
         // Start Master
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " [1/2] Initialisiere Master...");
         master = new Master();
         master.start();
 
         // Start API Server
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " [2/2] Initialisiere REST API...");
         apiServer = new CloudHttpServer();
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.GREEN + ConsoleColors.PREFIX +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " ✓ Master erfolgreich gestartet!");
         printStartupInfo();
     }
 
     private static void startWrapperOnly() {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Starte im WRAPPER-ONLY Modus...");
 
         // Start Wrapper
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " [1/1] Initialisiere Wrapper...");
         wrapper = new Wrapper();
         wrapper.start();
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.GREEN + ConsoleColors.PREFIX +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " ✓ Wrapper erfolgreich gestartet!");
     }
 
     private static void startCombined() {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Starte im COMBINED Modus...");
 
         CountDownLatch masterLatch = new CountDownLatch(1);
 
         // Start Master asynchronously
         new Thread(() -> {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " [1/3] Initialisiere Master...");
             master = new Master();
             master.start();
@@ -174,57 +174,57 @@ public class Launcher {
         }
 
         // Start Wrapper
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " [2/3] Initialisiere Wrapper...");
         wrapper = new Wrapper();
         wrapper.start();
 
         // Start API Server
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " [3/3] Initialisiere REST API...");
         apiServer = new CloudHttpServer();
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.GREEN + ConsoleColors.PREFIX +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " ✓ Alle Komponenten erfolgreich gestartet!");
         printStartupInfo();
     }
 
     private static void printStartupInfo() {
-        ConsoleScreenManager.logToMainScreen(" ");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "╔════════════════════════════════════════════════════════════════╗");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.WHITE +
+        ConsoleScreenManager.printToTerminal(" ");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╔════════════════════════════════════════════════════════════════╗");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.WHITE +
                 "                    System Information                         " + ConsoleColors.CYAN + "║");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "╠════════════════════════════════════════════════════════════════╣");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╠════════════════════════════════════════════════════════════════╣");
 
         if (master != null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
                     " Master ID:      " + ConsoleColors.WHITE + master.getMasterId() +
                     ConsoleScreenManager.padRight("", 64 - 16 - master.getMasterId().length()) + ConsoleColors.CYAN + "║");
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
                     " Master IP:      " + ConsoleColors.WHITE + master.getMasterHost() + ":" + master.getMasterPort() +
                     ConsoleScreenManager.padRight("", 64 - 16 - (master.getMasterHost() + ":" + master.getMasterPort()).length()) +
                     ConsoleColors.CYAN + "║");
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
                     " Primary:        " + ConsoleColors.WHITE + (master.isPrimaryMaster() ? "Yes" : "No") +
                     ConsoleScreenManager.padRight("", 64 - 16 - 3) + ConsoleColors.CYAN + "║");
         }
 
         if (apiServer != null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
                     " API Endpoint:   " + ConsoleColors.WHITE + "http://" + (master != null ? master.getMasterHost() : "localhost") + ":8080" +
                     ConsoleScreenManager.padRight("", 64 - 16 - ("http://" + (master != null ? master.getMasterHost() : "localhost") + ":8080").length()) +
                     ConsoleColors.CYAN + "║");
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
                     " Dashboard:      " + ConsoleColors.WHITE + "http://" + (master != null ? master.getMasterHost() : "localhost") + ":8080/dashboard" +
                     ConsoleScreenManager.padRight("", 64 - 16 - ("http://" + (master != null ? master.getMasterHost() : "localhost") + ":8080/dashboard").length()) +
                     ConsoleColors.CYAN + "║");
         }
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "╠════════════════════════════════════════════════════════════════╣");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "║" + ConsoleColors.GREEN +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╠════════════════════════════════════════════════════════════════╣");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.GREEN +
                 "                 System Ready - Type 'help'                    " + ConsoleColors.CYAN + "║");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.CYAN + "╚════════════════════════════════════════════════════════════════╝");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.RESET + " ");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╚════════════════════════════════════════════════════════════════╝");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.RESET + " ");
     }
 
     private static void registerShutdownHook() {
@@ -238,34 +238,44 @@ public class Launcher {
     private static void performShutdown() {
         shutdownRequested = true;
 
-        ConsoleScreenManager.logToMainScreen(" ");
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+        ConsoleScreenManager.printToTerminal(" ");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " Cloud-System wird heruntergefahren...");
 
-        // Stop API Server
-        if (apiServer != null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Stoppe REST API...");
-            apiServer.stop();
-        }
-
-        // Stop Wrapper
+        // Stop Wrapper ZUERST (damit Reconnect gestoppt wird)
         if (wrapper != null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Stoppe Wrapper...");
             wrapper.shutdown();
         }
 
-        // Stop Master (should be last)
-        if (master != null) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Stoppe Master...");
-            // Master shutdown is handled in Master.shutdown()
+        // Stop API Server
+        if (apiServer != null) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Stoppe REST API...");
+            apiServer.stop();
         }
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.GREEN + ConsoleColors.PREFIX +
+        // Stop Master (should be last)
+        if (master != null) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Stoppe Master...");
+            master.shutdown();
+        }
+
+        ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " ✓ Cloud-System erfolgreich heruntergefahren");
-        ConsoleScreenManager.logToMainScreen(" ");
+        ConsoleScreenManager.printToTerminal(" ");
+
+        // NEU: Console beenden
+        ConsoleScreenManager.stopConsole();
+
+        // Kurze Pause vor finalem Exit
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static void keepAlive() {

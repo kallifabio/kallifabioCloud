@@ -55,7 +55,7 @@ public class AutoScalingManager {
         );
         scalingPolicies.put("Lobby", lobbyPolicy);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Auto-Scaling Manager initialisiert");
     }
 
@@ -116,7 +116,7 @@ public class AutoScalingManager {
     private void scaleUp(String groupName, ScalingPolicy policy, int currentCount) {
         int targetCount = Math.min(currentCount + 1, policy.maxServers);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Scale-Up: " + groupName + " von " + currentCount + " auf " + targetCount);
 
         // Start new server
@@ -131,7 +131,7 @@ public class AutoScalingManager {
     private void scaleDown(String groupName, ScalingPolicy policy, int currentCount) {
         int targetCount = Math.max(currentCount - 1, policy.minServers);
 
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Scale-Down: " + groupName + " von " + currentCount + " auf " + targetCount);
 
         // Find least loaded server to stop
@@ -177,7 +177,7 @@ public class AutoScalingManager {
     public void evaluateMetrics(Message.ServerMetrics metrics) {
         // Check if specific server needs attention
         if (metrics.tps < 15.0) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Server " + metrics.serverName + " hat niedrige TPS: " + metrics.tps);
         }
     }
@@ -191,14 +191,14 @@ public class AutoScalingManager {
         double avgLoad = calculateAverageLoad(groupServers);
 
         if (avgLoad > 80.0) {
-            ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Gruppe " + server.groupName + " könnte Scaling benötigen (Load: " +
                     String.format("%.1f%%)", avgLoad));
         }
     }
 
     public void replaceFailedServer(ServerInstance failedServer) {
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Ersetze ausgefallenen Server: " + failedServer.serverName);
 
         // Start replacement server
@@ -243,7 +243,7 @@ public class AutoScalingManager {
 
     public void updateScalingPolicy(String groupName, ScalingPolicy policy) {
         scalingPolicies.put(groupName, policy);
-        ConsoleScreenManager.logToMainScreen(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Scaling-Policy aktualisiert für " + groupName);
     }
 
