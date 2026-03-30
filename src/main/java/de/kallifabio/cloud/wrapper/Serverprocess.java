@@ -89,7 +89,7 @@ public class Serverprocess {
     public void start() throws IOException {
         if (running) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Server " + serverName + " läuft bereits");
+                    ConsoleColors.getCurrentTime() + " Server " + serverName + " laeuft bereits");
             return;
         }
 
@@ -99,6 +99,7 @@ public class Serverprocess {
 
         // Setup server directory
         File serverDir = setupServerDirectory();
+        runStartupPreflight(serverDir);
 
         // Prepare server files (template copy)
         prepareServerFiles(serverDir);
@@ -109,13 +110,9 @@ public class Serverprocess {
         // WICHTIG: Update server.properties mit korrektem Port
         updateServerProperties(serverDir, port);
 
-        // Get JAR file
+        // Get JAR file (resolved via preflight/candidate lookup)
         String jarFile = getJarFileName();
-        File jarFilePath = new File(serverDir, jarFile);
-
-        if (!jarFilePath.exists()) {
-            throw new FileNotFoundException("JAR-Datei nicht gefunden: " + jarFilePath.getAbsolutePath());
-        }
+        ensureServerJar(serverDir, jarFile);
 
         // Create server screen
         ConsoleScreenManager.createServerScreen(serverName);
@@ -179,6 +176,29 @@ public class Serverprocess {
         }
     }
 
+    private void runStartupPreflight(File serverDir) throws IOException {
+        ensureTemplateDirectories();
+        ensureServerJar(serverDir, getJarFileName());
+    }
+
+    private void ensureTemplateDirectories() throws IOException {
+        File templateDir = configManager.isTemplateTestingMode()
+                ? new File("./templates_test/" + groupName)
+                : new File("./templates/" + groupName);
+        File backupTemplateDir = new File("./templates_backup/" + groupName);
+
+        if (templateDir.exists() || backupTemplateDir.exists()) {
+            return;
+        }
+
+        Files.createDirectories(templateDir.toPath());
+        ConsoleScreenManager.printToTerminal(
+                ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                        " Preflight: Kein Template gefunden, leeres Template erstellt: " +
+                        templateDir.getAbsolutePath()
+        );
+    }
+
     private void copyTemplateFiles(File serverDir) throws IOException {
         File templateDir = configManager.isTemplateTestingMode()
                 ? new File("./templates_test/" + groupName)
@@ -191,7 +211,7 @@ public class Serverprocess {
             }
             copyDirectory(backupTemplateDir.toPath(), serverDir.toPath());
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Backup-Template verwendet für " + serverName);
+                    " Backup-Template verwendet fuer " + serverName);
             return;
         }
 
@@ -201,14 +221,14 @@ public class Serverprocess {
         try {
             copyDirectory(templateDir.toPath(), serverDir.toPath());
         } catch (IOException ex) {
-            CentralLogger.error("Template", "Template-Kopie fehlgeschlagen für " + serverName + ", versuche Backup", ex);
+            CentralLogger.error("Template", "Template-Kopie fehlgeschlagen fuer " + serverName + ", versuche Backup", ex);
             if (!backupTemplateDir.exists()) {
                 throw ex;
             }
             clearDirectory(serverDir.toPath());
             copyDirectory(backupTemplateDir.toPath(), serverDir.toPath());
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Korruptes Template erkannt, Backup-Template verwendet für " + serverName);
+                    " Korruptes Template erkannt, Backup-Template verwendet fuer " + serverName);
         }
     }
 
@@ -271,7 +291,7 @@ public class Serverprocess {
         Files.write(eulaFile.toPath(), eulaLines);
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " EULA akzeptiert für " + serverName);
+                " EULA akzeptiert fuer " + serverName);
     }
 
     private void updateServerProperties(File serverDir, int port) throws IOException {
@@ -304,7 +324,7 @@ public class Serverprocess {
                 }
             }
 
-            // Füge fehlende Zeilen hinzu
+            // Fuege fehlende Zeilen hinzu
             if (!portSet) {
                 newLines.add("server-port=" + port);
             }
@@ -346,6 +366,64 @@ public class Serverprocess {
         } else {
             return "spigot.jar";
         }
+    }
+
+    private File ensureServerJar(File serverDir, String expectedJarName) throws IOException {
+        File targetJar = new File(serverDir, expectedJarName);
+        if (targetJar.exists()) {
+            return targetJar;
+        }
+
+        List<String> aliasNames = getJarCandidateNames(expectedJarName);
+        List<File> candidates = buildJarCandidates(serverDir, aliasNames);
+        for (File candidate : candidates) {
+            if (!candidate.exists()) {
+                continue;
+            }
+            Files.copy(candidate.toPath(), targetJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            ConsoleScreenManager.printToTerminal(
+                    ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                            " Preflight: Fehlende " + expectedJarName + " aus " + candidate.getAbsolutePath() +
+                            " uebernommen"
+            );
+            return targetJar;
+        }
+
+        String searched = candidates.stream()
+                .map(File::getAbsolutePath)
+                .distinct()
+                .reduce((a, b) -> a + "; " + b)
+                .orElse("keine Kandidaten");
+        throw new FileNotFoundException(
+                "JAR-Datei nicht gefunden: " + targetJar.getAbsolutePath() +
+                        " | Gepruefte Pfade: " + searched
+        );
+    }
+
+    private List<String> getJarCandidateNames(String expectedJarName) {
+        if ("bungeecord.jar".equalsIgnoreCase(expectedJarName)) {
+            return List.of("bungeecord.jar", "waterfall.jar", "velocity.jar", "proxy.jar");
+        }
+        return List.of("spigot.jar", "paper.jar", "purpur.jar", "server.jar");
+    }
+
+    private List<File> buildJarCandidates(File serverDir, List<String> aliasNames) {
+        List<File> candidates = new ArrayList<>();
+        String[] baseDirs = new String[] {
+                serverDir.getAbsolutePath(),
+                "./templates/" + groupName,
+                "./templates_test/" + groupName,
+                "./templates_backup/" + groupName,
+                "./jars/" + groupName,
+                "./jars",
+                "."
+        };
+        for (String baseDir : baseDirs) {
+            for (String alias : aliasNames) {
+                candidates.add(new File(baseDir, alias));
+            }
+        }
+        return candidates;
     }
 
     private void setupProcessIO() {
@@ -443,7 +521,7 @@ public class Serverprocess {
 
     private void onServerReady() {
         ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                ConsoleColors.getCurrentTime() + " ✓ Server " + serverName + " ist bereit!");
+                ConsoleColors.getCurrentTime() + " [OK] Server " + serverName + " ist bereit!");
 
         wrapper.sendServerStatus(serverName, "ONLINE");
     }
@@ -742,7 +820,7 @@ public class Serverprocess {
     public void sendCommand(String command) {
         if (!running || processInput == null) {
             ConsoleScreenManager.logToServerScreen(serverName,
-                    ConsoleColors.YELLOW + "Server läuft nicht, Befehl ignoriert: " + command);
+                    ConsoleColors.YELLOW + "Server laeuft nicht, Befehl ignoriert: " + command);
             return;
         }
 

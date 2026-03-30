@@ -33,7 +33,7 @@ public class ConsoleScreen {
         }
     }
 
-    // Direct version ohne extra Lock (für wenn bereits locked)
+    // Direct version ohne extra Lock (fuer wenn bereits locked)
     public void addMessageDirect(String message) {
         synchronized (messages) {
             if (messages.size() >= MESSAGE_LIMIT) {

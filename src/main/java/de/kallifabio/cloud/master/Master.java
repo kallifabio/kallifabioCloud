@@ -70,7 +70,7 @@ public class Master {
     private final Set<Integer> usedPorts = ConcurrentHashMap.newKeySet();
     private final Map<String, Integer> serverPorts = new ConcurrentHashMap<>();
 
-    // Feste Ports für erste Server
+    // Feste Ports fuer erste Server
     private int FIRST_PROXY_PORT;
     private int FIRST_LOBBY_PORT;
 
@@ -222,13 +222,13 @@ public class Master {
         kryo.register(Message.APIRequest.class);
         kryo.register(Message.APIResponse.class);
 
-        // Arrays für byte[]
+        // Arrays fuer byte[]
         kryo.register(byte[].class);
     }
 
     // Port Management Methods
     public synchronized int assignPort(String serverName, String groupName) {
-        // Feste Ports für erste Server (aus Config)
+        // Feste Ports fuer erste Server (aus Config)
         if (serverName.equals("Proxy-1")) {
             usedPorts.add(FIRST_PROXY_PORT);
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -243,12 +243,12 @@ public class Master {
             return FIRST_LOBBY_PORT;
         }
 
-        // Für alle anderen Server: Dynamische Zuweisung
+        // Fuer alle anderen Server: Dynamische Zuweisung
         int port = nextAvailablePort;
         while (usedPorts.contains(port) || !isPortAvailable(port)) {
             port++;
             if (port > 65535) {
-                throw new RuntimeException("Keine verfügbaren Ports mehr!");
+                throw new RuntimeException("Keine verfuegbaren Ports mehr!");
             }
         }
         usedPorts.add(port);
@@ -786,7 +786,7 @@ public class Master {
     }
 
     private void autoStartServers() {
-        // Prüfe ob Auto-Start aktiviert ist
+        // Pruefe ob Auto-Start aktiviert ist
         if (!configManager.isAutoStartEnabled()) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Auto-Start ist deaktiviert");
@@ -796,7 +796,7 @@ public class Master {
         // Warte bis mindestens ein Wrapper verbunden ist
         if (connectedWrappers.isEmpty()) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Kein Wrapper verfügbar für Auto-Start - Retry in 5s");
+                    ConsoleColors.getCurrentTime() + " Kein Wrapper verfuegbar fuer Auto-Start - Retry in 5s");
 
             executorService.schedule(() -> {
                 autoStartServers();
@@ -805,7 +805,7 @@ public class Master {
         }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Starte Auto-Start für konfigurierte Server...");
+                " Starte Auto-Start fuer konfigurierte Server...");
 
         // Aus Config laden
         List<String> autoStartGroups = configManager.getAutoStartGroups();
@@ -818,7 +818,7 @@ public class Master {
             for (int i = 1; i <= count; i++) {
                 String serverName = groupName + "-" + i;
 
-                // Nur starten wenn noch nicht läuft
+                // Nur starten wenn noch nicht laeuft
                 if (!runningServers.containsKey(serverName)) {
                     try {
                         startServer(serverName, groupName);
@@ -835,7 +835,7 @@ public class Master {
         }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                ConsoleColors.getCurrentTime() + " ✓ Auto-Start abgeschlossen");
+                ConsoleColors.getCurrentTime() + " [OK] Auto-Start abgeschlossen");
     }
 
     private void checkWrapperHealth() {
@@ -848,7 +848,7 @@ public class Master {
             } else if (now - wrapper.lastPong > WRAPPER_PONG_TIMEOUT_MS) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " Wrapper " + wrapper.wrapperId +
-                        " hat kein Pong gesendet - Verbindung wird geprüft");
+                        " hat kein Pong gesendet - Verbindung wird geprueft");
                 wrapper.connection.close();
             }
         });
@@ -947,7 +947,7 @@ public class Master {
 
         if (bestWrapper == null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " FEHLER: Kein verfügbarer Wrapper für Server " + serverName);
+                    " FEHLER: Kein verfuegbarer Wrapper fuer Server " + serverName);
             return;
         }
 

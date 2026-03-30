@@ -178,7 +178,7 @@ public class Wrapper {
         kryo.register(Message.APIRequest.class);
         kryo.register(Message.APIResponse.class);
 
-        // Arrays für byte[]
+        // Arrays fuer byte[]
         kryo.register(byte[].class);
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -234,7 +234,7 @@ public class Wrapper {
         } catch (IOException e) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Verbindung zu Master fehlgeschlagen: " + e.getMessage());
-            e.printStackTrace(); // Zeige vollständigen Stacktrace für Debugging
+            e.printStackTrace(); // Zeige vollstaendigen Stacktrace fuer Debugging
 
             // Schedule reconnect
             scheduleReconnect();
@@ -246,7 +246,7 @@ public class Wrapper {
         reconnectAttempts = 0;
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                ConsoleColors.getCurrentTime() + " ✓ Mit Master verbunden");
+                ConsoleColors.getCurrentTime() + " [OK] Mit Master verbunden");
 
         // Send registration
         registerWithMaster();
@@ -317,7 +317,7 @@ public class Wrapper {
     private void handleRegisterAck(Message.WrapperRegisterAck ack) {
         if (ack.success) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " ✓ Registrierung bestätigt von Master: " + ack.masterId);
+                    ConsoleColors.getCurrentTime() + " [OK] Registrierung bestaetigt von Master: " + ack.masterId);
         } else {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Registrierung abgelehnt");
@@ -350,7 +350,7 @@ public class Wrapper {
     private void startServer(String serverName, String groupName, int port) {
         if (managedServers.containsKey(serverName)) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Server " + serverName + " läuft bereits");
+                    ConsoleColors.getCurrentTime() + " Server " + serverName + " laeuft bereits");
             return;
         }
 
@@ -367,7 +367,7 @@ public class Wrapper {
             availableMemory = calculateAvailableMemory();
 
             ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " ✓ Server " + serverName +
+                    ConsoleColors.getCurrentTime() + " [OK] Server " + serverName +
                     " erfolgreich gestartet auf Port " + port);
 
         } catch (IOException e) {
@@ -450,7 +450,7 @@ public class Wrapper {
     }
 
     private void scheduleReconnect() {
-        if (reconnecting || shuttingDown) return; // NEU: Prüfe shutdown-Flag
+        if (reconnecting || shuttingDown) return; // NEU: Pruefe shutdown-Flag
 
         reconnecting = true;
         reconnectAttempts++;
@@ -467,7 +467,7 @@ public class Wrapper {
                 "/" + MAX_RECONNECT_ATTEMPTS + ")");
 
         scheduler.schedule(() -> {
-            if (shuttingDown) return; // NEU: Abbrechen wenn Shutdown läuft
+            if (shuttingDown) return; // NEU: Abbrechen wenn Shutdown laeuft
 
             reconnecting = false;
 

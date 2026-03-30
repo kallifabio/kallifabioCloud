@@ -238,7 +238,7 @@ public class AutoScalingManager {
 
         if (avgLoad > 80.0) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Gruppe " + server.groupName + " könnte Scaling benötigen (Load: " +
+                    " Gruppe " + server.groupName + " koennte Scaling benoetigen (Load: " +
                     String.format("%.1f%%)", avgLoad));
         }
     }
@@ -294,7 +294,7 @@ public class AutoScalingManager {
     public void updateScalingPolicy(String groupName, ScalingPolicy policy) {
         scalingPolicies.put(groupName, policy);
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Scaling-Policy aktualisiert für " + groupName);
+                " Scaling-Policy aktualisiert fuer " + groupName);
     }
 
     public List<ScalingDecision> getScalingHistory() {

@@ -100,12 +100,12 @@ public class Launcher {
                 " \\ \\_\\ \\_\\  \\ \\_\\ \\_\\  \\ \\_____\\  \\ \\_____\\  \\ \\_\\  \\ \\_____\\  \\ \\_____\\  \\ \\_____\\  \\ \\_____\\  \\ \\____-\n" +
                 "  \\/_/\\/_/   \\/_/\\/_/   \\/_____/   \\/_____/   \\/_/   \\/_____/   \\/_____/   \\/_____/   \\/_____/   \\/____/\n");
         ConsoleScreenManager.printToTerminal(ConsoleColors.RESET + " ");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╔════════════════════════════════════════════════════════════════╗");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
-                "          KalliCloud Enterprise - Version 1.0.0                " + ConsoleColors.CYAN + "║");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.WHITE +
-                "     Multi-Master Cluster • Smart Auto-Scaling • REST API     " + ConsoleColors.CYAN + "║");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╚════════════════════════════════════════════════════════════════╝");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+----------------------------------------------------------------+");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.YELLOW +
+                "          KalliCloud Enterprise - Version 1.0.0                " + ConsoleColors.CYAN + "|");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.WHITE +
+                "     Multi-Master Cluster | Smart Auto-Scaling | REST API      " + ConsoleColors.CYAN + "|");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+----------------------------------------------------------------+");
         ConsoleScreenManager.printToTerminal(ConsoleColors.RESET + " ");
     }
 
@@ -125,7 +125,7 @@ public class Launcher {
         apiServer = new CloudHttpServer();
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                ConsoleColors.getCurrentTime() + " ✓ Master erfolgreich gestartet!");
+                ConsoleColors.getCurrentTime() + " [OK] Master erfolgreich gestartet!");
         printStartupInfo();
     }
 
@@ -140,7 +140,7 @@ public class Launcher {
         wrapper.start();
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                ConsoleColors.getCurrentTime() + " ✓ Wrapper erfolgreich gestartet!");
+                ConsoleColors.getCurrentTime() + " [OK] Wrapper erfolgreich gestartet!");
     }
 
     private static void startCombined() {
@@ -188,45 +188,46 @@ public class Launcher {
         apiServer = new CloudHttpServer();
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                ConsoleColors.getCurrentTime() + " ✓ Alle Komponenten erfolgreich gestartet!");
+                ConsoleColors.getCurrentTime() + " [OK] Alle Komponenten erfolgreich gestartet!");
         printStartupInfo();
     }
 
     private static void printStartupInfo() {
         ConsoleScreenManager.printToTerminal(" ");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╔════════════════════════════════════════════════════════════════╗");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.WHITE +
-                "                    System Information                         " + ConsoleColors.CYAN + "║");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╠════════════════════════════════════════════════════════════════╣");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+----------------------------------------------------------------+");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.WHITE +
+                "                    System Information                         " + ConsoleColors.CYAN + "|");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+----------------------------------------------------------------+");
 
         if (master != null) {
-            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.YELLOW +
                     " Master ID:      " + ConsoleColors.WHITE + master.getMasterId() +
-                    ConsoleScreenManager.padRight("", 64 - 16 - master.getMasterId().length()) + ConsoleColors.CYAN + "║");
-            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+                    ConsoleScreenManager.padRight("", 64 - 16 - master.getMasterId().length()) + ConsoleColors.CYAN + "|");
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.YELLOW +
                     " Master IP:      " + ConsoleColors.WHITE + master.getMasterHost() + ":" + master.getMasterPort() +
                     ConsoleScreenManager.padRight("", 64 - 16 - (master.getMasterHost() + ":" + master.getMasterPort()).length()) +
-                    ConsoleColors.CYAN + "║");
-            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
+                    ConsoleColors.CYAN + "|");
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.YELLOW +
                     " Primary:        " + ConsoleColors.WHITE + (master.isPrimaryMaster() ? "Yes" : "No") +
-                    ConsoleScreenManager.padRight("", 64 - 16 - 3) + ConsoleColors.CYAN + "║");
+                    ConsoleScreenManager.padRight("", 64 - 16 - 3) + ConsoleColors.CYAN + "|");
         }
 
         if (apiServer != null) {
-            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
-                    " API Endpoint:   " + ConsoleColors.WHITE + "http://" + (master != null ? master.getMasterHost() : "localhost") + ":8080" +
-                    ConsoleScreenManager.padRight("", 64 - 16 - ("http://" + (master != null ? master.getMasterHost() : "localhost") + ":8080").length()) +
-                    ConsoleColors.CYAN + "║");
-            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.YELLOW +
-                    " Dashboard:      " + ConsoleColors.WHITE + "http://" + (master != null ? master.getMasterHost() : "localhost") + ":8080/dashboard" +
-                    ConsoleScreenManager.padRight("", 64 - 16 - ("http://" + (master != null ? master.getMasterHost() : "localhost") + ":8080/dashboard").length()) +
-                    ConsoleColors.CYAN + "║");
+            String apiPort = String.valueOf(apiServer.getPort());
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.YELLOW +
+                    " API Endpoint:   " + ConsoleColors.WHITE + "http://" + (master != null ? master.getMasterHost() : "localhost") + ":" + apiPort +
+                    ConsoleScreenManager.padRight("", 64 - 16 - ("http://" + (master != null ? master.getMasterHost() : "localhost") + ":" + apiPort).length()) +
+                    ConsoleColors.CYAN + "|");
+            ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.YELLOW +
+                    " Dashboard:      " + ConsoleColors.WHITE + "http://" + (master != null ? master.getMasterHost() : "localhost") + ":" + apiPort + "/dashboard" +
+                    ConsoleScreenManager.padRight("", 64 - 16 - ("http://" + (master != null ? master.getMasterHost() : "localhost") + ":" + apiPort + "/dashboard").length()) +
+                    ConsoleColors.CYAN + "|");
         }
 
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╠════════════════════════════════════════════════════════════════╣");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "║" + ConsoleColors.GREEN +
-                "                 System Ready - Type 'help'                    " + ConsoleColors.CYAN + "║");
-        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "╚════════════════════════════════════════════════════════════════╝");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+----------------------------------------------------------------+");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.GREEN +
+                "                 System Ready - Type 'help'                    " + ConsoleColors.CYAN + "|");
+        ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+----------------------------------------------------------------+");
         ConsoleScreenManager.printToTerminal(ConsoleColors.RESET + " ");
     }
 
@@ -267,7 +268,7 @@ public class Launcher {
         }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                ConsoleColors.getCurrentTime() + " ✓ Cloud-System erfolgreich heruntergefahren");
+                ConsoleColors.getCurrentTime() + " [OK] Cloud-System erfolgreich heruntergefahren");
         ConsoleScreenManager.printToTerminal(" ");
 
         // NEU: Console beenden

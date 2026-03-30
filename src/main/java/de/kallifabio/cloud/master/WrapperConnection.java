@@ -46,7 +46,7 @@ public class WrapperConnection {
         this.lastPong = System.currentTimeMillis();
     }
 
-    // Getters (für HTTP API)
+    // Getters (fuer HTTP API)
     public String getWrapperId() {
         return wrapperId;
     }

@@ -1,0 +1,4 @@
+[2026-03-30 20:46:35] [INFO] [Console] kallifabioCloud : [30.03.2026 20:46:35] API Keys loaded (admin + dashboard)
+[2026-03-30 20:46:35] [INFO] [Console] kallifabioCloud : [30.03.2026 20:46:35] Live WebSocket gestartet auf Port 8090 (WS)
+[2026-03-30 20:46:35] [INFO] [Console] kallifabioCloud : [30.03.2026 20:46:35] REST API gestartet auf Port 8080 (HTTP)
+[2026-03-30 20:46:35] [INFO] [Console] kallifabioCloud : [30.03.2026 20:46:35] HTTP-Server gestoppt

@@ -102,6 +102,10 @@ Wichtige Dateien:
 - `CloudMaster.API.TLS.KeystorePassword`
 - `CloudMaster.API.TLS.KeystoreType`
 
+### API Port
+- `CloudMaster.API.Port` (Default: `8081`)
+- Bei Port-Konflikt wird automatisch auf freie Fallback-Ports ausgewichen (Retry aktiv).
+
 Wenn TLS aktiv ist:
 - REST laeuft ueber HTTPS
 - WebSocket laeuft ueber WSS
@@ -228,8 +232,17 @@ Datei:
 - **TLS aktiviert, Server startet nicht**
   - Keystore Pfad/Passwort/Typ pruefen.
 
+- **`Address already in use` beim API-Start**
+  - API nutzt Port-Fallback + Retry im Bereich ab konfiguriertem Port.
+  - Im Startup-Log den effektiv gebundenen API-Port pruefen.
+
 - **Player kann Group nicht joinen**
   - Runtime-Enforcer prueft `cloud.join` und Group-Join Permissions.
+
+- **`bungeecord.jar` / `spigot.jar` oder Templates fehlen**
+  - Beim Serverstart laeuft ein Setup-Preflight:
+  - fehlende Template-Ordner werden angelegt
+  - fehlende JARs werden aus `templates*`, `templates_backup`, `jars` oder Projektroot nachgezogen
 
 ---
 

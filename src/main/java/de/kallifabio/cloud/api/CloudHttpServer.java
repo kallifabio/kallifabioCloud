@@ -41,8 +41,11 @@ public class CloudHttpServer {
     private HttpServer server;
     private LiveWebSocketServer liveWebSocketServer;
     private final Gson gson;
-    private static final int PORT = 8080;
-    private static final int WS_PORT = 8090;
+    private static final int DEFAULT_PORT = 8081;
+    private static final int DEFAULT_WS_PORT = 8090;
+    private static final int PORT_FALLBACK_RANGE = 20;
+    private static final int PORT_BIND_RETRIES = 3;
+    private static final long PORT_RETRY_DELAY_MS = 300L;
     private final Map<String, String> apiKeys = new HashMap<>();
     private final Map<String, String> apiKeyRoles = new HashMap<>();
     private final Map<String, Deque<Long>> requestTimestampsByIp = new ConcurrentHashMap<>();
@@ -51,6 +54,8 @@ public class CloudHttpServer {
     private static final long BLOCK_DURATION_MS = 5 * 60 * 1000L;
     private final Deque<Map<String, Object>> metricHistory = new ArrayDeque<>();
     private boolean tlsEnabled = false;
+    private int port = DEFAULT_PORT;
+    private int wsPort = DEFAULT_WS_PORT;
 
     public CloudHttpServer() {
         this.gson = new GsonBuilder().setPrettyPrinting().create();
@@ -89,23 +94,26 @@ public class CloudHttpServer {
     private void startServer() throws IOException {
         Master master = Master.getInstance();
         tlsEnabled = master != null && master.getConfigManager().isApiTlsEnabled();
+        if (master != null) {
+            try {
+                port = Integer.parseInt(master.getConfigManager().getMaster("CloudMaster.API.Port"));
+            } catch (Exception ignored) {
+                port = DEFAULT_PORT;
+            }
+        }
         SSLContext sslContext = null;
 
         if (tlsEnabled) {
             try {
                 sslContext = buildSslContext();
-                HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress(PORT), 0);
-                httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext));
-                server = httpsServer;
             } catch (Exception e) {
                 tlsEnabled = false;
                 ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " TLS deaktiviert (Setup fehlgeschlagen): " + e.getMessage());
-                server = HttpServer.create(new InetSocketAddress(PORT), 0);
             }
-        } else {
-            server = HttpServer.create(new InetSocketAddress(PORT), 0);
         }
+
+        server = bindHttpServerWithFallback(port, sslContext);
         server.setExecutor(Executors.newFixedThreadPool(10));
 
         // API Endpoints
@@ -114,19 +122,37 @@ public class CloudHttpServer {
         server.start();
         startLiveWebSocket(sslContext);
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " REST API gestartet auf Port " + PORT + (tlsEnabled ? " (TLS)" : " (HTTP)"));
+                " REST API gestartet auf Port " + port + (tlsEnabled ? " (TLS)" : " (HTTP)"));
     }
 
     private void startLiveWebSocket(SSLContext sslContext) {
-        liveWebSocketServer = new LiveWebSocketServer(WS_PORT);
-        liveWebSocketServer.setSnapshotSupplier(this::buildLiveSnapshot);
-        liveWebSocketServer.setApiKeyValidator(this::isKnownApiKey);
-        if (tlsEnabled && sslContext != null) {
-            liveWebSocketServer.configureTls(sslContext);
+        Exception lastError = null;
+        for (int offset = 0; offset <= 20; offset++) {
+            int candidate = wsPort + offset;
+            try {
+                LiveWebSocketServer ws = new LiveWebSocketServer(candidate);
+                ws.setSnapshotSupplier(this::buildLiveSnapshot);
+                ws.setApiKeyValidator(this::isKnownApiKey);
+                if (tlsEnabled && sslContext != null) {
+                    ws.configureTls(sslContext);
+                }
+                ws.start();
+                liveWebSocketServer = ws;
+                wsPort = candidate;
+                if (offset > 0) {
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                            ConsoleColors.getCurrentTime() + " WS-Port belegt, nutze Fallback-Port " + wsPort);
+                }
+                ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                        " Live WebSocket gestartet auf Port " + wsPort + (tlsEnabled ? " (WSS)" : " (WS)"));
+                return;
+            } catch (Exception ex) {
+                lastError = ex;
+            }
         }
-        liveWebSocketServer.start();
-        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Live WebSocket gestartet auf Port " + WS_PORT + (tlsEnabled ? " (WSS)" : " (WS)"));
+        String msg = lastError == null ? "unbekannter Fehler" : lastError.getMessage();
+        ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                " Konnte WebSocket nicht starten: " + msg);
     }
 
     private void setupEndpoints() {
@@ -224,7 +250,7 @@ public class CloudHttpServer {
         sendResponse(exchange, 200, Map.of(
                 "authenticated", true,
                 "role", role,
-                "wsUrl", wsScheme + "://" + host + ":" + WS_PORT + "/live"
+                "wsUrl", wsScheme + "://" + host + ":" + wsPort + "/live"
         ));
     }
 
@@ -422,7 +448,7 @@ public class CloudHttpServer {
             serverInfo.put("networkMode", server.networkMode);
             serverInfo.put("diskReadBytes", server.diskReadBytes);
             serverInfo.put("diskWriteBytes", server.diskWriteBytes);  // FIX: war server.ram
-            serverInfo.put("port", server.port);  // NEU: Port hinzugefÃ¼gt
+            serverInfo.put("port", server.port);  // NEU: Port hinzugefuegt
             serverInfo.put("lastUpdate", server.lastUpdate);  // FIX: statt getStartTime()
             servers.add(serverInfo);
         });
@@ -1195,6 +1221,47 @@ public class CloudHttpServer {
         return sslContext;
     }
 
+    private HttpServer bindHttpServerWithFallback(int preferredPort, SSLContext sslContext) throws IOException {
+        IOException last = null;
+        for (int attempt = 1; attempt <= PORT_BIND_RETRIES; attempt++) {
+            for (int offset = 0; offset <= PORT_FALLBACK_RANGE; offset++) {
+                int candidate = preferredPort + offset;
+                try {
+                    HttpServer candidateServer;
+                    if (tlsEnabled && sslContext != null) {
+                        HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress(candidate), 0);
+                        httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext));
+                        candidateServer = httpsServer;
+                    } else {
+                        candidateServer = HttpServer.create(new InetSocketAddress(candidate), 0);
+                    }
+                    if (offset > 0) {
+                        ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                                ConsoleColors.getCurrentTime() + " API-Port belegt, nutze Fallback-Port " + candidate);
+                    }
+                    port = candidate;
+                    return candidateServer;
+                } catch (IOException ex) {
+                    last = ex;
+                }
+            }
+
+            if (attempt < PORT_BIND_RETRIES) {
+                ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                        ConsoleColors.getCurrentTime() + " API-Port-Bind fehlgeschlagen (Versuch " + attempt +
+                        "), erneuter Versuch...");
+                try {
+                    Thread.sleep(PORT_RETRY_DELAY_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("API-Port-Bind unterbrochen", interrupted);
+                }
+            }
+        }
+        throw new IOException("Kein freier API-Port im Bereich " + preferredPort + "-" + (preferredPort + PORT_FALLBACK_RANGE),
+                last);
+    }
+
     private void addMetricsHistory(Map<String, Object> snapshot) {
         synchronized (metricHistory) {
             metricHistory.addLast(new HashMap<>(snapshot));
@@ -1574,6 +1641,14 @@ public class CloudHttpServer {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " HTTP-Server gestoppt");
         }
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public int getWsPort() {
+        return wsPort;
     }
 }
 

@@ -149,7 +149,7 @@ public class ConfigManager {
 
             // API Configuration
             masterConfigData.set("CloudMaster.API.Enabled", true);
-            masterConfigData.set("CloudMaster.API.Port", 8080);
+            masterConfigData.set("CloudMaster.API.Port", 8081);
             masterConfigData.set("CloudMaster.API.AllowedOrigins", "*");
             masterConfigData.set("CloudMaster.API.AdminKey", java.util.UUID.randomUUID().toString());
             masterConfigData.set("CloudMaster.API.DashboardKey", java.util.UUID.randomUUID().toString());
