@@ -23,11 +23,13 @@ public class CloudHttpServerIntegrationTest {
             .connectTimeout(Duration.ofSeconds(2))
             .build();
     private static CloudHttpServer server;
+    private static String baseUrl;
 
     @BeforeAll
-    static void bootServer() throws InterruptedException {
+    static void bootServer() throws Exception {
         server = new CloudHttpServer();
-        Thread.sleep(400);
+        baseUrl = "http://localhost:" + server.getPort();
+        waitForServerReady();
     }
 
     @AfterAll
@@ -39,7 +41,7 @@ public class CloudHttpServerIntegrationTest {
 
     @Test
     void dashboardContainsTailwindAndAuthUi() throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:8080/dashboard"))
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/dashboard"))
                 .GET()
                 .build();
         HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -54,7 +56,7 @@ public class CloudHttpServerIntegrationTest {
         String adminKey = keyByName("admin");
 
         HttpResponse<String> meViewer = sendJson(
-                "http://localhost:8080/api/v1/auth/me",
+                baseUrl + "/api/v1/auth/me",
                 "GET",
                 dashboardKey,
                 null
@@ -64,7 +66,7 @@ public class CloudHttpServerIntegrationTest {
         Assertions.assertEquals("VIEWER", meData.get("role"));
 
         HttpResponse<String> rotateAsViewer = sendJson(
-                "http://localhost:8080/api/v1/auth/rotate",
+                baseUrl + "/api/v1/auth/rotate",
                 "POST",
                 dashboardKey,
                 "{\"keyName\":\"dashboard\"}"
@@ -72,7 +74,7 @@ public class CloudHttpServerIntegrationTest {
         Assertions.assertEquals(401, rotateAsViewer.statusCode());
 
         HttpResponse<String> rotateAsAdmin = sendJson(
-                "http://localhost:8080/api/v1/auth/rotate",
+                baseUrl + "/api/v1/auth/rotate",
                 "POST",
                 adminKey,
                 "{\"keyName\":\"dashboard\"}"
@@ -104,5 +106,25 @@ public class CloudHttpServerIntegrationTest {
         f.setAccessible(true);
         Map<String, String> keys = (Map<String, String>) f.get(server);
         return keys.get(keyName);
+    }
+
+    private static void waitForServerReady() throws Exception {
+        Exception last = null;
+        for (int i = 0; i < 40; i++) {
+            try {
+                HttpRequest ping = HttpRequest.newBuilder(URI.create(baseUrl + "/api/v1/health"))
+                        .timeout(Duration.ofSeconds(2))
+                        .GET()
+                        .build();
+                HttpResponse<String> res = HTTP.send(ping, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (res.statusCode() == 200) {
+                    return;
+                }
+            } catch (Exception ex) {
+                last = ex;
+            }
+            Thread.sleep(100);
+        }
+        throw new IllegalStateException("Server wurde nicht rechtzeitig erreichbar: " + baseUrl, last);
     }
 }
