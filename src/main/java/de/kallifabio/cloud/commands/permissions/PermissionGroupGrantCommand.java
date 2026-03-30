@@ -28,7 +28,7 @@ public class PermissionGroupGrantCommand extends BaseCloudCommand {
             group.permissions.add(permission);
         }
         master().getDataStore().upsertPermissionGroup(group);
-        info("Permission hinzugefuegt: " + groupName + " -> " + permission);
+        info("Permission hinzugefügt: " + groupName + " -> " + permission);
         return true;
     }
 

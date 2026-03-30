@@ -4,6 +4,7 @@ import de.kallifabio.cloud.commands.core.HelpCommand;
 import de.kallifabio.cloud.commands.core.ListCommand;
 import de.kallifabio.cloud.commands.core.NetworkDoctorCommand;
 import de.kallifabio.cloud.commands.core.ReloadConfigCommand;
+import de.kallifabio.cloud.commands.core.RestartStatusCommand;
 import de.kallifabio.cloud.commands.core.SetupCommand;
 import de.kallifabio.cloud.commands.core.StatusCommand;
 import de.kallifabio.cloud.commands.console.ScreenCommand;
@@ -77,6 +78,7 @@ public class CommandHandler {
         ListCommand list = new ListCommand();
         StatusCommand status = new StatusCommand();
         ReloadConfigCommand reload = new ReloadConfigCommand();
+        RestartStatusCommand restartStatus = new RestartStatusCommand();
         SetupCommand setup = new SetupCommand();
         NetworkDoctorCommand networkDoctor = new NetworkDoctorCommand();
         HelpCommand help = new HelpCommand(this);
@@ -132,6 +134,7 @@ public class CommandHandler {
         registerWithAlias("list", list, "ls");
         registerWithAlias("status", status);
         registerWithAlias("reloadconfig", reload, "reload");
+        registerWithAlias("restartstatus", restartStatus, "rstatus");
         registerWithAlias("setup", setup, "setupcheck");
         registerWithAlias("networkdoctor", networkDoctor, "netdoc");
         registerWithAlias("help", help);
@@ -211,7 +214,7 @@ public class CommandHandler {
 
         if (command == null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + "Unbekannter Befehl: " + commandName);
-            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + "Tippe 'help' fuer eine Liste aller Commands");
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + "Tippe 'help' für eine Liste aller Commands");
             return false;
         }
 

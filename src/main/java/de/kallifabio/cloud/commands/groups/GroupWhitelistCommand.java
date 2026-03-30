@@ -24,7 +24,7 @@ public class GroupWhitelistCommand extends BaseCloudCommand {
             return false;
         }
         master().reloadConfiguration("groupwhitelist:" + sender);
-        info("Whitelist fuer " + group + " gesetzt: " + whitelist.size() + " Eintraege");
+        info("Whitelist für " + group + " gesetzt: " + whitelist.size() + " Einträge");
         return true;
     }
 

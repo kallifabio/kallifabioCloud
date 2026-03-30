@@ -20,7 +20,7 @@ public class QueueCommand extends BaseCloudCommand {
 
     @Override
     public String getDescription() {
-        return "Zeigt Queue-Groessen.";
+        return "Zeigt Queue-Größen.";
     }
 
     @Override

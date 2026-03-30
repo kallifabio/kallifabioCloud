@@ -17,7 +17,7 @@ public class GroupMaintenanceCommand extends BaseCloudCommand {
             return false;
         }
         master().reloadConfiguration("groupmaintenance:" + sender);
-        info("Maintenance fuer " + args[0] + " = " + maintenance);
+        info("Maintenance für " + args[0] + " = " + maintenance);
         return true;
     }
 

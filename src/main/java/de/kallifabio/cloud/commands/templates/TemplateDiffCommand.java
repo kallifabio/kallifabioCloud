@@ -17,7 +17,7 @@ public class TemplateDiffCommand extends BaseCloudCommand {
             info("Keine Template-Aenderungen erkannt.");
             return true;
         }
-        info("Template-Diff fuer " + args[0] + ":");
+        info("Template-Diff für " + args[0] + ":");
         diff.forEach(d -> info(" - " + d));
         return true;
     }

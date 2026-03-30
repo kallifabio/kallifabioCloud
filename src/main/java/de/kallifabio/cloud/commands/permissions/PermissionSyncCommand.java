@@ -11,7 +11,7 @@ public class PermissionSyncCommand extends BaseCloudCommand {
             return false;
         }
         master().syncPermissionsForPlayer(args[0]);
-        info("Permission-Sync getriggert fuer " + args[0]);
+        info("Permission-Sync getriggert für " + args[0]);
         return true;
     }
 

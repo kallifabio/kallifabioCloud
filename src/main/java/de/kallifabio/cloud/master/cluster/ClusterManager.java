@@ -135,7 +135,7 @@ public class ClusterManager {
         // Broadcast to all cluster peers
         broadcastToPeers(heartbeat);
 
-        // Auch als ClusterSync Message fuer handleHeartbeat
+        // Auch als ClusterSync Message für handleHeartbeat
         Message.ClusterSync syncHeartbeat = new Message.ClusterSync();
         syncHeartbeat.masterId = masterId;
         syncHeartbeat.messageType = "HEARTBEAT";
@@ -283,7 +283,7 @@ public class ClusterManager {
         // Sync state from other masters
         // Resume auto-scaling decisions
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Primary-Verantwortlichkeiten uebernommen");
+                " Primary-Verantwortlichkeiten übernommen");
     }
 
     private void joinCluster() {
@@ -344,8 +344,8 @@ public class ClusterManager {
             // New node discovered - mit 5 Parametern
             node = new ClusterNode(
                     senderId,
-                    "", // hostname wird spaeter aktualisiert
-                    0,  // port wird spaeter aktualisiert
+                    "", // hostname wird später aktualisiert
+                    0,  // port wird später aktualisiert
                     false, // nicht primary
                     System.currentTimeMillis()
             );
@@ -354,7 +354,7 @@ public class ClusterManager {
                     " Neuer Cluster-Knoten entdeckt: " + senderId);
         }
 
-        // Update heartbeat mit Metriken falls verfuegbar
+        // Update heartbeat mit Metriken falls verfügbar
         if (sync.data.containsKey("connectedWrappers") && sync.data.containsKey("runningServers")) {
             int wrappers = (Integer) sync.data.getOrDefault("connectedWrappers", 0);
             int servers = (Integer) sync.data.getOrDefault("runningServers", 0);

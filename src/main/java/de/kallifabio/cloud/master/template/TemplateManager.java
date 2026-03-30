@@ -45,7 +45,7 @@ public class TemplateManager {
                 }
             }
         } catch (Exception e) {
-            CentralLogger.error("TemplateManager", "Template-Diff fehlgeschlagen fuer " + groupName, e);
+            CentralLogger.error("TemplateManager", "Template-Diff fehlgeschlagen für " + groupName, e);
         }
 
         return changed;

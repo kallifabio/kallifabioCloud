@@ -12,10 +12,10 @@ public class ServerPortCommand extends BaseCloudCommand {
         }
         int port = master().getServerPort(args[0]);
         if (port < 0) {
-            error("Kein Port fuer Server " + args[0] + " gefunden.");
+            error("Kein Port für Server " + args[0] + " gefunden.");
             return false;
         }
-        info(args[0] + " laeuft auf Port " + port);
+        info(args[0] + " läuft auf Port " + port);
         return true;
     }
 

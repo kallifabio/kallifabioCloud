@@ -21,7 +21,7 @@ public class TemplateRollbackCommand extends BaseCloudCommand {
 
     @Override
     public String getDescription() {
-        return "Rollt Template auf Version zurueck.";
+        return "Rollt Template auf Version zurück.";
     }
 
     @Override

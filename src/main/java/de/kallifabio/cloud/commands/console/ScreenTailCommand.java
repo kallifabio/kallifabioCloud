@@ -19,7 +19,7 @@ public class ScreenTailCommand extends BaseCloudCommand {
             try {
                 lines = Math.max(1, Integer.parseInt(args[1]));
             } catch (NumberFormatException ignored) {
-                warn("Ungueltige Anzahl, verwende 20.");
+                warn("Ungültige Anzahl, verwende 20.");
             }
         }
 

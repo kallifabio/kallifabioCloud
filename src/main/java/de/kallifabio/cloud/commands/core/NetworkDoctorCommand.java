@@ -107,6 +107,7 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                 changed = true;
             }
             Set<String> routes = new HashSet<>(serversSection.getKeys(false));
+            List<String> crossHostRouteMismatches = new ArrayList<>();
 
             List<String> missingRoutes = new ArrayList<>();
             for (String backend : runningBackendNames) {
@@ -115,15 +116,16 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                 }
             }
             if (missingRoutes.isEmpty()) {
-                info("[OK] Proxy " + proxy.serverName + " hat Routen fuer alle laufenden Backends.");
+                info("[OK] Proxy " + proxy.serverName + " hat Routen für alle laufenden Backends.");
             } else {
                 warn("[WARN] Proxy " + proxy.serverName + " fehlende Routen: " + String.join(", ", missingRoutes));
                 ok = false;
                 if (fix) {
                     for (ServerInstance backend : backends) {
                         if (routes.contains(backend.serverName)) continue;
+                        String targetHost = resolveBackendRouteHost(backend);
                         serversSection.set(backend.serverName + ".motd", "&a" + backend.serverName);
-                        serversSection.set(backend.serverName + ".address", "127.0.0.1:" + backend.port);
+                        serversSection.set(backend.serverName + ".address", targetHost + ":" + backend.port);
                         serversSection.set(backend.serverName + ".restricted", false);
                         routes.add(backend.serverName);
                     }
@@ -152,7 +154,13 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                 }
                 String address = cfg.getString("servers." + backend.serverName + ".address", "");
                 String expectedAddress = "127.0.0.1:" + backend.port;
+                String expectedRouteHost = resolveBackendRouteHost(backend);
+                expectedAddress = expectedRouteHost + ":" + backend.port;
                 if (!expectedAddress.equalsIgnoreCase(address)) {
+                    String actualHost = extractHost(address);
+                    if (!actualHost.equalsIgnoreCase(expectedRouteHost)) {
+                        crossHostRouteMismatches.add(backend.serverName + " (" + actualHost + " != " + expectedRouteHost + ")");
+                    }
                     warn("[WARN] Route " + backend.serverName + " zeigt auf " + address +
                             " (erwartet " + expectedAddress + ")");
                     ok = false;
@@ -165,6 +173,19 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                         changed = true;
                         info("[FIX] Route " + backend.serverName + " auf " + expectedAddress + " gesetzt.");
                     }
+                }
+            }
+
+            if (staleRoutes.isEmpty() && crossHostRouteMismatches.isEmpty()) {
+                info("[REPORT] Proxy " + proxy.serverName + ": stale=0, cross-host=0");
+            } else {
+                warn("[REPORT] Proxy " + proxy.serverName + ": stale=" + staleRoutes.size() +
+                        ", cross-host=" + crossHostRouteMismatches.size());
+                if (!staleRoutes.isEmpty()) {
+                    warn("[REPORT]   stale routes: " + String.join(", ", staleRoutes));
+                }
+                if (!crossHostRouteMismatches.isEmpty()) {
+                    warn("[REPORT]   cross-host mismatches: " + String.join(", ", crossHostRouteMismatches));
                 }
             }
 
@@ -289,7 +310,7 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                 if (fix && (!onlineModeFalse || !hasOnlineMode || (enforceBackendBind && (!serverIpExpected || !hasServerIp)))) {
                     try {
                         Files.write(propertiesFile.toPath(), changed);
-                        info("[FIX] Backend " + backend.serverName + ": server.properties gehaertet.");
+                        info("[FIX] Backend " + backend.serverName + ": server.properties gehärtet.");
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
@@ -369,9 +390,42 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
         return configured.trim();
     }
 
+    private String resolveBackendRouteHost(ServerInstance backend) {
+        if (backend == null) {
+            return "127.0.0.1";
+        }
+        for (de.kallifabio.cloud.master.WrapperConnection wrapper : master().getConnectedWrappers().values()) {
+            if (wrapper == null || wrapper.wrapperId == null || !wrapper.wrapperId.equalsIgnoreCase(backend.wrapperId)) {
+                continue;
+            }
+            if (wrapper.routeHost != null && !wrapper.routeHost.isBlank()) {
+                return wrapper.routeHost.trim();
+            }
+            if (wrapper.hostname != null && !wrapper.hostname.isBlank()) {
+                return wrapper.hostname.trim();
+            }
+        }
+        String configured = master().getConfigManager().getMaster("CloudMaster.Network.GameHost");
+        if (configured == null || configured.isBlank()) {
+            return "127.0.0.1";
+        }
+        return configured.trim();
+    }
+
+    private String extractHost(String address) {
+        if (address == null || address.isBlank()) {
+            return "";
+        }
+        int idx = address.lastIndexOf(':');
+        if (idx <= 0) {
+            return address.trim();
+        }
+        return address.substring(0, idx).trim();
+    }
+
     @Override
     public String getDescription() {
-        return "Prueft Proxy/Backend-Netzwerk-Konfiguration live (online_mode, ip_forward, routes, forwarding.secret, backend-bind).";
+        return "Prüft Proxy/Backend-Netzwerk-Konfiguration live (online_mode, ip_forward, routes, forwarding.secret, backend-bind).";
     }
 
     @Override

@@ -114,7 +114,7 @@ public class HelpCommand extends BaseCloudCommand {
 
     @Override
     public String getDescription() {
-        return "Zeigt alle verfuegbaren Commands.";
+        return "Zeigt alle verfügbaren Commands.";
     }
 
     @Override

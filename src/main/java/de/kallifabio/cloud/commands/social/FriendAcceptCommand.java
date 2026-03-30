@@ -14,7 +14,7 @@ public class FriendAcceptCommand extends FriendAddCommand {
         String accepter = args[0];
         String requester = master().getDataStore().consumeFriendRequest(accepter);
         if (requester == null) {
-            error("Keine offene Friend-Request fuer " + accepter);
+            error("Keine offene Friend-Request für " + accepter);
             return false;
         }
 

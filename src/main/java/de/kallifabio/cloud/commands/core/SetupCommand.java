@@ -19,7 +19,7 @@ public class SetupCommand extends BaseCloudCommand {
         if (!ensureMaster()) return false;
 
         boolean fix = args.length > 0 && ("--fix".equalsIgnoreCase(args[0]) || "fix".equalsIgnoreCase(args[0]));
-        info("Setup-Check gestartet" + (fix ? " (mit Auto-Fix fuer fehlende Template-Ordner)" : ""));
+        info("Setup-Check gestartet" + (fix ? " (mit Auto-Fix für fehlende Template-Ordner)" : ""));
 
         Map<String, Object> report = SetupValidator.buildReport(master().getConfigManager(), fix);
         @SuppressWarnings("unchecked")
@@ -67,7 +67,7 @@ public class SetupCommand extends BaseCloudCommand {
 
     @Override
     public String getDescription() {
-        return "Prueft Template/JAR-Setup aller ServerGroups und erstellt einen Report.";
+        return "Prüft Template/JAR-Setup aller ServerGroups und erstellt einen Report.";
     }
 
     @Override

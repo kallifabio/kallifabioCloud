@@ -25,7 +25,7 @@ public class TemplatePullCommand extends BaseCloudCommand {
             return false;
         }
         if (Launcher.getWrapper() == null) {
-            error("Kein lokaler Wrapper verfuegbar (nur fuer lokale/running Server moeglich).");
+            error("Kein lokaler Wrapper verfügbar (nur für lokale/running Server möglich).");
             return false;
         }
 

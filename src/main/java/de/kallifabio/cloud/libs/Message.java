@@ -100,6 +100,7 @@ public class Message {
         public String serverName;
         public String groupName;
         public int port;
+        public String targetHost;
         public ServerCommand() {}
     }
 
@@ -107,6 +108,7 @@ public class Message {
     public static class WrapperRegister {
         public String wrapperId;
         public String hostname;
+        public String routeHost;
         public int maxMemory;
         public int availableMemory;
         public String version;

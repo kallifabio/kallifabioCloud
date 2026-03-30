@@ -21,7 +21,7 @@ public class TemplatePushCommand extends BaseCloudCommand {
             return false;
         }
         if (Launcher.getWrapper() == null) {
-            error("Kein lokaler Wrapper verfuegbar (nur fuer lokale/running Server moeglich).");
+            error("Kein lokaler Wrapper verfügbar (nur für lokale/running Server möglich).");
             return false;
         }
 
@@ -64,7 +64,7 @@ public class TemplatePushCommand extends BaseCloudCommand {
 
             if (restartAfter) {
                 master().restartServer(serverName);
-                info("Server wird fuer saubere Uebernahme neugestartet: " + serverName);
+                info("Server wird für saubere Übernahme neugestartet: " + serverName);
             } else {
                 warn("Hinweis: Manche Dateien greifen erst nach restartserver " + serverName);
             }

@@ -25,7 +25,7 @@ public class PartyAddCommand extends BaseCloudCommand {
             members.add(player);
             master().getDataStore().setPartyMembers(partyId, leader, members);
         }
-        info("Spieler zur Party hinzugefuegt: " + player + " -> " + partyId);
+        info("Spieler zur Party hinzugefügt: " + player + " -> " + partyId);
         return true;
     }
 

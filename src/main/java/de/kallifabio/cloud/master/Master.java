@@ -65,13 +65,15 @@ public class Master {
     // Connected Wrappers Management
     private final Map<Integer, WrapperConnection> connectedWrappers = new ConcurrentHashMap<>();
     private final Map<String, ServerInstance> runningServers = new ConcurrentHashMap<>();
+    private final Set<String> restartInProgress = ConcurrentHashMap.newKeySet();
+    private final Map<String, Integer> restartRetryCounts = new ConcurrentHashMap<>();
 
     // Port Management
     private int nextAvailablePort;
     private final Set<Integer> usedPorts = ConcurrentHashMap.newKeySet();
     private final Map<String, Integer> serverPorts = new ConcurrentHashMap<>();
 
-    // Feste Ports fuer erste Server
+    // Feste Ports für erste Server
     private int FIRST_PROXY_PORT;
     private int FIRST_LOBBY_PORT;
 
@@ -82,6 +84,7 @@ public class Master {
     private static final long SERVER_HEARTBEAT_TIMEOUT_MS = 30000;
     private static final long SERVER_STARTING_TIMEOUT_MS = 120000;
     private static final long WRAPPER_PONG_TIMEOUT_MS = 20000;
+    private static final int RESTART_PORT_RETRY_LIMIT = 8;
     private volatile boolean shuttingDown = false;
     private volatile boolean shutdownCompleted = false;
 
@@ -232,13 +235,13 @@ public class Master {
         kryo.register(Message.APIRequest.class);
         kryo.register(Message.APIResponse.class);
 
-        // Arrays fuer byte[]
+        // Arrays für byte[]
         kryo.register(byte[].class);
     }
 
     // Port Management Methods
     public synchronized int assignPort(String serverName, String groupName) {
-        // Feste Ports fuer erste Server (aus Config)
+        // Feste Ports für erste Server (aus Config)
         if (serverName.equals("Proxy-1")) {
             usedPorts.add(FIRST_PROXY_PORT);
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -253,12 +256,12 @@ public class Master {
             return FIRST_LOBBY_PORT;
         }
 
-        // Fuer alle anderen Server: Dynamische Zuweisung
+        // Für alle anderen Server: Dynamische Zuweisung
         int port = nextAvailablePort;
         while (usedPorts.contains(port) || !isPortAvailable(port)) {
             port++;
             if (port > 65535) {
-                throw new RuntimeException("Keine verfuegbaren Ports mehr!");
+                throw new RuntimeException("Keine verfügbaren Ports mehr!");
             }
         }
         usedPorts.add(port);
@@ -423,6 +426,7 @@ public class Master {
                 message.wrapperId,
                 connection,
                 message.hostname,
+                message.routeHost,
                 message.maxMemory,
                 message.availableMemory
         );
@@ -491,7 +495,27 @@ public class Master {
                     " Server Status: " + message.serverName + " -> " + message.status);
 
             if ("ONLINE".equals(message.status)) {
+                restartInProgress.remove(message.serverName);
+                restartRetryCounts.remove(message.serverName);
+                if (isProxyGroup(instance.groupName)) {
+                    syncAllBackendRoutesToProxyWrapper(instance.wrapperId);
+                } else {
+                    syncBackendRouteToProxies(instance, true);
+                }
                 autoScalingManager.checkScalingNeeded(message.serverName);
+            } else if ("OFFLINE".equalsIgnoreCase(message.status)
+                    || "KILLED".equalsIgnoreCase(message.status)
+                    || "CRASHED".equalsIgnoreCase(message.status)) {
+                restartInProgress.remove(message.serverName);
+                restartRetryCounts.remove(message.serverName);
+                if (!isProxyGroup(instance.groupName)) {
+                    syncBackendRouteToProxies(instance, false);
+                }
+                Integer releasedPort = serverPorts.remove(message.serverName);
+                if (releasedPort != null) {
+                    releasePort(releasedPort);
+                }
+                runningServers.remove(message.serverName);
             }
         }
     }
@@ -750,6 +774,82 @@ public class Master {
         }
     }
 
+    private boolean isProxyGroup(String groupName) {
+        if (groupName == null) {
+            return false;
+        }
+        String g = groupName.toLowerCase(Locale.ROOT);
+        return g.contains("proxy") || g.contains("bungee") || g.contains("waterfall") || g.contains("velocity");
+    }
+
+    private String resolveWrapperRouteHost(String wrapperId) {
+        WrapperConnection wrapper = getWrapperById(wrapperId);
+        if (wrapper != null && wrapper.routeHost != null && !wrapper.routeHost.isBlank()) {
+            return wrapper.routeHost;
+        }
+        String fallback = configManager.getMaster("CloudMaster.Network.GameHost");
+        if (fallback == null || fallback.isBlank()) {
+            return "127.0.0.1";
+        }
+        return fallback.trim();
+    }
+
+    private void syncBackendRouteToProxies(ServerInstance backend, boolean register) {
+        if (backend == null || isProxyGroup(backend.groupName) || backend.port <= 0) {
+            return;
+        }
+        Set<String> proxyWrapperIds = new HashSet<>();
+        for (ServerInstance serverInstance : runningServers.values()) {
+            if (!isProxyGroup(serverInstance.groupName)) {
+                continue;
+            }
+            if (!"ONLINE".equalsIgnoreCase(serverInstance.status) && !"STARTING".equalsIgnoreCase(serverInstance.status)) {
+                continue;
+            }
+            proxyWrapperIds.add(serverInstance.wrapperId);
+        }
+        if (proxyWrapperIds.isEmpty()) {
+            return;
+        }
+        String routeHost = resolveWrapperRouteHost(backend.wrapperId);
+        for (String proxyWrapperId : proxyWrapperIds) {
+            WrapperConnection proxyWrapper = getWrapperById(proxyWrapperId);
+            if (proxyWrapper == null) {
+                continue;
+            }
+            Message.ServerCommand routeUpdate = new Message.ServerCommand();
+            routeUpdate.command = register ? "REGISTER_BACKEND_ROUTE" : "UNREGISTER_BACKEND_ROUTE";
+            routeUpdate.serverName = backend.serverName;
+            routeUpdate.port = backend.port;
+            routeUpdate.targetHost = routeHost;
+            proxyWrapper.connection.sendTCP(routeUpdate);
+        }
+    }
+
+    private void syncAllBackendRoutesToProxyWrapper(String proxyWrapperId) {
+        WrapperConnection proxyWrapper = getWrapperById(proxyWrapperId);
+        if (proxyWrapper == null) {
+            return;
+        }
+        for (ServerInstance backend : runningServers.values()) {
+            if (isProxyGroup(backend.groupName)) {
+                continue;
+            }
+            if (backend.port <= 0) {
+                continue;
+            }
+            if (!"ONLINE".equalsIgnoreCase(backend.status) && !"STARTING".equalsIgnoreCase(backend.status)) {
+                continue;
+            }
+            Message.ServerCommand routeUpdate = new Message.ServerCommand();
+            routeUpdate.command = "REGISTER_BACKEND_ROUTE";
+            routeUpdate.serverName = backend.serverName;
+            routeUpdate.port = backend.port;
+            routeUpdate.targetHost = resolveWrapperRouteHost(backend.wrapperId);
+            proxyWrapper.connection.sendTCP(routeUpdate);
+        }
+    }
+
     private void startEnterpriseServices() {
         executorService.scheduleAtFixedRate(() -> {
             checkWrapperHealth();
@@ -801,7 +901,7 @@ public class Master {
         if (shuttingDown) {
             return;
         }
-        // Pruefe ob Auto-Start aktiviert ist
+        // Prüfe ob Auto-Start aktiviert ist
         if (!configManager.isAutoStartEnabled()) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Auto-Start ist deaktiviert");
@@ -811,7 +911,7 @@ public class Master {
         // Warte bis mindestens ein Wrapper verbunden ist
         if (connectedWrappers.isEmpty()) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Kein Wrapper verfuegbar fuer Auto-Start - Retry in 5s");
+                    ConsoleColors.getCurrentTime() + " Kein Wrapper verfügbar für Auto-Start - Retry in 5s");
 
             executorService.schedule(() -> {
                 if (!shuttingDown) {
@@ -822,7 +922,7 @@ public class Master {
         }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Starte Auto-Start fuer konfigurierte Server...");
+                " Starte Auto-Start für konfigurierte Server...");
 
         // Aus Config laden
         List<String> autoStartGroups = configManager.getAutoStartGroups();
@@ -835,7 +935,7 @@ public class Master {
             for (int i = 1; i <= count; i++) {
                 String serverName = groupName + "-" + i;
 
-                // Nur starten wenn noch nicht laeuft
+                // Nur starten wenn noch nicht läuft
                 if (!runningServers.containsKey(serverName)) {
                     try {
                         startServer(serverName, groupName);
@@ -868,7 +968,7 @@ public class Master {
             } else if (now - wrapper.lastPong > WRAPPER_PONG_TIMEOUT_MS) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " Wrapper " + wrapper.wrapperId +
-                        " hat kein Pong gesendet - Verbindung wird geprueft");
+                        " hat kein Pong gesendet - Verbindung wird geprüft");
                 wrapper.connection.close();
             }
         });
@@ -903,8 +1003,12 @@ public class Master {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " STARTING-Timeout bei " + server.serverName +
                         " - stoppe und starte neu");
+                if (!restartInProgress.add(server.serverName)) {
+                    continue;
+                }
                 forceStopServer(server.serverName);
-                executorService.schedule(() -> startServer(server.serverName, server.groupName), 3, TimeUnit.SECONDS);
+                Integer preferredPort = serverPorts.getOrDefault(server.serverName, server.port);
+                scheduleStartWithPortRetry(server.serverName, server.groupName, preferredPort, 1);
             }
         }
     }
@@ -912,6 +1016,9 @@ public class Master {
     private void handleServerFailure(ServerInstance server, boolean recover) {
         if (shuttingDown) {
             recover = false;
+        }
+        if (!isProxyGroup(server.groupName)) {
+            syncBackendRouteToProxies(server, false);
         }
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server-Ausfall erkannt: " + server.serverName + " - Initiiere Wiederherstellung");
@@ -940,7 +1047,7 @@ public class Master {
         String fallback = loadBalancerManager.getBestServer("Lobby", "recovery-" + System.currentTimeMillis());
         if (fallback == null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Kein Fallback-Lobby-Server verfuegbar fuer " + failedServer.serverName);
+                    ConsoleColors.getCurrentTime() + " Kein Fallback-Lobby-Server verfügbar für " + failedServer.serverName);
             monitoringService.publishEvent("NO_FALLBACK_SERVER", Map.of(
                     "failedServer", failedServer.serverName,
                     "group", failedServer.groupName
@@ -971,6 +1078,47 @@ public class Master {
         ));
     }
 
+    private void scheduleStartWithPortRetry(String serverName, String groupName, Integer preferredPort, int attempt) {
+        if (shuttingDown) {
+            restartInProgress.remove(serverName);
+            restartRetryCounts.remove(serverName);
+            return;
+        }
+        restartRetryCounts.put(serverName, attempt);
+        if (attempt > RESTART_PORT_RETRY_LIMIT) {
+            restartInProgress.remove(serverName);
+            restartRetryCounts.remove(serverName);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Neustart von " + serverName +
+                    " abgebrochen: Port bleibt belegt.");
+            return;
+        }
+
+        ServerInstance current = runningServers.get(serverName);
+        if (current != null && "STOPPING".equalsIgnoreCase(current.status)) {
+            long backoffSeconds = Math.min(3L, attempt);
+            executorService.schedule(() ->
+                            scheduleStartWithPortRetry(serverName, groupName, preferredPort, attempt + 1),
+                    backoffSeconds,
+                    TimeUnit.SECONDS);
+            return;
+        }
+
+        if (preferredPort != null && preferredPort > 0 && !isPortAvailable(preferredPort)) {
+            long backoffSeconds = Math.min(5L, attempt);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Port " + preferredPort + " ist noch belegt, Retry " +
+                    attempt + "/" + RESTART_PORT_RETRY_LIMIT + " in " + backoffSeconds + "s");
+            executorService.schedule(() ->
+                            scheduleStartWithPortRetry(serverName, groupName, preferredPort, attempt + 1),
+                    backoffSeconds,
+                    TimeUnit.SECONDS);
+            return;
+        }
+
+        startServer(serverName, groupName);
+    }
+
     public void startServer(String serverName, String groupName) {
         if (shuttingDown) {
             return;
@@ -979,7 +1127,9 @@ public class Master {
 
         if (bestWrapper == null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " FEHLER: Kein verfuegbarer Wrapper fuer Server " + serverName);
+                    " FEHLER: Kein verfügbarer Wrapper für Server " + serverName);
+            restartInProgress.remove(serverName);
+            restartRetryCounts.remove(serverName);
             return;
         }
 
@@ -1024,6 +1174,9 @@ public class Master {
                     " FEHLER: Server " + serverName + " nicht gefunden");
             return;
         }
+        if (!isProxyGroup(instance.groupName)) {
+            syncBackendRouteToProxies(instance, false);
+        }
 
         WrapperConnection wrapper = getWrapperById(instance.wrapperId);
         if (wrapper != null) {
@@ -1037,21 +1190,25 @@ public class Master {
                     "wrapper", wrapper.wrapperId,
                     "mode", "graceful"
             ));
+            instance.status = "STOPPING";
+            return;
         }
-
-        // Release port
-        Integer port = serverPorts.remove(serverName);
-        if (port != null) {
-            releasePort(port);
+        Integer releasedPort = serverPorts.remove(serverName);
+        if (releasedPort != null) {
+            releasePort(releasedPort);
         }
-
         runningServers.remove(serverName);
+        restartInProgress.remove(serverName);
+        restartRetryCounts.remove(serverName);
     }
 
     public void forceStopServer(String serverName) {
         ServerInstance instance = runningServers.get(serverName);
         if (instance == null) {
             return;
+        }
+        if (!isProxyGroup(instance.groupName)) {
+            syncBackendRouteToProxies(instance, false);
         }
 
         WrapperConnection wrapper = getWrapperById(instance.wrapperId);
@@ -1066,13 +1223,16 @@ public class Master {
                     "wrapper", wrapper.wrapperId,
                     "mode", "force"
             ));
+            instance.status = "STOPPING";
+            return;
         }
-
-        Integer port = serverPorts.remove(serverName);
-        if (port != null) {
-            releasePort(port);
+        Integer releasedPort = serverPorts.remove(serverName);
+        if (releasedPort != null) {
+            releasePort(releasedPort);
         }
         runningServers.remove(serverName);
+        restartInProgress.remove(serverName);
+        restartRetryCounts.remove(serverName);
     }
 
     public void restartServer(String serverName) {
@@ -1081,11 +1241,15 @@ public class Master {
         }
         ServerInstance instance = runningServers.get(serverName);
         if (instance != null) {
+            if (!restartInProgress.add(serverName)) {
+                ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                        ConsoleColors.getCurrentTime() + " Neustart bereits in Arbeit: " + serverName);
+                return;
+            }
             String groupName = instance.groupName;
+            Integer preferredPort = serverPorts.getOrDefault(serverName, instance.port);
             stopServer(serverName);
-            executorService.schedule(() -> {
-                startServer(serverName, groupName);
-            }, 5, TimeUnit.SECONDS);
+            scheduleStartWithPortRetry(serverName, groupName, preferredPort, 1);
         }
     }
 
@@ -1159,6 +1323,8 @@ public class Master {
     public String getMasterId() { return masterId; }
     public boolean isPrimaryMaster() { return isPrimaryMaster; }
     public void setPrimaryMaster(boolean primary) { this.isPrimaryMaster = primary; }
+    public Set<String> getRestartInProgress() { return Set.copyOf(restartInProgress); }
+    public Map<String, Integer> getRestartRetryCounts() { return new HashMap<>(restartRetryCounts); }
 
     public int getFIRST_LOBBY_PORT() {
         return FIRST_LOBBY_PORT;
@@ -1250,7 +1416,7 @@ public class Master {
         int removed = dataStore.cleanupExpiredSocialPending(System.currentTimeMillis());
         if (removed > 0) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Cleanup: " + removed + " abgelaufene Friend/Party Pending-Eintraege entfernt");
+                    " Cleanup: " + removed + " abgelaufene Friend/Party Pending-Einträge entfernt");
         }
     }
 }

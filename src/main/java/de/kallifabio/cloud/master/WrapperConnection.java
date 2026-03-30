@@ -16,6 +16,7 @@ public class WrapperConnection {
     public final String wrapperId;
     public final Connection connection;
     public final String hostname;
+    public final String routeHost;
 
     // Resources
     public final int maxMemory;
@@ -35,10 +36,11 @@ public class WrapperConnection {
     // Health
     public boolean healthy = true;
 
-    public WrapperConnection(String wrapperId, Connection connection, String hostname, int maxMemory, int availableMemory) {
+    public WrapperConnection(String wrapperId, Connection connection, String hostname, String routeHost, int maxMemory, int availableMemory) {
         this.wrapperId = wrapperId;
         this.connection = connection;
         this.hostname = hostname;
+        this.routeHost = routeHost == null || routeHost.isBlank() ? hostname : routeHost;
         this.maxMemory = maxMemory;
         this.availableMemory = availableMemory;
         this.connectedSince = System.currentTimeMillis();
@@ -46,13 +48,17 @@ public class WrapperConnection {
         this.lastPong = System.currentTimeMillis();
     }
 
-    // Getters (fuer HTTP API)
+    // Getters (für HTTP API)
     public String getWrapperId() {
         return wrapperId;
     }
 
     public String getHostname() {
         return hostname;
+    }
+
+    public String getRouteHost() {
+        return routeHost;
     }
 
     public int getMaxMemory() {
@@ -138,7 +144,7 @@ public class WrapperConnection {
     @Override
     public String toString() {
         return String.format("WrapperConnection{id='%s', hostname='%s', memory=%dMB/%dMB, cpu=%.1f%%, servers=%d}",
-                wrapperId, hostname, getUsedMemory(), maxMemory, cpuUsage, activeServers);
+                wrapperId, routeHost, getUsedMemory(), maxMemory, cpuUsage, activeServers);
     }
 
     @Override

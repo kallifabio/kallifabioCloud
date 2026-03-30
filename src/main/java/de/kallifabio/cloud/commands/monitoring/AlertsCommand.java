@@ -16,7 +16,7 @@ public class AlertsCommand extends BaseCloudCommand {
 
     @Override
     public String getDescription() {
-        return "Zeigt Alert-Zaehler.";
+        return "Zeigt Alert-Zähler.";
     }
 
     @Override

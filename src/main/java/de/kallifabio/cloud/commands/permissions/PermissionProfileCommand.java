@@ -19,7 +19,7 @@ public class PermissionProfileCommand extends BaseCloudCommand {
         List<PermissionGroup> groups = master().getDataStore().getPermissionGroupsForPlayer(playerUuid);
         List<String> tempPermissions = master().getDataStore().getActiveTempPermissions(playerUuid);
 
-        info("Permission-Profil fuer " + playerUuid);
+        info("Permission-Profil für " + playerUuid);
         info("Direkte Permissions: " + (data.permissions == null ? 0 : data.permissions.size()));
         info("Gruppen: " + groups.stream().map(g -> g.name).toList());
         info("Temp-Permissions: " + tempPermissions);

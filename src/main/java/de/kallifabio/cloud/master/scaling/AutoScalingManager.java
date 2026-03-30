@@ -171,7 +171,7 @@ public class AutoScalingManager {
             lastScaleDownTime.put(groupName, System.currentTimeMillis());
         } else {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Scale-Down abgebrochen: kein leerer Server in " + groupName + " verfuegbar");
+                    " Scale-Down abgebrochen: kein leerer Server in " + groupName + " verfügbar");
         }
     }
 
@@ -238,7 +238,7 @@ public class AutoScalingManager {
 
         if (avgLoad > 80.0) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Gruppe " + server.groupName + " koennte Scaling benoetigen (Load: " +
+                    " Gruppe " + server.groupName + " könnte Scaling benoetigen (Load: " +
                     String.format("%.1f%%)", avgLoad));
         }
     }
@@ -294,7 +294,7 @@ public class AutoScalingManager {
     public void updateScalingPolicy(String groupName, ScalingPolicy policy) {
         scalingPolicies.put(groupName, policy);
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Scaling-Policy aktualisiert fuer " + groupName);
+                " Scaling-Policy aktualisiert für " + groupName);
     }
 
     public List<ScalingDecision> getScalingHistory() {

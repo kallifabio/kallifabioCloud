@@ -58,7 +58,7 @@ public class ConsoleScreenManager {
                             handleSwitchCommand(input);
                         } else if (input.equals("/screens")) {
                             printToTerminal(ConsoleColors.YELLOW +
-                                    "Verfuegbare Screens: " + String.join(", ", screens.keySet()));
+                                    "Verfügbare Screens: " + String.join(", ", screens.keySet()));
                         } else if (input.equals("/exit")) {
                             handleExitCommand();
                         } else if (input.equalsIgnoreCase("exit") || input.equalsIgnoreCase("stop")) {
@@ -134,7 +134,7 @@ public class ConsoleScreenManager {
             printToTerminal(ConsoleColors.GREEN + "Wechsel zu Bildschirm: " + screenName);
         } else {
             printToTerminal(ConsoleColors.RED + "Bildschirm '" + screenName + "' existiert nicht.");
-            printToTerminal(ConsoleColors.YELLOW + "Verfuegbare Screens: " + String.join(", ", screens.keySet()));
+            printToTerminal(ConsoleColors.YELLOW + "Verfügbare Screens: " + String.join(", ", screens.keySet()));
         }
     }
 
@@ -144,14 +144,14 @@ public class ConsoleScreenManager {
             return;
         }
         currentScreen = mainScreen;
-        printToTerminal(ConsoleColors.GREEN + "Zurueck zum Hauptbildschirm.");
+        printToTerminal(ConsoleColors.GREEN + "Zurück zum Hauptbildschirm.");
     }
 
     public static void createServerScreen(String serverName) {
         if (!screens.containsKey(serverName)) {
             ConsoleScreen serverScreen = new ConsoleScreen(serverName);
             screens.put(serverName, serverScreen);
-            printToTerminal("Bildschirm fuer Server '" + serverName + "' erstellt.");
+            printToTerminal("Bildschirm für Server '" + serverName + "' erstellt.");
         }
     }
 
@@ -260,7 +260,7 @@ public class ConsoleScreenManager {
         if (!delivered) {
             currentScreen.writeToServer(input);
             printToTerminal(ConsoleColors.YELLOW +
-                    "Server '" + serverName + "' ist nicht lokal verfuegbar (nur Log-Echo).");
+                    "Server '" + serverName + "' ist nicht lokal verfügbar (nur Log-Echo).");
         }
     }
 }

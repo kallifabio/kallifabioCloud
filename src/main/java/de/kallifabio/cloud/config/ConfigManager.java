@@ -149,6 +149,7 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.Network.TcpPort", 54555);
             masterConfigData.set("CloudMaster.Network.UdpPort", 54777);
             masterConfigData.set("CloudMaster.Network.ConnectHost", "127.0.0.1");
+            masterConfigData.set("CloudMaster.Network.GameHost", "127.0.0.1");
 
             // API Configuration
             masterConfigData.set("CloudMaster.API.Enabled", true);
@@ -661,6 +662,11 @@ public class ConfigManager {
         if (!masterConfigData.contains("CloudMaster.Network.ConnectHost")) {
             masterConfigData.set("CloudMaster.Network.ConnectHost",
                     masterConfigData.getString("CloudMaster.Hostname", "127.0.0.1"));
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.GameHost")) {
+            masterConfigData.set("CloudMaster.Network.GameHost",
+                    masterConfigData.getString("CloudMaster.Network.ConnectHost", "127.0.0.1"));
             changed = true;
         }
         if (!masterConfigData.contains("CloudMaster.Network.ProxyBindHost")) {

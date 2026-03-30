@@ -7,13 +7,13 @@ public class ClearAlertsCommand extends BaseCloudCommand {
     public boolean execute(String sender, String[] args) {
         if (!ensureMaster()) return false;
         int cleared = master().getMonitoringService().clearAllAlerts();
-        info("Alerts geloescht: " + cleared);
+        info("Alerts gelöscht: " + cleared);
         return true;
     }
 
     @Override
     public String getDescription() {
-        return "Loescht aktive Alerts.";
+        return "Löscht aktive Alerts.";
     }
 
     @Override

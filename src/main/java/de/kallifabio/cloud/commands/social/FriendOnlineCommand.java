@@ -21,7 +21,7 @@ public class FriendOnlineCommand extends BaseCloudCommand {
 
     @Override
     public String getDescription() {
-        return "Prueft Online-Status eines Spielers.";
+        return "Prüft Online-Status eines Spielers.";
     }
 
     @Override

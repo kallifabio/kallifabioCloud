@@ -100,7 +100,7 @@ public class Serverprocess {
     public void start() throws IOException {
         if (running) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Server " + serverName + " laeuft bereits");
+                    ConsoleColors.getCurrentTime() + " Server " + serverName + " läuft bereits");
             return;
         }
 
@@ -192,7 +192,7 @@ public class Serverprocess {
 
         if (shouldBootstrapFromTemplate(serverDir)) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Bootstrap aus Template fuer statischen Server " + serverName + " gestartet");
+                    " Bootstrap aus Template für statischen Server " + serverName + " gestartet");
             copyTemplateFiles(serverDir);
         } else {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -263,24 +263,24 @@ public class Serverprocess {
             }
             copyDirectory(backupTemplateDir.toPath(), serverDir.toPath());
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Backup-Template verwendet fuer " + serverName);
+                    " Backup-Template verwendet für " + serverName);
             return;
         }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Kopiere Template-Dateien fuer " + serverName + "...");
+                " Kopiere Template-Dateien für " + serverName + "...");
 
         try {
             copyDirectory(templateDir.toPath(), serverDir.toPath());
         } catch (IOException ex) {
-            CentralLogger.error("Template", "Template-Kopie fehlgeschlagen fuer " + serverName + ", versuche Backup", ex);
+            CentralLogger.error("Template", "Template-Kopie fehlgeschlagen für " + serverName + ", versuche Backup", ex);
             if (!backupTemplateDir.exists()) {
                 throw ex;
             }
             clearDirectory(serverDir.toPath());
             copyDirectory(backupTemplateDir.toPath(), serverDir.toPath());
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Korruptes Template erkannt, Backup-Template verwendet fuer " + serverName);
+                    " Korruptes Template erkannt, Backup-Template verwendet für " + serverName);
         }
     }
 
@@ -298,7 +298,7 @@ public class Serverprocess {
                         try {
                             Files.deleteIfExists(path);
                         } catch (IOException e) {
-                            throw new RuntimeException("Konnte Datei nicht loeschen: " + path, e);
+                            throw new RuntimeException("Konnte Datei nicht löschen: " + path, e);
                         }
                     });
         } catch (RuntimeException e) {
@@ -343,7 +343,7 @@ public class Serverprocess {
         Files.write(eulaFile.toPath(), eulaLines);
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " EULA akzeptiert fuer " + serverName);
+                " EULA akzeptiert für " + serverName);
     }
 
     private void updateServerProperties(File serverDir, int port) throws IOException {
@@ -438,7 +438,7 @@ public class Serverprocess {
                 registerBackendInLocalProxyConfigs();
             }
         } catch (Exception e) {
-            CentralLogger.error("NetworkConfig", "Automatische Netzwerk-Konfiguration fehlgeschlagen fuer " + serverName, e);
+            CentralLogger.error("NetworkConfig", "Automatische Netzwerk-Konfiguration fehlgeschlagen für " + serverName, e);
         }
     }
 
@@ -453,7 +453,7 @@ public class Serverprocess {
         spigot.set("settings.bungeecord", true);
         spigot.save(spigotFile);
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " spigot.yml aktualisiert (settings.bungeecord=true) fuer " + serverName);
+                " spigot.yml aktualisiert (settings.bungeecord=true) für " + serverName);
     }
 
     @SuppressWarnings("unchecked")
@@ -500,12 +500,12 @@ public class Serverprocess {
             serversSection = proxyCfg.createSection("servers");
         }
         serversSection.set(lobbyName + ".motd", "&aLobby");
-        serversSection.set(lobbyName + ".address", "127.0.0.1:" + lobbyPort);
+        serversSection.set(lobbyName + ".address", getGameRouteHost() + ":" + lobbyPort);
         serversSection.set(lobbyName + ".restricted", false);
 
         proxyCfg.save(proxyConfigFile);
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Proxy config.yml aktualisiert (Listener/Forwarding/Lobby-Route) fuer " + serverName);
+                " Proxy config.yml aktualisiert (Listener/Forwarding/Lobby-Route) für " + serverName);
     }
 
     private void configureProxyForwardingSecret(File serverDir) {
@@ -517,7 +517,7 @@ public class Serverprocess {
             File secretFile = new File(serverDir, "forwarding.secret");
             Files.writeString(secretFile.toPath(), secret.trim());
         } catch (Exception e) {
-            CentralLogger.warn("NetworkConfig", "Konnte forwarding.secret nicht schreiben fuer " + serverName);
+            CentralLogger.warn("NetworkConfig", "Konnte forwarding.secret nicht schreiben für " + serverName);
         }
     }
 
@@ -585,20 +585,79 @@ public class Serverprocess {
                     serversSection = cfg.createSection("servers");
                 }
                 serversSection.set(serverName + ".motd", "&a" + serverName);
-                serversSection.set(serverName + ".address", "127.0.0.1:" + port);
+                serversSection.set(serverName + ".address", getGameRouteHost() + ":" + port);
                 serversSection.set(serverName + ".restricted", false);
                 cfg.save(proxyConfig);
             }
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Proxy-Backends aktualisiert: " + serverName + " -> 127.0.0.1:" + port);
+                    " Proxy-Backends aktualisiert: " + serverName + " -> " + getGameRouteHost() + ":" + port);
         } catch (Exception e) {
-            CentralLogger.error("NetworkConfig", "Konnte Proxy-Backend-Routing nicht aktualisieren fuer " + serverName, e);
+            CentralLogger.error("NetworkConfig", "Konnte Proxy-Backend-Routing nicht aktualisieren für " + serverName, e);
+        }
+    }
+
+    public void registerBackendRouteInProxyConfig(String backendServerName, String targetHost, int targetPort) {
+        if (!isProxyGroup()) {
+            return;
+        }
+        if (backendServerName == null || backendServerName.isBlank() || targetPort <= 0) {
+            return;
+        }
+        String routeHost = (targetHost == null || targetHost.isBlank()) ? getGameRouteHost() : targetHost.trim();
+        File proxyConfigFile = new File("./servers/" + groupName + "/" + serverName + "/config.yml");
+        if (!proxyConfigFile.exists()) {
+            return;
+        }
+        try {
+            YamlConfiguration cfg = YamlConfiguration.loadConfiguration(proxyConfigFile);
+            ConfigurationSection serversSection = cfg.getConfigurationSection("servers");
+            if (serversSection == null) {
+                serversSection = cfg.createSection("servers");
+            }
+            serversSection.set(backendServerName + ".motd", "&a" + backendServerName);
+            serversSection.set(backendServerName + ".address", routeHost + ":" + targetPort);
+            serversSection.set(backendServerName + ".restricted", false);
+            cfg.save(proxyConfigFile);
+        } catch (Exception e) {
+            CentralLogger.error("NetworkConfig", "Route-Update fehlgeschlagen auf " + serverName, e);
+        }
+    }
+
+    public void unregisterBackendRouteInProxyConfig(String backendServerName) {
+        if (!isProxyGroup()) {
+            return;
+        }
+        if (backendServerName == null || backendServerName.isBlank()) {
+            return;
+        }
+        File proxyConfigFile = new File("./servers/" + groupName + "/" + serverName + "/config.yml");
+        if (!proxyConfigFile.exists()) {
+            return;
+        }
+        try {
+            YamlConfiguration cfg = YamlConfiguration.loadConfiguration(proxyConfigFile);
+            ConfigurationSection serversSection = cfg.getConfigurationSection("servers");
+            if (serversSection == null) {
+                return;
+            }
+            serversSection.set(backendServerName, null);
+            cfg.save(proxyConfigFile);
+        } catch (Exception e) {
+            CentralLogger.error("NetworkConfig", "Route-Removal fehlgeschlagen auf " + serverName, e);
         }
     }
 
     private boolean isProxyGroupName(String group) {
         String g = group == null ? "" : group.toLowerCase(Locale.ROOT);
         return g.contains("proxy") || g.contains("bungee") || g.contains("waterfall") || g.contains("velocity");
+    }
+
+    private String getGameRouteHost() {
+        String configured = configManager.getMaster("CloudMaster.Network.GameHost");
+        if (configured == null || configured.isBlank()) {
+            return "127.0.0.1";
+        }
+        return configured.trim();
     }
 
     private String getJarFileName() {
@@ -630,7 +689,7 @@ public class Serverprocess {
             ConsoleScreenManager.printToTerminal(
                     ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                             " Preflight: Fehlende " + expectedJarName + " aus " + matched.getAbsolutePath() +
-                            " uebernommen"
+                            " übernommen"
             );
             return targetJar;
         }
@@ -642,8 +701,8 @@ public class Serverprocess {
                 .orElse("keine Kandidaten");
         throw new FileNotFoundException(
                 "JAR-Datei nicht gefunden: " + targetJar.getAbsolutePath() +
-                        " | Gepruefte Pfade: " + searched +
-                        " | Hinweis: Suche ist case-insensitive und prueft auch <name>-*.jar"
+                        " | Geprüfte Pfade: " + searched +
+                        " | Hinweis: Suche ist case-insensitive und prüft auch <name>-*.jar"
         );
     }
 
@@ -812,7 +871,7 @@ public class Serverprocess {
                 applyCloudProfile(sync);
             }
         } catch (Exception e) {
-            CentralLogger.warn("PermissionEnforcer", "Runtime-Apply fehlgeschlagen fuer " + sync.playerUuid +
+            CentralLogger.warn("PermissionEnforcer", "Runtime-Apply fehlgeschlagen für " + sync.playerUuid +
                     " auf " + serverName + ": " + e.getMessage());
         }
     }
@@ -1274,7 +1333,7 @@ public class Serverprocess {
     public void sendCommand(String command) {
         if (!running || processInput == null) {
             ConsoleScreenManager.logToServerScreen(serverName,
-                    ConsoleColors.YELLOW + "Server laeuft nicht, Befehl ignoriert: " + command);
+                    ConsoleColors.YELLOW + "Server läuft nicht, Befehl ignoriert: " + command);
             return;
         }
 

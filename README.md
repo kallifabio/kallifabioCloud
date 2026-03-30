@@ -14,13 +14,14 @@ Ein modulares Minecraft-Cloudsystem mit:
 - Server starten/stoppen/restarten (graceful + force)
 - Crash-Detection (Server + Wrapper)
 - Auto-Recovery und Player-Transfer bei Ausfall
+- Restart-Guards mit Port-Check, Retry/Backoff und Locking gegen Doppel-Neustarts
 - Config-Reload mit Backup
 - Template-Diff, Snapshot, Rollback
 
 ### Scaling / Queue / Routing
 - Auto-Scaling Policies pro Group
 - Manual Scaling Commands
-- Queue mit Prioritaet, Timeout und AFK-Handling
+- Queue mit Priorität, Timeout und AFK-Handling
 - Load Balancing (Least Loaded, Round Robin, ...)
 - Wrapper Draining (kein neues Routing auf draining Wrapper)
 
@@ -37,7 +38,7 @@ Ein modulares Minecraft-Cloudsystem mit:
 - Dashboard mit TailwindCSS
 - API Key Auth mit Rollen (`ADMIN`, `VIEWER`)
 - Key Rotation Endpoint
-- Optional TLS fuer REST + WSS
+- Optional TLS für REST + WSS
 - Rate Limiting
 
 ---
@@ -47,9 +48,9 @@ Ein modulares Minecraft-Cloudsystem mit:
 - `Master`
   - Orchestrierung, Routing, Scaling, Monitoring, API
 - `Wrapper`
-  - Hostet und ueberwacht `Serverprocess` Instanzen
+  - Hostet und überwacht `Serverprocess` Instanzen
 - `CloudDataStore`
-  - Persistenz-Layer fuer Spieler, Queue, Party, Permissions, Pending Requests
+  - Persistenz-Layer für Spieler, Queue, Party, Permissions, Pending Requests
 - `CloudHttpServer` + `LiveWebSocketServer`
   - API, Dashboard, Live-Updates
 
@@ -105,6 +106,7 @@ Wichtige Dateien:
 - `CloudMaster.Network.TcpPort` (Master TCP, Default: `54555`)
 - `CloudMaster.Network.UdpPort` (Master UDP, Default: `54777`)
 - `CloudMaster.Network.ConnectHost` (Wrapper Zielhost)
+- `CloudMaster.Network.GameHost` (Route-Host für Proxy->Backend, pro Wrapper-Host setzen)
 - `CloudMaster.Network.ProxyBindHost` (Proxy listener bind, Default: `0.0.0.0`)
 - `CloudMaster.Network.EnforceBackendBind` (erzwingt Backend `server-ip`)
 - `CloudMaster.Network.BackendBindAddress` (Default: `127.0.0.1`)
@@ -134,8 +136,8 @@ Wichtige Dateien:
 - Bei Port-Konflikt wird automatisch auf freie Fallback-Ports ausgewichen (Retry aktiv).
 
 Wenn TLS aktiv ist:
-- REST laeuft ueber HTTPS
-- WebSocket laeuft ueber WSS
+- REST läuft über HTTPS
+- WebSocket läuft über WSS
 
 ---
 
@@ -153,6 +155,7 @@ Wenn TLS aktiv ist:
 - `alerts`, `clearalerts`, `webhooktest`
 - `wrapperinfo`
 - `wrapperdrain <wrapperId> [on|off|status]`
+- `restartstatus` / `rstatus` (zeigt aktive Restart-Locks + Retry-Zähler)
 
 ### Groups / Templates / Scaling
 - `groups`, `creategroup`, `deletegroup`
@@ -184,8 +187,8 @@ Wenn TLS aktiv ist:
 ## Console Bedienung
 
 - ` /switch <screen>`: wechselt auf einen Screen (z. B. `Proxy-1`)
-- ` /screens`: listet verfuegbare Screens
-- ` /exit`: zurueck zum Main-Screen
+- ` /screens`: listet verfügbare Screens
+- ` /exit`: zurück zum Main-Screen
 - ` exit` / `stop`: beendet den Prozess
 - `screen <list|main|server>`: Screen-Navigation
 - `screentail <server> [lines]`: letzte Zeilen eines Server-Screens
@@ -193,7 +196,7 @@ Wenn TLS aktiv ist:
 
 Aktueller Status:
 - Screen-Input wird im Server-Screen an den lokalen `Serverprocess` gesendet.
-- Bei nicht lokal verfuegbarem Server erfolgt Warnung + Log-Echo.
+- Bei nicht lokal verfügbarem Server erfolgt Warnung + Log-Echo.
 
 ---
 
@@ -238,7 +241,7 @@ Aktueller Status:
 - WebSocket Auth:
   - `X-API-Key` Header oder `?token=...`
 - Rate Limit aktiv
-- Key Rotation ueber API verfuegbar
+- Key Rotation über API verfügbar
 
 ---
 
@@ -260,23 +263,28 @@ Datei:
   - Fix: Datei ohne BOM speichern (UTF-8 no BOM).
 
 - **`mvn` nicht gefunden**
-  - Maven installieren und im PATH verfuegbar machen.
+  - Maven installieren und im PATH verfügbar machen.
 
 - **API 401**
-  - Pruefen, ob `X-API-Key` gesetzt ist und gueltiger Key genutzt wird.
+  - Prüfen, ob `X-API-Key` gesetzt ist und gültiger Key genutzt wird.
 
 - **TLS aktiviert, Server startet nicht**
-  - Keystore Pfad/Passwort/Typ pruefen.
+  - Keystore Pfad/Passwort/Typ prüfen.
 
 - **`Address already in use` beim API-Start**
   - API nutzt Port-Fallback + Retry im Bereich ab konfiguriertem Port.
-  - Im Startup-Log den effektiv gebundenen API-Port pruefen.
+  - Im Startup-Log den effektiv gebundenen API-Port prüfen.
+
+- **Proxy-Startfehler `Could not bind to host /0.0.0.0:25577`**
+  - Ursache ist meist ein hängender Altprozess oder ein paralleler Neustart.
+  - Nutze `restartstatus` zur Live-Diagnose von Restart-Locks/Retry-Zählern.
+  - Das System nutzt jetzt Restart-Guards (Port-Check + Backoff + Locking), um Bind-Races zu minimieren.
 
 - **Player kann Group nicht joinen**
-  - Runtime-Enforcer prueft `cloud.join` und Group-Join Permissions.
+  - Runtime-Enforcer prüft `cloud.join` und Group-Join Permissions.
 
 - **`bungeecord.jar` / `spigot.jar` oder Templates fehlen**
-  - Beim Serverstart laeuft ein Setup-Preflight:
+  - Beim Serverstart läuft ein Setup-Preflight:
   - fehlende Template-Ordner werden angelegt
   - fehlende JARs werden aus `templates*`, `templates_backup`, `jars` oder Projektroot nachgezogen
 

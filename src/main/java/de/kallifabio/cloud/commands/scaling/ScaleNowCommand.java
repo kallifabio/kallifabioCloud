@@ -53,11 +53,11 @@ public class ScaleNowCommand extends BaseCloudCommand {
                 }
             }
             if (toStop > 0) {
-                warn("Nicht genug leere Server fuer komplettes Scale-Down gefunden.");
+                warn("Nicht genug leere Server für komplettes Scale-Down gefunden.");
             }
         }
 
-        info("ScaleNow fuer " + group + " ausgefuehrt (target=" + target + ").");
+        info("ScaleNow für " + group + " ausgeführt (target=" + target + ").");
         return true;
     }
 

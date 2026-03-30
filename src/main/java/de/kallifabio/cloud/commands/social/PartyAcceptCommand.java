@@ -16,7 +16,7 @@ public class PartyAcceptCommand extends BaseCloudCommand {
         String playerUuid = args[0];
         String partyId = master().getDataStore().consumePartyInvite(playerUuid);
         if (partyId == null) {
-            error("Keine offene Party-Invite fuer " + playerUuid);
+            error("Keine offene Party-Invite für " + playerUuid);
             return false;
         }
 

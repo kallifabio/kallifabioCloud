@@ -12,22 +12,22 @@ public class DeleteGroupCommand extends BaseCloudCommand {
         }
         String groupName = args[0];
         if (master().getRunningServers().values().stream().anyMatch(s -> s.groupName.equalsIgnoreCase(groupName))) {
-            error("Group hat noch laufende Server und kann nicht geloescht werden.");
+            error("Group hat noch laufende Server und kann nicht gelöscht werden.");
             return false;
         }
         boolean ok = master().getConfigManager().deleteGroup(groupName);
         if (!ok) {
-            error("Group konnte nicht geloescht werden.");
+            error("Group konnte nicht gelöscht werden.");
             return false;
         }
         master().reloadConfiguration("deletegroup:" + sender);
-        info("Group geloescht: " + groupName);
+        info("Group gelöscht: " + groupName);
         return true;
     }
 
     @Override
     public String getDescription() {
-        return "Loescht eine Group aus der Config.";
+        return "Löscht eine Group aus der Config.";
     }
 
     @Override

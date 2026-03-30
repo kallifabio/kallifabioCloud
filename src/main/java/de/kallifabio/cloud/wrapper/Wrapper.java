@@ -32,11 +32,15 @@ public class Wrapper {
     private Client client;
     private String wrapperId;
     private String hostname;
+    private String routeHost;
     private int maxMemory;
     private int availableMemory;
 
     // Server Management
     private final Map<String, Serverprocess> managedServers = new ConcurrentHashMap<>();
+    private final Set<String> restartInProgress = ConcurrentHashMap.newKeySet();
+    private final Set<String> startInProgress = ConcurrentHashMap.newKeySet();
+    private final Map<String, Integer> restartRetryCounts = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3);
 
     // Connection State
@@ -50,6 +54,7 @@ public class Wrapper {
     // Heartbeat
     private ScheduledFuture<?> heartbeatTask;
     private static final long HEARTBEAT_INTERVAL_MS = 5000;
+    private static final int START_RETRY_LIMIT = 8;
 
     // Metrics
     private final OperatingSystemMXBean osBean;
@@ -57,6 +62,7 @@ public class Wrapper {
     public Wrapper() {
         this.wrapperId = generateWrapperId();
         this.hostname = detectHostname();
+        this.routeHost = detectRouteHost();
         this.osBean = ManagementFactory.getOperatingSystemMXBean();
         this.maxMemory = detectUsableWrapperMemoryMb();
         this.availableMemory = calculateAvailableMemory();
@@ -179,7 +185,7 @@ public class Wrapper {
         kryo.register(Message.APIRequest.class);
         kryo.register(Message.APIResponse.class);
 
-        // Arrays fuer byte[]
+        // Arrays für byte[]
         kryo.register(byte[].class);
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -238,7 +244,7 @@ public class Wrapper {
         } catch (IOException e) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Verbindung zu Master fehlgeschlagen: " + e.getMessage());
-            e.printStackTrace(); // Zeige vollstaendigen Stacktrace fuer Debugging
+            e.printStackTrace(); // Zeige vollstaendigen Stacktrace für Debugging
 
             // Schedule reconnect
             scheduleReconnect();
@@ -286,6 +292,7 @@ public class Wrapper {
         Message.WrapperRegister register = new Message.WrapperRegister();
         register.wrapperId = wrapperId;
         register.hostname = hostname;
+        register.routeHost = routeHost;
         register.maxMemory = maxMemory;
         register.availableMemory = calculateAvailableMemory();
         register.version = "1.0.0";
@@ -323,7 +330,7 @@ public class Wrapper {
     private void handleRegisterAck(Message.WrapperRegisterAck ack) {
         if (ack.success) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " [OK] Registrierung bestaetigt von Master: " + ack.masterId);
+                    ConsoleColors.getCurrentTime() + " [OK] Registrierung bestätigt von Master: " + ack.masterId);
         } else {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Registrierung abgelehnt");
@@ -336,8 +343,34 @@ public class Wrapper {
             case "STOP", "GRACEFUL_STOP" -> stopServer(command.serverName, true);
             case "FORCE_STOP" -> stopServer(command.serverName, false);
             case "RESTART" -> restartServer(command.serverName);
+            case "REGISTER_BACKEND_ROUTE" -> registerBackendRoute(command.serverName, command.targetHost, command.port);
+            case "UNREGISTER_BACKEND_ROUTE" -> unregisterBackendRoute(command.serverName);
             default -> ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Unbekannter Befehl: " + command.command);
+        }
+    }
+
+    private void registerBackendRoute(String backendServerName, String targetHost, int targetPort) {
+        if (backendServerName == null || backendServerName.isBlank() || targetPort <= 0) {
+            return;
+        }
+        for (Serverprocess process : managedServers.values()) {
+            if (process == null || !isProxyGroup(process.getGroupName())) {
+                continue;
+            }
+            process.registerBackendRouteInProxyConfig(backendServerName, targetHost, targetPort);
+        }
+    }
+
+    private void unregisterBackendRoute(String backendServerName) {
+        if (backendServerName == null || backendServerName.isBlank()) {
+            return;
+        }
+        for (Serverprocess process : managedServers.values()) {
+            if (process == null || !isProxyGroup(process.getGroupName())) {
+                continue;
+            }
+            process.unregisterBackendRouteInProxyConfig(backendServerName);
         }
     }
 
@@ -367,12 +400,19 @@ public class Wrapper {
     }
 
     private void startServer(String serverName, String groupName, int port) {
+        startServer(serverName, groupName, port, 1);
+    }
+
+    private void startServer(String serverName, String groupName, int port, int attempt) {
         if (shuttingDown) {
             return;
         }
         if (managedServers.containsKey(serverName)) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Server " + serverName + " laeuft bereits");
+                    ConsoleColors.getCurrentTime() + " Server " + serverName + " läuft bereits");
+            return;
+        }
+        if (!startInProgress.add(serverName)) {
             return;
         }
 
@@ -380,26 +420,32 @@ public class Wrapper {
                 " Starte Server: " + serverName + " (" + groupName + ") auf Port " + port);
 
         try {
-            // Create and start server process with assigned port
+            if (!isPortAvailable(port)) {
+                scheduleStartRetry(serverName, groupName, port, attempt, "Port belegt");
+                return;
+            }
+
             Serverprocess serverProcess = new Serverprocess(serverName, groupName, port, this);
             serverProcess.start();
             managedServers.put(serverName, serverProcess);
-
-            // Update available memory
             availableMemory = calculateAvailableMemory();
+            restartInProgress.remove(serverName);
+            restartRetryCounts.remove(serverName);
 
             ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " [OK] Server " + serverName +
                     " erfolgreich gestartet auf Port " + port);
 
         } catch (IOException e) {
-            ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " FEHLER beim Starten von " + serverName + ": " + e.getMessage());
-            e.printStackTrace();
+            scheduleStartRetry(serverName, groupName, port, attempt, e.getMessage());
         } catch (Exception e) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Unerwarteter Fehler bei " + serverName + ": " + e.getMessage());
             e.printStackTrace();
+            restartInProgress.remove(serverName);
+            restartRetryCounts.remove(serverName);
+        } finally {
+            startInProgress.remove(serverName);
         }
     }
 
@@ -424,7 +470,6 @@ public class Wrapper {
         server.stop(graceful);
         managedServers.remove(serverName);
 
-        // Update available memory
         availableMemory = calculateAvailableMemory();
     }
 
@@ -432,10 +477,18 @@ public class Wrapper {
         if (shuttingDown) {
             return;
         }
+        if (!restartInProgress.add(serverName)) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Neustart bereits in Arbeit: " + serverName);
+            return;
+        }
+
         Serverprocess server = managedServers.get(serverName);
         if (server == null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Server " + serverName + " nicht gefunden");
+            restartInProgress.remove(serverName);
+            restartRetryCounts.remove(serverName);
             return;
         }
 
@@ -443,12 +496,10 @@ public class Wrapper {
                 " Starte Server neu: " + serverName);
 
         String groupName = server.getGroupName();
+        int serverPort = server.getPort();
         stopServer(serverName);
 
-        // Wait a bit before restarting
-        scheduler.schedule(() -> {
-            startServer(serverName, groupName, server.getPort());
-        }, 3, TimeUnit.SECONDS);
+        scheduler.schedule(() -> startServer(serverName, groupName, serverPort, 1), 3, TimeUnit.SECONDS);
     }
 
     private void startHeartbeat() {
@@ -478,7 +529,7 @@ public class Wrapper {
     }
 
     private void scheduleReconnect() {
-        if (reconnecting || shuttingDown) return; // NEU: Pruefe shutdown-Flag
+        if (reconnecting || shuttingDown) return; // NEU: Prüfe shutdown-Flag
 
         reconnecting = true;
         reconnectAttempts++;
@@ -495,7 +546,7 @@ public class Wrapper {
                 "/" + MAX_RECONNECT_ATTEMPTS + ")");
 
         scheduler.schedule(() -> {
-            if (shuttingDown) return; // NEU: Abbrechen wenn Shutdown laeuft
+            if (shuttingDown) return; // NEU: Abbrechen wenn Shutdown läuft
 
             reconnecting = false;
 
@@ -563,9 +614,40 @@ public class Wrapper {
         }
 
         for (String serverName : unhealthyServers) {
+            if (restartInProgress.contains(serverName)) {
+                continue;
+            }
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Server " + serverName + " ist unhealthy - Neustart wird eingeleitet");
             restartServer(serverName);
+        }
+    }
+
+    private void scheduleStartRetry(String serverName, String groupName, int port, int attempt, String reason) {
+        restartRetryCounts.put(serverName, attempt);
+        if (attempt >= START_RETRY_LIMIT) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " FEHLER beim Starten von " + serverName +
+                    ": " + reason + " (Retry-Limit erreicht)");
+            restartInProgress.remove(serverName);
+            restartRetryCounts.remove(serverName);
+            return;
+        }
+        long backoffSeconds = Math.min(5L, attempt);
+        ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                ConsoleColors.getCurrentTime() + " Start von " + serverName + " verschoben (" + reason +
+                "), Retry " + attempt + "/" + START_RETRY_LIMIT + " in " + backoffSeconds + "s");
+        scheduler.schedule(() -> startServer(serverName, groupName, port, attempt + 1),
+                backoffSeconds,
+                TimeUnit.SECONDS);
+    }
+
+    private boolean isPortAvailable(int port) {
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(port)) {
+            socket.setReuseAddress(true);
+            return true;
+        } catch (IOException e) {
+            return false;
         }
     }
 
@@ -641,6 +723,23 @@ public class Wrapper {
         } catch (UnknownHostException e) {
             return "127.0.0.1";
         }
+    }
+
+    private String detectRouteHost() {
+        ConfigManager cfg = new ConfigManager();
+        String configured = cfg.getMaster("CloudMaster.Network.GameHost");
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
+        return detectMasterHost();
+    }
+
+    private boolean isProxyGroup(String groupName) {
+        if (groupName == null) {
+            return false;
+        }
+        String group = groupName.toLowerCase(Locale.ROOT);
+        return group.contains("proxy") || group.contains("bungee") || group.contains("waterfall") || group.contains("velocity");
     }
 
     public void sendServerStatus(String serverName, String status) {
@@ -760,5 +859,13 @@ public class Wrapper {
 
     public Map<String, Serverprocess> getManagedServers() {
         return new HashMap<>(managedServers);
+    }
+
+    public Set<String> getRestartInProgress() {
+        return Set.copyOf(restartInProgress);
+    }
+
+    public Map<String, Integer> getRestartRetryCounts() {
+        return new HashMap<>(restartRetryCounts);
     }
 }

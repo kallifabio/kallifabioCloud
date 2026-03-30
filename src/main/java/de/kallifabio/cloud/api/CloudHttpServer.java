@@ -528,7 +528,7 @@ public class CloudHttpServer {
             serverInfo.put("networkMode", server.networkMode);
             serverInfo.put("diskReadBytes", server.diskReadBytes);
             serverInfo.put("diskWriteBytes", server.diskWriteBytes);  // FIX: war server.ram
-            serverInfo.put("port", server.port);  // NEU: Port hinzugefuegt
+            serverInfo.put("port", server.port);  // NEU: Port hinzugefügt
             serverInfo.put("lastUpdate", server.lastUpdate);  // FIX: statt getStartTime()
             servers.add(serverInfo);
         });

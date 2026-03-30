@@ -30,7 +30,7 @@ public class PermissionTempCommand extends BaseCloudCommand {
 
     @Override
     public String getDescription() {
-        return "Setzt eine temporaere Permission.";
+        return "Setzt eine temporäre Permission.";
     }
 
     @Override
