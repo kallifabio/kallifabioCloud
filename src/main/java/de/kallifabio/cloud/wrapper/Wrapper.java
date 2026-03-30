@@ -21,6 +21,7 @@ import de.kallifabio.cloud.master.Master;
 import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
+import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.*;
@@ -56,12 +57,12 @@ public class Wrapper {
     public Wrapper() {
         this.wrapperId = generateWrapperId();
         this.hostname = detectHostname();
-        this.maxMemory = (int) (Runtime.getRuntime().maxMemory() / 1024 / 1024);
-        this.availableMemory = calculateAvailableMemory();
         this.osBean = ManagementFactory.getOperatingSystemMXBean();
+        this.maxMemory = detectUsableWrapperMemoryMb();
+        this.availableMemory = calculateAvailableMemory();
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Wrapper-ID: " + wrapperId);
+                " Wrapper-ID: " + wrapperId + " | usable RAM: " + maxMemory + "MB");
     }
 
     public void start() {
@@ -212,17 +213,20 @@ public class Wrapper {
     }
 
     private void connectToMaster() {
-        // Im COMBINED Mode verwende localhost
-        String masterHost = "127.0.0.1";
-        int tcpPort = 54555;
-        int udpPort = 54777;
+        String masterHost;
+        int tcpPort;
+        int udpPort;
+        ConfigManager cfg = new ConfigManager();
 
-        // Wenn Master-Instanz existiert, verwende dessen Werte
+        // Combined-Mode: immer auf lokale Master-Instanz verbinden.
         if (Master.getInstance() != null) {
-            // Im Combined-Mode immer localhost verwenden
             masterHost = "127.0.0.1";
-            tcpPort = 54555;
-            udpPort = 54777;
+            tcpPort = Master.getInstance().getMasterPort();
+            udpPort = Master.getInstance().getMasterUdpPort();
+        } else {
+            masterHost = cfg.getMasterConnectHost();
+            tcpPort = cfg.getMasterTcpPort();
+            udpPort = cfg.getMasterUdpPort();
         }
 
         try {
@@ -303,6 +307,8 @@ public class Wrapper {
             reloadLocalConfig((Message.ConfigUpdate) object);
         } else if (object instanceof Message.PlayerTransfer) {
             handlePlayerTransfer((Message.PlayerTransfer) object);
+        } else if (object instanceof Message.PermissionSync) {
+            handlePermissionSync((Message.PermissionSync) object);
         }
     }
 
@@ -347,7 +353,23 @@ public class Wrapper {
         }
     }
 
+    private void handlePermissionSync(Message.PermissionSync sync) {
+        if (sync == null || sync.playerUuid == null || sync.playerUuid.isBlank()) {
+            return;
+        }
+        for (Serverprocess server : managedServers.values()) {
+            if (sync.targetServer != null && !sync.targetServer.isBlank()
+                    && !sync.targetServer.equalsIgnoreCase(server.getServerName())) {
+                continue;
+            }
+            server.applyPermissionSync(sync);
+        }
+    }
+
     private void startServer(String serverName, String groupName, int port) {
+        if (shuttingDown) {
+            return;
+        }
         if (managedServers.containsKey(serverName)) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Server " + serverName + " laeuft bereits");
@@ -392,6 +414,9 @@ public class Wrapper {
                     ConsoleColors.getCurrentTime() + " Server " + serverName + " nicht gefunden");
             return;
         }
+        if (shuttingDown) {
+            graceful = false;
+        }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Stoppe Server: " + serverName);
@@ -404,6 +429,9 @@ public class Wrapper {
     }
 
     private void restartServer(String serverName) {
+        if (shuttingDown) {
+            return;
+        }
         Serverprocess server = managedServers.get(serverName);
         if (server == null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
@@ -512,7 +540,7 @@ public class Wrapper {
     }
 
     private void collectAndSendMetrics() {
-        if (!connected) return;
+        if (shuttingDown || !connected) return;
 
         for (Serverprocess server : managedServers.values()) {
             Message.ServerMetrics metrics = server.collectMetrics();
@@ -523,6 +551,9 @@ public class Wrapper {
     }
 
     private void checkServerHealth() {
+        if (shuttingDown) {
+            return;
+        }
         List<String> unhealthyServers = new ArrayList<>();
 
         for (Map.Entry<String, Serverprocess> entry : managedServers.entrySet()) {
@@ -542,14 +573,54 @@ public class Wrapper {
         int usedMemory = managedServers.values().stream()
                 .mapToInt(Serverprocess::getAllocatedMemory)
                 .sum();
-        return maxMemory - usedMemory;
+        int estimated = maxMemory - usedMemory;
+        if (estimated < 0) {
+            estimated = 0;
+        }
+        return Math.min(maxMemory, estimated);
     }
 
     private double getCpuUsage() {
-        if (osBean instanceof com.sun.management.OperatingSystemMXBean) {
-            return ((com.sun.management.OperatingSystemMXBean) osBean).getProcessCpuLoad() * 100;
+        if (osBean instanceof com.sun.management.OperatingSystemMXBean sunOs) {
+            double system = sunOs.getSystemCpuLoad() * 100.0;
+            if (Double.isNaN(system) || system < 0) {
+                return 0.0;
+            }
+            return Math.min(100.0, system);
         }
         return 0.0;
+    }
+
+    private int detectUsableWrapperMemoryMb() {
+        long totalMb = readOsMemoryMb("getTotalMemorySize");
+        if (totalMb <= 0) {
+            totalMb = readOsMemoryMb("getTotalPhysicalMemorySize");
+        }
+        if (totalMb <= 0) {
+            totalMb = Runtime.getRuntime().maxMemory() / 1024 / 1024;
+        }
+
+        long reserveMb = Math.max(768L, (long) (totalMb * 0.20));
+        long usable = totalMb - reserveMb;
+        if (usable < 512L) {
+            usable = Math.max(512L, totalMb);
+        }
+        return (int) Math.min(Integer.MAX_VALUE, usable);
+    }
+
+    private long readOsMemoryMb(String methodName) {
+        try {
+            Method method = osBean.getClass().getMethod(methodName);
+            Object value = method.invoke(osBean);
+            if (value instanceof Number number) {
+                long bytes = number.longValue();
+                if (bytes > 0) {
+                    return bytes / 1024 / 1024;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return -1L;
     }
 
     private String generateWrapperId() {
@@ -639,34 +710,36 @@ public class Wrapper {
     }
 
     public void shutdown() {
-        shuttingDown = true; // NEU: Setze Shutdown-Flag ZUERST
+        if (shuttingDown) {
+            return;
+        }
+        shuttingDown = true;
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Wrapper wird heruntergefahren...");
 
-        // Stop all servers
-        List<String> serverNames = new ArrayList<>(managedServers.keySet());
-        for (String serverName : serverNames) {
-            stopServer(serverName);
-        }
-
-        // Stop heartbeat
+        // Stop heartbeat and background tasks first to avoid restarts during shutdown.
         stopHeartbeat();
+        scheduler.shutdownNow();
 
-        // Stop scheduler
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
+        // Stop all servers
+        List<Serverprocess> servers = new ArrayList<>(managedServers.values());
+        managedServers.clear();
+        for (Serverprocess server : servers) {
+            try {
+                server.stop(false);
+            } catch (Exception ignored) {
             }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
         }
+
+        availableMemory = calculateAvailableMemory();
 
         // Disconnect from master
         if (client != null) {
             client.stop();
         }
+        connected = false;
+        reconnecting = false;
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Wrapper heruntergefahren");

@@ -13,6 +13,7 @@ import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
 import de.kallifabio.cloud.master.Master;
 import de.kallifabio.cloud.master.ServerInstance;
 import de.kallifabio.cloud.master.WrapperConnection;
+import de.kallifabio.cloud.config.ConfigManager;
 
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -21,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class MonitoringService {
@@ -29,25 +31,50 @@ public class MonitoringService {
     private final Gson gson = new Gson();
 
     // Metrics Storage
-    private final Map<String, List<WrapperMetric>> wrapperMetrics = new ConcurrentHashMap<>();
-    private final Map<String, List<ServerMetric>> serverMetrics = new ConcurrentHashMap<>();
+    private final Map<String, Deque<WrapperMetric>> wrapperMetrics = new ConcurrentHashMap<>();
+    private final Map<String, Deque<ServerMetric>> serverMetrics = new ConcurrentHashMap<>();
 
     // Alerts
     private final List<Alert> activeAlerts = new CopyOnWriteArrayList<>();
     private final List<Alert> alertHistory = new CopyOnWriteArrayList<>();
+    private final Map<String, Long> lastAlertByKey = new ConcurrentHashMap<>();
+    private final Map<String, Integer> consecutiveBreaches = new ConcurrentHashMap<>();
 
     // Thresholds
-    private static final double CPU_WARNING_THRESHOLD = 80.0;
-    private static final double CPU_CRITICAL_THRESHOLD = 95.0;
-    private static final double MEMORY_WARNING_THRESHOLD = 85.0;
-    private static final double MEMORY_CRITICAL_THRESHOLD = 95.0;
-    private static final double TPS_WARNING_THRESHOLD = 18.0;
-    private static final double TPS_CRITICAL_THRESHOLD = 15.0;
+    private volatile double cpuWarningThreshold = 90.0;
+    private volatile double cpuCriticalThreshold = 97.0;
+    private volatile double memoryWarningThreshold = 90.0;
+    private volatile double memoryCriticalThreshold = 96.0;
+    private volatile double tpsWarningThreshold = 18.0;
+    private volatile double tpsCriticalThreshold = 15.0;
+    private volatile int requiredConsecutiveBreaches = 2;
+    private volatile long warningAlertCooldownMs = 60_000L;
+    private volatile long criticalAlertCooldownMs = 120_000L;
+    private volatile long infoAlertCooldownMs = 300_000L;
+    private final int hostCores = Math.max(1, Runtime.getRuntime().availableProcessors());
 
     public MonitoringService(Master master) {
         this.master = master;
+        reloadThresholds();
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Monitoring Service initialisiert");
+    }
+
+    public void reloadThresholds() {
+        ConfigManager cfg = master.getConfigManager();
+        if (cfg == null) {
+            return;
+        }
+        cpuWarningThreshold = cfg.getMonitoringCpuWarning();
+        cpuCriticalThreshold = cfg.getMonitoringCpuCritical();
+        memoryWarningThreshold = cfg.getMonitoringMemoryWarning();
+        memoryCriticalThreshold = cfg.getMonitoringMemoryCritical();
+        tpsWarningThreshold = cfg.getMonitoringTpsWarning();
+        tpsCriticalThreshold = cfg.getMonitoringTpsCritical();
+        requiredConsecutiveBreaches = cfg.getMonitoringRequiredConsecutiveBreaches();
+        warningAlertCooldownMs = cfg.getMonitoringWarningCooldownMs();
+        criticalAlertCooldownMs = cfg.getMonitoringCriticalCooldownMs();
+        infoAlertCooldownMs = cfg.getMonitoringInfoCooldownMs();
     }
 
     public void recordWrapperMetrics(WrapperConnection wrapper) {
@@ -60,12 +87,13 @@ public class MonitoringService {
                 System.currentTimeMillis()
         );
 
-        wrapperMetrics.computeIfAbsent(wrapper.getWrapperId(), k -> new ArrayList<>()).add(metric);
+        Deque<WrapperMetric> metrics = wrapperMetrics.computeIfAbsent(wrapper.getWrapperId(),
+                k -> new ConcurrentLinkedDeque<>());
+        metrics.addLast(metric);
 
         // Keep only last 1000 metrics per wrapper
-        List<WrapperMetric> metrics = wrapperMetrics.get(wrapper.getWrapperId());
-        if (metrics.size() > 1000) {
-            metrics.remove(0);
+        while (metrics.size() > 1000) {
+            metrics.pollFirst();
         }
 
         // Check thresholds
@@ -88,12 +116,13 @@ public class MonitoringService {
                 System.currentTimeMillis()
         );
 
-        serverMetrics.computeIfAbsent(server.serverName, k -> new ArrayList<>()).add(metric);
+        Deque<ServerMetric> metrics = serverMetrics.computeIfAbsent(server.serverName,
+                k -> new ConcurrentLinkedDeque<>());
+        metrics.addLast(metric);
 
         // Keep only last 1000 metrics per server
-        List<ServerMetric> metrics = serverMetrics.get(server.serverName);
-        if (metrics.size() > 1000) {
-            metrics.remove(0);
+        while (metrics.size() > 1000) {
+            metrics.pollFirst();
         }
 
         // Check thresholds
@@ -101,49 +130,85 @@ public class MonitoringService {
     }
 
     private void checkWrapperThresholds(WrapperConnection wrapper) {
+        double wrapperCpu = clampPercent(wrapper.getCpuUsage());
         // CPU Check
-        if (wrapper.getCpuUsage() > CPU_CRITICAL_THRESHOLD) {
-            createAlert("CRITICAL", "wrapper", wrapper.getWrapperId(),
-                    "CPU Usage critical: " + String.format("%.1f%%", wrapper.getCpuUsage()));
-        } else if (wrapper.getCpuUsage() > CPU_WARNING_THRESHOLD) {
-            createAlert("WARNING", "wrapper", wrapper.getWrapperId(),
-                    "CPU Usage high: " + String.format("%.1f%%", wrapper.getCpuUsage()));
+        if (wrapperCpu > cpuCriticalThreshold) {
+            maybeCreateAlert("CRITICAL", "wrapper", wrapper.getWrapperId(), "WRAPPER_CPU",
+                    "CPU usage critical: " + String.format("%.1f%%", wrapperCpu));
+        } else if (wrapperCpu > cpuWarningThreshold) {
+            maybeCreateAlert("WARNING", "wrapper", wrapper.getWrapperId(), "WRAPPER_CPU",
+                    "CPU usage high: " + String.format("%.1f%%", wrapperCpu));
+        } else {
+            resetBreach("wrapper:" + wrapper.getWrapperId() + ":WRAPPER_CPU");
         }
 
         // Memory Check
-        double memUsage = ((double)(wrapper.getMaxMemory() - wrapper.getAvailableMemory()) / wrapper.getMaxMemory()) * 100;
-        if (memUsage > MEMORY_CRITICAL_THRESHOLD) {
-            createAlert("CRITICAL", "wrapper", wrapper.getWrapperId(),
+        double memUsage = wrapper.getMaxMemory() <= 0 ? 0.0
+                : ((double) (wrapper.getMaxMemory() - wrapper.getAvailableMemory()) / wrapper.getMaxMemory()) * 100.0;
+        memUsage = clampPercent(memUsage);
+        if (memUsage > memoryCriticalThreshold) {
+            maybeCreateAlert("CRITICAL", "wrapper", wrapper.getWrapperId(), "WRAPPER_MEMORY",
                     "Memory usage critical: " + String.format("%.1f%%", memUsage));
-        } else if (memUsage > MEMORY_WARNING_THRESHOLD) {
-            createAlert("WARNING", "wrapper", wrapper.getWrapperId(),
+        } else if (memUsage > memoryWarningThreshold) {
+            maybeCreateAlert("WARNING", "wrapper", wrapper.getWrapperId(), "WRAPPER_MEMORY",
                     "Memory usage high: " + String.format("%.1f%%", memUsage));
+        } else {
+            resetBreach("wrapper:" + wrapper.getWrapperId() + ":WRAPPER_MEMORY");
         }
     }
 
     private void checkServerThresholds(ServerInstance server) {
         // TPS Check
-        if (server.tps < TPS_CRITICAL_THRESHOLD) {
-            createAlert("CRITICAL", "server", server.serverName,
+        if (server.tps < tpsCriticalThreshold) {
+            maybeCreateAlert("CRITICAL", "server", server.serverName, "SERVER_TPS",
                     "TPS critical: " + String.format("%.1f", server.tps));
-        } else if (server.tps < TPS_WARNING_THRESHOLD) {
-            createAlert("WARNING", "server", server.serverName,
+        } else if (server.tps < tpsWarningThreshold) {
+            maybeCreateAlert("WARNING", "server", server.serverName, "SERVER_TPS",
                     "TPS low: " + String.format("%.1f", server.tps));
+        } else {
+            resetBreach("server:" + server.serverName + ":SERVER_TPS");
         }
 
         // Player capacity check
         if (server.playerCount >= server.maxPlayers) {
-            createAlert("INFO", "server", server.serverName,
+            maybeCreateAlert("INFO", "server", server.serverName, "SERVER_FULL",
                     "Server full: " + server.playerCount + "/" + server.maxPlayers);
         }
 
-        if (server.cpuUsage > CPU_CRITICAL_THRESHOLD) {
-            createAlert("CRITICAL", "server", server.serverName,
-                    "CPU usage critical: " + String.format("%.1f%%", server.cpuUsage));
-        } else if (server.cpuUsage > CPU_WARNING_THRESHOLD) {
-            createAlert("WARNING", "server", server.serverName,
-                    "CPU usage high: " + String.format("%.1f%%", server.cpuUsage));
+        double normalizedCpu = normalizeServerCpu(server.cpuUsage);
+        if (normalizedCpu > cpuCriticalThreshold) {
+            maybeCreateAlert("CRITICAL", "server", server.serverName, "SERVER_CPU",
+                    "CPU usage critical: " + String.format("%.1f%%", normalizedCpu));
+        } else if (normalizedCpu > cpuWarningThreshold) {
+            maybeCreateAlert("WARNING", "server", server.serverName, "SERVER_CPU",
+                    "CPU usage high: " + String.format("%.1f%%", normalizedCpu));
+        } else {
+            resetBreach("server:" + server.serverName + ":SERVER_CPU");
         }
+    }
+
+    private void maybeCreateAlert(String severity, String componentType, String componentId, String alertType, String message) {
+        String key = componentType + ":" + componentId + ":" + alertType;
+        int breaches = consecutiveBreaches.merge(key, 1, Integer::sum);
+        if (breaches < requiredConsecutiveBreaches) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long cooldown = switch (severity.toUpperCase(Locale.ROOT)) {
+            case "CRITICAL" -> criticalAlertCooldownMs;
+            case "WARNING" -> warningAlertCooldownMs;
+            default -> infoAlertCooldownMs;
+        };
+        Long last = lastAlertByKey.get(key);
+        if (last != null && now - last < cooldown) {
+            return;
+        }
+        lastAlertByKey.put(key, now);
+        createAlert(severity, componentType, componentId, message);
+    }
+
+    private void resetBreach(String key) {
+        consecutiveBreaches.remove(key);
     }
 
     private void createAlert(String severity, String componentType, String componentId, String message) {
@@ -333,6 +398,27 @@ public class MonitoringService {
         return 0x2ECC71;
     }
 
+    private double clampPercent(double value) {
+        if (Double.isNaN(value) || value < 0) {
+            return 0.0;
+        }
+        if (value > 100.0) {
+            return 100.0;
+        }
+        return value;
+    }
+
+    private double normalizeServerCpu(double rawCpu) {
+        if (Double.isNaN(rawCpu) || rawCpu < 0) {
+            return 0.0;
+        }
+        double normalized = rawCpu;
+        if (rawCpu > 100.0) {
+            normalized = rawCpu / hostCores;
+        }
+        return clampPercent(normalized);
+    }
+
     private String truncate(String value, int maxLength) {
         if (value == null) {
             return "";
@@ -377,8 +463,8 @@ public class MonitoringService {
     public Map<String, Object> getWrapperMetrics() {
         Map<String, Object> metrics = new HashMap<>();
         wrapperMetrics.forEach((wrapperId, metricsList) -> {
-            if (!metricsList.isEmpty()) {
-                WrapperMetric latest = metricsList.get(metricsList.size() - 1);
+            WrapperMetric latest = metricsList.peekLast();
+            if (latest != null) {
                 Map<String, Object> wrapperInfo = new HashMap<>();
                 wrapperInfo.put("availableMemory", latest.availableMemory);
                 wrapperInfo.put("maxMemory", latest.maxMemory);
@@ -394,8 +480,8 @@ public class MonitoringService {
     public Map<String, Object> getServerMetrics() {
         Map<String, Object> metrics = new HashMap<>();
         serverMetrics.forEach((serverName, metricsList) -> {
-            if (!metricsList.isEmpty()) {
-                ServerMetric latest = metricsList.get(metricsList.size() - 1);
+            ServerMetric latest = metricsList.peekLast();
+            if (latest != null) {
                 Map<String, Object> serverInfo = new HashMap<>();
                 serverInfo.put("playerCount", latest.playerCount);
                 serverInfo.put("maxPlayers", latest.maxPlayers);

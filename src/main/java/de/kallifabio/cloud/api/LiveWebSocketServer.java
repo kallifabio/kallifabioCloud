@@ -68,7 +68,7 @@ public class LiveWebSocketServer extends WebSocketServer {
 
     @Override
     public void onStart() {
-        scheduler.scheduleAtFixedRate(this::broadcastSnapshot, 1, 2, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(this::broadcastSnapshot, 1, 5, TimeUnit.SECONDS);
     }
 
     private void broadcastSnapshot() {

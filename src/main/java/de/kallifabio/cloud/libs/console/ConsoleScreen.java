@@ -8,6 +8,7 @@
 package de.kallifabio.cloud.libs.console;
 
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
 
 public class ConsoleScreen {
@@ -65,5 +66,11 @@ public class ConsoleScreen {
 
     public String getName() {
         return name;
+    }
+
+    public List<String> getMessagesSnapshot() {
+        synchronized (messages) {
+            return List.copyOf(messages);
+        }
     }
 }

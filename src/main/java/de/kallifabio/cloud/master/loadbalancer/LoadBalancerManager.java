@@ -217,8 +217,9 @@ public class LoadBalancerManager {
     }
 
     public WrapperConnection getBestWrapperForServer(String groupName) {
+        int requiredMemory = Math.max(256, master.getConfigManager().getRamForGroup(groupName));
         Optional<WrapperConnection> candidate = master.getConnectedWrappers().values().stream()
-                .filter(w -> w.getAvailableMemory() >= 1024) // At least 1GB available
+                .filter(w -> w.canHostServer(requiredMemory))
                 .filter(WrapperConnection::isHealthy)
                 .filter(w -> !isWrapperDraining(w.getWrapperId()))
                 .min(Comparator
@@ -230,7 +231,7 @@ public class LoadBalancerManager {
 
         // Fallback if all wrappers are draining, to avoid deadlock.
         return master.getConnectedWrappers().values().stream()
-                .filter(w -> w.getAvailableMemory() >= 1024)
+                .filter(w -> w.canHostServer(requiredMemory))
                 .filter(WrapperConnection::isHealthy)
                 .min(Comparator
                         .comparingInt(WrapperConnection::getActiveServers)

@@ -1,0 +1,810 @@
+﻿
+        <!DOCTYPE html>
+        <html lang='en'>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>KalliCloud Dashboard</title>
+            <link rel='icon' type='image/svg+xml' href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M14 40l10-12 8 9 10-14 8 17' stroke='%2322d3ee' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+            <script src='https://cdn.tailwindcss.com'></script>
+            <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css'>
+            <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+            <style>
+                body {
+                    background-image:
+                        radial-gradient(circle at 15% 0%, rgba(34, 211, 238, 0.12), transparent 34%),
+                        radial-gradient(circle at 85% 100%, rgba(59, 130, 246, 0.11), transparent 30%);
+                }
+                .theme-light body {
+                    background: linear-gradient(180deg, #f8fbff 0%, #edf4ff 42%, #f7fbff 100%) !important;
+                    color: #0f172a !important;
+                }
+                .theme-light .bg-slate-950 { background-color: #eef4ff !important; }
+                .theme-light .bg-slate-950\/90 { background-color: rgba(238, 244, 255, 0.93) !important; }
+                .theme-light .bg-slate-900\/60, .theme-light .bg-slate-900\/40, .theme-light .bg-slate-900 { background-color: #ffffff !important; }
+                .theme-light .bg-slate-950\/70, .theme-light .bg-slate-950\/60, .theme-light .bg-slate-950\/40 { background-color: #f5f9ff !important; }
+                .theme-light .text-slate-100, .theme-light .text-slate-300, .theme-light .text-slate-400 { color: #1e293b !important; }
+                .theme-light .border-slate-800, .theme-light .border-slate-700, .theme-light .border-slate-800\/80 { border-color: #c9d8ef !important; }
+                .theme-light .from-slate-900, .theme-light .via-cyan-950, .theme-light .to-slate-900 {
+                    background-image: linear-gradient(110deg, #ffffff, #ebf6ff 55%, #f6fbff) !important;
+                }
+                .hero-icon {
+                    width: 0.95rem;
+                    height: 0.95rem;
+                    stroke: currentColor;
+                    stroke-width: 1.8;
+                    fill: none;
+                }
+                .nav-link {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.45rem;
+                    border-radius: 999px;
+                    border: 1px solid rgb(51 65 85 / 0.9);
+                    padding: 0.44rem 0.82rem;
+                    font-size: 0.72rem;
+                    letter-spacing: .02em;
+                    color: rgb(203 213 225);
+                    transition: all .16s ease;
+                }
+                .nav-link:hover {
+                    border-color: rgb(34 211 238 / 0.9);
+                    color: white;
+                    background: linear-gradient(135deg, rgb(8 47 73 / 0.55), rgb(30 41 59 / 0.7));
+                }
+                .nav-link-active {
+                    border-color: rgb(34 211 238 / 0.95) !important;
+                    color: rgb(8 47 73) !important;
+                    background: linear-gradient(135deg, rgb(165 243 252), rgb(186 230 253)) !important;
+                    font-weight: 700;
+                }
+                .theme-light .nav-link {
+                    color: #1e293b;
+                    border-color: #c9d8ef;
+                    background: #ffffff;
+                }
+                .theme-light .nav-link:hover {
+                    border-color: #0ea5e9;
+                    color: #0f172a;
+                    background: linear-gradient(135deg, #eef7ff, #ffffff);
+                }
+                .theme-light .nav-link-active {
+                    border-color: #0ea5e9 !important;
+                    color: #0f172a !important;
+                    background: linear-gradient(135deg, #d9f4ff, #e4eeff) !important;
+                }
+                .mobile-nav-panel {
+                    border-top: 1px solid rgb(30 41 59 / 0.85);
+                    background: linear-gradient(180deg, rgb(2 6 23 / 0.95), rgb(15 23 42 / 0.96));
+                }
+                .theme-light .mobile-nav-panel {
+                    border-top: 1px solid #c9d8ef;
+                    background: linear-gradient(180deg, #f8fbff, #eef5ff);
+                }
+                .mobile-nav-link {
+                    width: 100%;
+                    justify-content: flex-start;
+                    padding: 0.62rem 0.78rem;
+                    font-size: 0.8rem;
+                }
+                @media (max-width: 1024px) {
+                    .nav-link {
+                        font-size: 0.69rem;
+                        padding: 0.38rem 0.72rem;
+                    }
+                }
+                @media (max-width: 768px) {
+                    body {
+                        background-image:
+                            radial-gradient(circle at 5% 0%, rgba(14, 165, 233, 0.14), transparent 40%),
+                            radial-gradient(circle at 95% 100%, rgba(59, 130, 246, 0.14), transparent 40%);
+                    }
+                    #mobileNav .nav-link {
+                        justify-content: flex-start;
+                    }
+                    #overviewSection {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                    }
+                }
+                @media (max-width: 520px) {
+                    #overviewSection {
+                        grid-template-columns: repeat(1, minmax(0, 1fr));
+                    }
+                    header .w-full {
+                        flex-direction: column;
+                    }
+                    #apiKey {
+                        width: 100%;
+                    }
+                    #connectBtn {
+                        width: 100%;
+                    }
+                    .mobile-nav-link {
+                        font-size: 0.78rem;
+                    }
+                }
+            </style>
+        </head>
+        <body class='min-h-screen bg-slate-950 text-slate-100'>
+            <nav class='sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur'>
+                <div class='mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-6'>
+                    <div class='flex items-center gap-3'>
+                        <div class='h-8 w-8 rounded-lg bg-gradient-to-br from-cyan-300 to-blue-500 p-[2px]'>
+                            <div class='flex h-full w-full items-center justify-center rounded-md bg-slate-900 text-xs font-bold text-cyan-300'>
+                                <svg class='hero-icon text-cyan-300' viewBox='0 0 24 24' aria-hidden='true'>
+                                    <path stroke-linecap='round' stroke-linejoin='round' d='M3.75 16.5l4.5-7.5 4.5 4.5 4.5-7.5 3 9'/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div>
+                            <div class='text-sm font-semibold tracking-wide'>KalliCloud</div>
+                            <div class='text-[10px] text-slate-400'>Operations Dashboard</div>
+                        </div>
+                    </div>
+                    <div class='flex items-center gap-2'>
+                        <button id='themeToggle' class='inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1 text-xs hover:border-cyan-400'>
+                            <i class='fa-solid fa-circle-half-stroke text-[11px]'></i><span>Theme</span>
+                        </button>
+                        <button id='navToggle' aria-expanded='false' class='inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1 text-xs hover:border-cyan-400 md:hidden'>
+                            <svg class='hero-icon' viewBox='0 0 24 24' aria-hidden='true'>
+                                <path stroke-linecap='round' stroke-linejoin='round' d='M3.75 6.75h16.5m-16.5 5.25h16.5m-16.5 5.25h16.5'/>
+                            </svg>
+                            <span>Menu</span>
+                        </button>
+                    </div>
+                    <div class='hidden items-center gap-2 md:flex'>
+                        <a href='/dashboard/overview' data-page-link='overview' class='nav-link'><i class='fa-solid fa-gauge-high text-[11px]'></i><span>Overview</span></a>
+                        <a href='/dashboard/servers' data-page-link='servers' class='nav-link'><i class='fa-solid fa-server text-[11px]'></i><span>Servers</span></a>
+                        <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link'><i class='fa-solid fa-heart-pulse text-[11px]'></i><span>Monitoring</span></a>
+                        <a href='/dashboard/operations' data-page-link='operations' class='nav-link'><i class='fa-solid fa-gears text-[11px]'></i><span>Operations</span></a>
+                        <a href='/dashboard/setup' data-page-link='setup' class='nav-link'><i class='fa-solid fa-screwdriver-wrench text-[11px]'></i><span>Setup</span></a>
+                    </div>
+                </div>
+                <div id='mobileNav' class='mobile-nav-panel mx-auto hidden max-w-7xl gap-2 px-4 pb-3 md:hidden'>
+                    <div class='grid grid-cols-1 gap-2 py-2'>
+                        <a href='/dashboard/overview' data-page-link='overview' class='nav-link mobile-nav-link'><i class='fa-solid fa-gauge-high text-[12px]'></i><span>Overview</span></a>
+                        <a href='/dashboard/servers' data-page-link='servers' class='nav-link mobile-nav-link'><i class='fa-solid fa-server text-[12px]'></i><span>Servers</span></a>
+                        <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link mobile-nav-link'><i class='fa-solid fa-heart-pulse text-[12px]'></i><span>Monitoring</span></a>
+                        <a href='/dashboard/operations' data-page-link='operations' class='nav-link mobile-nav-link'><i class='fa-solid fa-gears text-[12px]'></i><span>Operations</span></a>
+                        <a href='/dashboard/setup' data-page-link='setup' class='nav-link mobile-nav-link'><i class='fa-solid fa-screwdriver-wrench text-[12px]'></i><span>Setup</span></a>
+                    </div>
+                </div>
+            </nav>
+            <div class='mx-auto max-w-7xl p-4 md:p-6 space-y-6'>
+                <header class='rounded-2xl border border-cyan-900/60 bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 p-6 shadow-lg shadow-cyan-900/20'>
+                    <div class='flex flex-col gap-4 md:flex-row md:items-end md:justify-between'>
+                        <div>
+                            <h1 class='text-2xl md:text-3xl font-bold tracking-tight'>KalliCloud Control Center</h1>
+                            <p class='text-slate-300 mt-1'>Live operations dashboard with API role-based access.</p>
+                        </div>
+                        <div class='flex w-full md:w-auto gap-2'>
+                            <input id='apiKey' type='password' placeholder='X-API-Key' class='w-full md:w-80 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-cyan-400'>
+                            <button id='connectBtn' class='rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400'>Connect</button>
+                        </div>
+                    </div>
+                    <div class='mt-3 flex flex-wrap items-center gap-3 text-xs'>
+                        <span id='authState' class='rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-amber-200'>Not authenticated</span>
+                        <span id='roleState' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Role: -</span>
+                        <span id='wsState' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>WS: disconnected</span>
+                        <span id='lastUpdate' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Last update: -</span>
+                    </div>
+                </header>
+
+                <section id='overviewSection' data-page='overview' class='dashboard-page grid grid-cols-2 gap-3 md:grid-cols-4'>
+                    <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <p class='text-xs text-slate-400'>Running Servers</p>
+                        <p id='runningServers' class='mt-1 text-2xl font-bold text-cyan-300'>0</p>
+                    </article>
+                    <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <p class='text-xs text-slate-400'>Connected Wrappers</p>
+                        <p id='connectedWrappers' class='mt-1 text-2xl font-bold text-emerald-300'>0</p>
+                    </article>
+                    <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <p class='text-xs text-slate-400'>Queue Total</p>
+                        <p id='queueTotal' class='mt-1 text-2xl font-bold text-violet-300'>0</p>
+                    </article>
+                    <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <p class='text-xs text-slate-400'>Active Alerts</p>
+                        <p id='activeAlerts' class='mt-1 text-2xl font-bold text-rose-300'>0</p>
+                    </article>
+                </section>
+
+                <section id='serversSection' data-page='servers' class='dashboard-page grid gap-6 lg:grid-cols-3'>
+                    <div class='lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
+                            <h2 class='font-semibold'>Servers</h2>
+                            <div class='flex gap-2'>
+                                <input id='serverFilter' type='text' placeholder='Filter server/group' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1 text-xs outline-none focus:border-cyan-400'>
+                                <button id='refreshBtn' class='rounded-lg border border-slate-700 px-3 py-1 text-xs hover:border-cyan-400'>Refresh</button>
+                            </div>
+                        </div>
+                        <div class='overflow-auto'>
+                            <table class='min-w-full text-sm'>
+                                <thead class='text-left text-xs text-slate-400'>
+                                    <tr>
+                                        <th class='px-2 py-2'>Server</th>
+                                        <th class='px-2 py-2'>Group</th>
+                                        <th class='px-2 py-2'>Status</th>
+                                        <th class='px-2 py-2'>Players</th>
+                                        <th class='px-2 py-2'>TPS</th>
+                                        <th class='px-2 py-2'>Wrapper</th>
+                                        <th class='px-2 py-2'>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id='serversBody' class='divide-y divide-slate-800'></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <h2 class='mb-3 font-semibold'>Quick Actions</h2>
+                        <div class='grid grid-cols-2 gap-2 text-xs'>
+                            <button id='btnWebhookTest' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400 disabled:opacity-30'>Webhook test</button>
+                            <button id='btnClearAlerts' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400 disabled:opacity-30'>Clear alerts</button>
+                            <button id='btnScaleEval' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-violet-400 disabled:opacity-30'>Scale eval</button>
+                            <button id='btnReloadView' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Reload view</button>
+                        </div>
+
+                        <h2 class='mb-3 mt-6 font-semibold'>Start Server</h2>
+                        <div class='space-y-2 text-xs'>
+                            <input id='startServerName' type='text' placeholder='Server name (e.g. Lobby-2)' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='startGroupName' type='text' placeholder='Group name (e.g. Lobby)' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <button id='btnStartServer' class='w-full rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400 disabled:opacity-30'>Start server</button>
+                        </div>
+
+                        <h2 class='mb-3 font-semibold'>Queue by Group</h2>
+                        <div id='queueBox' class='space-y-2 text-sm'></div>
+
+                        <h2 class='mb-3 mt-6 font-semibold'>Wrappers</h2>
+                        <div id='wrappersBox' class='space-y-2 text-sm'></div>
+                    </div>
+                </section>
+
+                <section id='opsSection' data-page='operations' class='dashboard-page grid gap-6 lg:grid-cols-3'>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-2'>
+                        <div class='mb-3 flex items-center justify-between'>
+                            <h2 class='font-semibold'>Cluster & Scaling</h2>
+                            <span id='clusterState' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>cluster: -</span>
+                        </div>
+                        <div class='grid gap-4 md:grid-cols-2'>
+                            <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                                <div class='font-semibold'>Cluster Info</div>
+                                <div id='clusterBox' class='mt-2 space-y-1 text-slate-300'></div>
+                            </div>
+                            <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                                <div class='font-semibold'>Scaling Policies</div>
+                                <div id='policiesBox' class='mt-2 space-y-1 text-slate-300'></div>
+                            </div>
+                        </div>
+                        <div class='mt-4 grid gap-2 md:grid-cols-3'>
+                            <input id='configKey' type='text' placeholder='Config key (e.g. CloudMaster.Network.ProxyOnlineMode)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-xs outline-none focus:border-cyan-400 md:col-span-2'>
+                            <button id='btnConfigGet' class='rounded-lg border border-slate-700 px-2 py-2 text-xs hover:border-cyan-400 disabled:opacity-30'>Get Config</button>
+                            <input id='configValue' type='text' placeholder='Config value' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-xs outline-none focus:border-cyan-400 md:col-span-2'>
+                            <button id='btnConfigSet' class='rounded-lg border border-slate-700 px-2 py-2 text-xs hover:border-emerald-400 disabled:opacity-30'>Set Config</button>
+                        </div>
+                    </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-2'>
+                        <div class='mb-3 flex items-center justify-between'>
+                            <h2 class='font-semibold'>Recent Logs</h2>
+                            <input id='logFilter' type='text' placeholder='Filter logs' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1 text-xs outline-none focus:border-cyan-400'>
+                        </div>
+                        <pre id='logsBox' class='h-72 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
+                    </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <h2 class='mb-3 font-semibold'>Active Alerts</h2>
+                        <div id='alertsBox' class='space-y-2 text-xs'></div>
+                    </div>
+                </section>
+
+                <section id='monitoringSection' data-page='monitoring' class='dashboard-page rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                    <div class='mb-3 flex items-center justify-between'>
+                        <h2 class='font-semibold'>Metrics Trend</h2>
+                        <span class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>last 180 points</span>
+                    </div>
+                    <canvas id='metricsCanvas' class='h-44 w-full rounded-xl border border-slate-800 bg-slate-950/70'></canvas>
+                </section>
+
+                <section id='setupSection' data-page='setup' class='dashboard-page rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                    <div class='mb-3 flex items-center justify-between'>
+                        <h2 class='font-semibold'>Setup Health</h2>
+                        <span id='setupSummary' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>-</span>
+                    </div>
+                    <div id='setupBox' class='grid gap-3 md:grid-cols-2 xl:grid-cols-3'></div>
+                </section>
+            </div>
+
+            <script>
+                const state = {
+                    apiKey: sessionStorage.getItem('cloud_api_key') || '',
+                    role: null,
+                    ws: null,
+                    wsUrl: null,
+                    wsTicket: null,
+                    overview: null,
+                    logs: { lines: [] },
+                    metricsHistory: [],
+                    refreshInFlight: false,
+                    refreshQueued: false,
+                    lastAutoRefreshAt: 0
+                };
+                const apiKeyInput = document.getElementById('apiKey');
+                apiKeyInput.value = state.apiKey;
+                initTheme();
+                applyDashboardPage();
+
+                function showToast(icon, title, text = '') {
+                    Swal.fire({
+                        toast: true,
+                        position: 'top-end',
+                        icon,
+                        title,
+                        text,
+                        showConfirmButton: false,
+                        timer: 2500,
+                        timerProgressBar: true
+                    });
+                }
+
+                function initTheme() {
+                    const saved = localStorage.getItem('cloud_theme') || 'dark';
+                    if (saved === 'light') {
+                        document.documentElement.classList.add('theme-light');
+                    } else {
+                        document.documentElement.classList.remove('theme-light');
+                    }
+                }
+
+                function toggleTheme() {
+                    const isLight = document.documentElement.classList.toggle('theme-light');
+                    localStorage.setItem('cloud_theme', isLight ? 'light' : 'dark');
+                    showToast('success', 'Theme switched', isLight ? 'Light mode active' : 'Dark mode active');
+                }
+
+                function getCurrentPage() {
+                    const path = (window.location.pathname || '/dashboard').replace(/\/+$/, '');
+                    const parts = path.split('/').filter(Boolean);
+                    const last = parts.length ? parts[parts.length - 1].toLowerCase() : 'dashboard';
+                    const known = new Set(['overview', 'servers', 'monitoring', 'operations', 'setup']);
+                    if (known.has(last)) return last;
+                    return 'overview';
+                }
+
+                function applyDashboardPage() {
+                    const current = getCurrentPage();
+                    document.querySelectorAll('.dashboard-page').forEach(section => {
+                        const page = section.getAttribute('data-page');
+                        if (page === current) {
+                            section.classList.remove('hidden');
+                        } else {
+                            section.classList.add('hidden');
+                        }
+                    });
+                    document.querySelectorAll('[data-page-link]').forEach(link => {
+                        if (link.getAttribute('data-page-link') === current) {
+                            link.classList.add('nav-link-active');
+                        } else {
+                            link.classList.remove('nav-link-active');
+                        }
+                    });
+                    const mobileNav = document.getElementById('mobileNav');
+                    const navToggle = document.getElementById('navToggle');
+                    if (mobileNav && navToggle && window.innerWidth < 768) {
+                        mobileNav.classList.add('hidden');
+                        navToggle.setAttribute('aria-expanded', 'false');
+                    }
+                }
+
+                function headers() {
+                    return { 'X-API-Key': state.apiKey };
+                }
+
+                async function apiGet(path) {
+                    const res = await fetch(path, { headers: headers() });
+                    if (!res.ok) throw new Error(path + ' -> ' + res.status);
+                    return res.json();
+                }
+
+                async function apiPost(path, body) {
+                    const res = await fetch(path, {
+                        method: 'POST',
+                        headers: { ...headers(), 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    if (!res.ok) throw new Error(path + ' -> ' + res.status);
+                    return res.json();
+                }
+
+                function statusClass(status) {
+                    if (status === 'ONLINE') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+                    if (status === 'STARTING') return 'bg-amber-500/20 text-amber-300 border border-amber-500/40';
+                    return 'bg-rose-500/20 text-rose-300 border border-rose-500/40';
+                }
+
+                async function authenticate() {
+                    state.apiKey = apiKeyInput.value.trim();
+                    sessionStorage.setItem('cloud_api_key', state.apiKey);
+                    const auth = await apiGet('/api/v1/auth/me');
+                    state.role = auth.role;
+                    state.wsUrl = auth.wsUrl;
+                    state.wsTicket = auth.wsTicket || null;
+                    document.getElementById('authState').textContent = 'Authenticated as ' + auth.role;
+                    document.getElementById('authState').className = 'rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-emerald-200';
+                    document.getElementById('roleState').textContent = 'Role: ' + auth.role;
+                    applyRoleState();
+                    openWebSocket();
+                    await refresh();
+                }
+
+                async function refresh() {
+                    if (state.refreshInFlight) {
+                        state.refreshQueued = true;
+                        return;
+                    }
+                    state.refreshInFlight = true;
+                    try {
+                        const [overview, alerts, logs, setup, clusterInfo, policies, metricHistory] = await Promise.all([
+                            apiGet('/api/v1/dashboard/overview'),
+                            apiGet('/api/v1/alerts'),
+                            apiGet('/api/v1/logs/recent'),
+                            apiGet('/api/v1/setup/report'),
+                            apiGet('/api/v1/cluster/info'),
+                            apiGet('/api/v1/scaling/policies'),
+                            apiGet('/api/v1/metrics/history')
+                        ]);
+                        state.overview = overview;
+                        state.logs = logs;
+                        state.metricsHistory = metricHistory.history || [];
+                        renderOverview(overview);
+                        renderAlerts(alerts);
+                        renderLogs(logs);
+                        renderSetup(setup);
+                        renderCluster(clusterInfo);
+                        renderPolicies(policies);
+                        renderMetricsTrend(state.metricsHistory);
+                    } finally {
+                        state.refreshInFlight = false;
+                        if (state.refreshQueued) {
+                            state.refreshQueued = false;
+                            setTimeout(() => refresh().catch(() => {}), 250);
+                        }
+                    }
+                }
+
+                function scheduleAutoRefresh() {
+                    const now = Date.now();
+                    if (now - state.lastAutoRefreshAt < 8000) {
+                        return;
+                    }
+                    state.lastAutoRefreshAt = now;
+                    refresh().catch(() => {});
+                }
+
+                function renderOverview(data) {
+                    document.getElementById('runningServers').textContent = data.runningServers || 0;
+                    document.getElementById('connectedWrappers').textContent = data.connectedWrappers || 0;
+                    document.getElementById('queueTotal').textContent = data.queueTotal || 0;
+                    document.getElementById('activeAlerts').textContent = (data.monitoring && data.monitoring.activeAlerts) || 0;
+                    document.getElementById('lastUpdate').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+
+                    const filterText = (document.getElementById('serverFilter').value || '').trim().toLowerCase();
+                    const filteredServers = (data.servers || []).filter(server => {
+                        if (!filterText) return true;
+                        return (server.serverName || '').toLowerCase().includes(filterText)
+                            || (server.groupName || '').toLowerCase().includes(filterText);
+                    });
+
+                    const serverRows = filteredServers.map(server => {
+                        const canMutate = state.role === 'ADMIN';
+                        const disabled = canMutate ? '' : 'disabled';
+                        return `
+                            <tr>
+                                <td class='px-2 py-2 font-medium'>${server.serverName}</td>
+                                <td class='px-2 py-2 text-slate-300'>${server.groupName}</td>
+                                <td class='px-2 py-2'><span class='rounded-full px-2 py-1 text-xs ${statusClass(server.status)}'>${server.status}</span></td>
+                                <td class='px-2 py-2'>${server.playerCount}/${server.maxPlayers}</td>
+                                <td class='px-2 py-2'>${Number(server.tps || 0).toFixed(1)}</td>
+                                <td class='px-2 py-2 text-slate-400'>${server.wrapperId}</td>
+                                <td class='px-2 py-2'>
+                                    <div class='flex gap-1'>
+                                        <button ${disabled} onclick="startLike('${server.groupName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-emerald-400 disabled:opacity-30'>start like</button>
+                                        <button ${disabled} onclick="restartServer('${server.serverName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-cyan-400 disabled:opacity-30'>restart</button>
+                                        <button ${disabled} onclick="stopServer('${server.serverName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-rose-400 disabled:opacity-30'>stop</button>
+                                    </div>
+                                </td>
+                            </tr>`;
+                    }).join('');
+                    document.getElementById('serversBody').innerHTML = serverRows || '<tr><td colspan="7" class="px-2 py-3 text-slate-400">No servers</td></tr>';
+
+                    const queueItems = Object.entries(data.queue || {}).map(([group, size]) =>
+                        `<div class='flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2'><span>${group}</span><span class='font-semibold text-violet-300'>${size}</span></div>`
+                    ).join('');
+                    document.getElementById('queueBox').innerHTML = queueItems || "<p class='text-slate-400'>No queue data</p>";
+
+                    const wrappers = (data.wrappers || []).map(wrapper => {
+                        const usedPct = wrapper.maxMemory > 0 ? Math.round(((wrapper.maxMemory - wrapper.availableMemory) / wrapper.maxMemory) * 100) : 0;
+                        const drain = wrapper.draining ? ' | DRAINING' : '';
+                        const canMutate = state.role === 'ADMIN';
+                        const drainLabel = wrapper.draining ? 'undrain' : 'drain';
+                        const disabled = canMutate ? '' : 'disabled';
+                        return `<div class='rounded-lg border border-slate-800 bg-slate-950/60 p-3'>
+                            <div class='font-medium'>${wrapper.wrapperId}</div>
+                            <div class='text-xs text-slate-400'>${wrapper.hostname}</div>
+                            <div class='mt-1 text-xs'>CPU ${Number(wrapper.cpuUsage || 0).toFixed(1)}% | RAM ${usedPct}% | Servers ${wrapper.activeServers}${drain}</div>
+                            <div class='mt-2'>
+                                <button ${disabled} onclick="toggleWrapperDrain('${wrapper.wrapperId}', ${wrapper.draining ? 'false' : 'true'})" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-amber-400 disabled:opacity-30'>${drainLabel}</button>
+                            </div>
+                        </div>`;
+                    }).join('');
+                    document.getElementById('wrappersBox').innerHTML = wrappers || "<p class='text-slate-400'>No wrappers connected</p>";
+                }
+
+                function renderAlerts(data) {
+                    const active = data.active || [];
+                    const items = active.slice(0, 20).map(alert => {
+                        const sev = (alert.severity || 'INFO').toUpperCase();
+                        const cls = sev === 'CRITICAL'
+                            ? 'border-rose-600/50 bg-rose-950/40 text-rose-200'
+                            : (sev === 'WARNING'
+                                ? 'border-amber-600/50 bg-amber-950/40 text-amber-200'
+                                : 'border-slate-700 bg-slate-950/40 text-slate-300');
+                        return `<div class='rounded-lg border ${cls} p-2'>
+                            <div class='font-semibold'>${sev}</div>
+                            <div class='mt-1 text-xs'>${alert.component || '-'}</div>
+                            <div class='mt-1 text-xs'>${alert.message || '-'}</div>
+                        </div>`;
+                    }).join('');
+                    document.getElementById('alertsBox').innerHTML = items || "<p class='text-slate-400'>No active alerts</p>";
+                }
+
+                function renderLogs(data) {
+                    const lines = (data.lines || []);
+                    const filter = (document.getElementById('logFilter').value || '').trim().toLowerCase();
+                    const filtered = filter ? lines.filter(line => line.toLowerCase().includes(filter)) : lines;
+                    document.getElementById('logsBox').textContent = filtered.slice(-250).join('\n');
+                }
+
+                function renderSetup(report) {
+                    const summary = report.summary || {};
+                    document.getElementById('setupSummary').textContent =
+                        `groups ${summary.groupsOk || 0}/${summary.groupsTotal || 0} ok | issues ${summary.issuesTotal || 0}`;
+                    const groups = report.groups || [];
+                    const cards = groups.map(group => {
+                        const healthy = !!group.healthy;
+                        const cls = healthy
+                            ? 'border-emerald-700/40 bg-emerald-950/20'
+                            : 'border-rose-700/40 bg-rose-950/20';
+                        const issues = (group.issues || []).map(issue => `<li>${issue}</li>`).join('');
+                        return `<div class='rounded-xl border ${cls} p-3 text-xs'>
+                            <div class='font-semibold text-sm'>${group.groupName}</div>
+                            <div class='mt-1 text-slate-300'>dynamic: ${group.dynamic} | proxy: ${group.proxyGroup}</div>
+                            <div class='mt-1 text-slate-300'>jar: ${group.jarFound ? 'ok' : 'missing'}</div>
+                            <div class='mt-1 text-slate-300 break-all'>template: ${group.templateExists ? 'ok' : 'missing'}</div>
+                            ${healthy ? "<div class='mt-2 text-emerald-300'>Healthy</div>" : `<ul class='mt-2 list-disc pl-5 text-rose-200'>${issues}</ul>`}
+                        </div>`;
+                    }).join('');
+                    document.getElementById('setupBox').innerHTML = cards || "<p class='text-slate-400'>No groups</p>";
+                }
+
+                function renderCluster(info) {
+                    document.getElementById('clusterState').textContent = `cluster: ${info.clusterState || 'UNKNOWN'}`;
+                    document.getElementById('clusterBox').innerHTML = `
+                        <div>Master ID: <span class='text-slate-100'>${info.masterId || '-'}</span></div>
+                        <div>Primary: <span class='text-slate-100'>${info.isPrimary ? 'yes' : 'no'}</span></div>
+                        <div>Primary ID: <span class='text-slate-100'>${info.primaryMasterId || '-'}</span></div>
+                        <div>Nodes: <span class='text-slate-100'>${info.clusterNodes || 0}</span></div>`;
+                }
+
+                function renderPolicies(policies) {
+                    const entries = Object.entries(policies || {});
+                    const html = entries.map(([group, p]) => `
+                        <div class='rounded-lg border border-slate-800 bg-slate-900/40 p-2'>
+                            <div class='font-semibold text-slate-100'>${group}</div>
+                            <div>min/max: ${p.minServers}/${p.maxServers}</div>
+                            <div>up/down: ${p.scaleUpThreshold}/${p.scaleDownThreshold}</div>
+                            <div>predictive: ${p.predictiveScaling ? 'on' : 'off'}</div>
+                        </div>`).join('');
+                    document.getElementById('policiesBox').innerHTML = html || "<p>No policies</p>";
+                }
+
+                function renderMetricsTrend(history) {
+                    const canvas = document.getElementById('metricsCanvas');
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d');
+                    const parentWidth = canvas.parentElement.clientWidth;
+                    canvas.width = Math.max(400, parentWidth - 16);
+                    canvas.height = 176;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    const points = (history || []).slice(-120).map(h => Number(h.runningServers || 0));
+                    if (points.length < 2) {
+                        ctx.fillStyle = '#94a3b8';
+                        ctx.fillText('Not enough metric data yet.', 12, 24);
+                        return;
+                    }
+                    const min = Math.min(...points);
+                    const max = Math.max(...points);
+                    const range = Math.max(1, max - min);
+
+                    ctx.strokeStyle = '#155e75';
+                    ctx.lineWidth = 1;
+                    for (let i = 0; i < 4; i++) {
+                        const y = 16 + (i * (canvas.height - 32) / 3);
+                        ctx.beginPath();
+                        ctx.moveTo(8, y);
+                        ctx.lineTo(canvas.width - 8, y);
+                        ctx.stroke();
+                    }
+
+                    ctx.strokeStyle = '#22d3ee';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    points.forEach((v, i) => {
+                        const x = 8 + (i * (canvas.width - 16) / (points.length - 1));
+                        const y = canvas.height - 16 - ((v - min) / range) * (canvas.height - 32);
+                        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                    });
+                    ctx.stroke();
+                }
+
+                async function stopServer(serverName) {
+                    try {
+                        await apiPost('/api/v1/servers/stop', { serverName });
+                        showToast('success', 'Server stop triggered', serverName);
+                        await refresh();
+                    } catch (e) {
+                        showToast('error', 'Stop failed', e.message);
+                    }
+                }
+
+                async function restartServer(serverName) {
+                    try {
+                        await apiPost('/api/v1/servers/restart', { serverName });
+                        showToast('success', 'Server restart triggered', serverName);
+                        await refresh();
+                    } catch (e) {
+                        showToast('error', 'Restart failed', e.message);
+                    }
+                }
+
+                async function startLike(groupName) {
+                    const now = Date.now().toString().slice(-5);
+                    const generated = `${groupName}-${now}`;
+                    document.getElementById('startServerName').value = generated;
+                    document.getElementById('startGroupName').value = groupName;
+                }
+
+                async function startServerManual() {
+                    const serverName = document.getElementById('startServerName').value.trim();
+                    const groupName = document.getElementById('startGroupName').value.trim();
+                    if (!serverName || !groupName) {
+                        showToast('warning', 'Validation', 'serverName and groupName required');
+                        return;
+                    }
+                    await apiPost('/api/v1/servers/start', { serverName, groupName });
+                    showToast('success', 'Server start triggered', serverName + ' (' + groupName + ')');
+                    await refresh();
+                }
+
+                async function toggleWrapperDrain(wrapperId, draining) {
+                    try {
+                        await apiPost('/api/v1/wrappers/drain', { wrapperId, draining });
+                        showToast('success', 'Wrapper updated', wrapperId + ' draining=' + draining);
+                        await refresh();
+                    } catch (e) {
+                        showToast('error', 'Drain failed', e.message);
+                    }
+                }
+
+                async function clearAlerts() {
+                    await apiPost('/api/v1/alerts/clear', {});
+                    showToast('success', 'Alerts cleared');
+                    await refresh();
+                }
+
+                async function triggerWebhookTest() {
+                    await apiPost('/api/v1/webhook/test', {});
+                    showToast('success', 'Webhook test sent');
+                    await refresh();
+                }
+
+                async function triggerScaleEval() {
+                    await apiPost('/api/v1/scaling/trigger', {});
+                    showToast('success', 'Scaling evaluation triggered');
+                    await refresh();
+                }
+
+                async function getConfigValue() {
+                    const key = document.getElementById('configKey').value.trim();
+                    if (!key) return;
+                    const res = await apiGet('/api/v1/config/get?key=' + encodeURIComponent(key));
+                    document.getElementById('configValue').value = (res.value ?? '');
+                }
+
+                async function setConfigValue() {
+                    const key = document.getElementById('configKey').value.trim();
+                    const value = document.getElementById('configValue').value;
+                    if (!key) return;
+                    await apiPost('/api/v1/config/set', { key, value });
+                    showToast('success', 'Config updated', key);
+                    await refresh();
+                }
+
+                function applyRoleState() {
+                    const isAdmin = state.role === 'ADMIN';
+                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnConfigSet'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.disabled = !isAdmin;
+                    });
+                }
+
+                function openWebSocket() {
+                    if (state.ws) {
+                        state.ws.close();
+                        state.ws = null;
+                    }
+                    const baseUrl = state.wsUrl || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8090/live`;
+                    const separator = baseUrl.includes('?') ? '&' : '?';
+                    const wsToken = state.wsTicket || state.apiKey;
+                    const wsUrl = `${baseUrl}${separator}token=${encodeURIComponent(wsToken)}`;
+                    state.ws = new WebSocket(wsUrl);
+                    document.getElementById('wsState').textContent = 'WS: connecting';
+                    state.ws.onopen = () => {
+                        document.getElementById('wsState').textContent = 'WS: connected';
+                    };
+                    state.ws.onmessage = () => { scheduleAutoRefresh(); };
+                    state.ws.onclose = () => {
+                        document.getElementById('wsState').textContent = 'WS: disconnected';
+                    };
+                }
+
+                document.getElementById('connectBtn').addEventListener('click', () => authenticate().catch(err => {
+                    document.getElementById('authState').textContent = 'Auth failed';
+                    document.getElementById('authState').className = 'rounded-full border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-rose-200';
+                    sessionStorage.removeItem('cloud_api_key');
+                    state.wsTicket = null;
+                    showToast('error', 'Authentication failed', err.message || String(err));
+                    console.error(err);
+                }));
+                document.getElementById('refreshBtn').addEventListener('click', () => refresh().catch(console.error));
+                document.getElementById('btnReloadView').addEventListener('click', () => refresh().catch(console.error));
+                document.getElementById('btnWebhookTest').addEventListener('click', () => triggerWebhookTest().catch(err => showToast('error', 'Webhook failed', err.message)));
+                document.getElementById('btnClearAlerts').addEventListener('click', () => clearAlerts().catch(err => showToast('error', 'Clear alerts failed', err.message)));
+                document.getElementById('btnScaleEval').addEventListener('click', () => triggerScaleEval().catch(err => showToast('error', 'Scale eval failed', err.message)));
+                document.getElementById('btnStartServer').addEventListener('click', () => startServerManual().catch(err => showToast('error', 'Start failed', err.message)));
+                document.getElementById('btnConfigGet').addEventListener('click', () => getConfigValue().catch(err => showToast('error', 'Config get failed', err.message)));
+                document.getElementById('btnConfigSet').addEventListener('click', () => setConfigValue().catch(err => showToast('error', 'Config set failed', err.message)));
+                document.getElementById('serverFilter').addEventListener('input', () => {
+                    if (state.overview) renderOverview(state.overview);
+                });
+                document.getElementById('logFilter').addEventListener('input', () => {
+                    renderLogs(state.logs);
+                });
+                document.getElementById('themeToggle').addEventListener('click', () => toggleTheme());
+                document.getElementById('navToggle').addEventListener('click', () => {
+                    const mobileNav = document.getElementById('mobileNav');
+                    const navToggle = document.getElementById('navToggle');
+                    const opening = mobileNav.classList.contains('hidden');
+                    mobileNav.classList.toggle('hidden');
+                    navToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+                });
+                document.querySelectorAll('#mobileNav a').forEach(el => {
+                    el.addEventListener('click', () => {
+                        document.getElementById('mobileNav').classList.add('hidden');
+                        document.getElementById('navToggle').setAttribute('aria-expanded', 'false');
+                    });
+                });
+                window.addEventListener('resize', () => {
+                    if (window.innerWidth >= 768) {
+                        document.getElementById('mobileNav').classList.add('hidden');
+                        document.getElementById('navToggle').setAttribute('aria-expanded', 'false');
+                    }
+                });
+
+                if (state.apiKey) {
+                    authenticate().catch(() => {});
+                }
+            </script>
+        </body>
+        </html>
+        
+

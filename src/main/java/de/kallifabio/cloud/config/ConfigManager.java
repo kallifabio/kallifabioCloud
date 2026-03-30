@@ -145,7 +145,10 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.Max_Ram", "16384");
             masterConfigData.set("CloudMaster.Default_Ram", "16384");
             masterConfigData.set("CloudMaster.Hostname", Master.getInstance() != null ? Master.getInstance().getMasterHost() : "localhost");
-            masterConfigData.set("CloudMaster.Port", Master.getInstance() != null ? Master.getInstance().getMasterPort().toString() : "9000");
+            masterConfigData.set("CloudMaster.Port", Master.getInstance() != null ? Master.getInstance().getMasterPort().toString() : "54555");
+            masterConfigData.set("CloudMaster.Network.TcpPort", 54555);
+            masterConfigData.set("CloudMaster.Network.UdpPort", 54777);
+            masterConfigData.set("CloudMaster.Network.ConnectHost", "127.0.0.1");
 
             // API Configuration
             masterConfigData.set("CloudMaster.API.Enabled", true);
@@ -157,6 +160,11 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.API.TLS.KeystorePath", "config/tls/keystore.p12");
             masterConfigData.set("CloudMaster.API.TLS.KeystorePassword", "");
             masterConfigData.set("CloudMaster.API.TLS.KeystoreType", "PKCS12");
+            masterConfigData.set("CloudMaster.Network.ProxyOnlineMode", true);
+            masterConfigData.set("CloudMaster.Network.ProxyBindHost", "0.0.0.0");
+            masterConfigData.set("CloudMaster.Network.EnforceBackendBind", true);
+            masterConfigData.set("CloudMaster.Network.BackendBindAddress", "127.0.0.1");
+            masterConfigData.set("CloudMaster.Network.ForwardingSecret", java.util.UUID.randomUUID().toString().replace("-", ""));
             masterConfigData.set("CloudMaster.ConfigVersion", CONFIG_VERSION);
             masterConfigData.set("CloudMaster.Database.Type", "sqlite");
             masterConfigData.set("CloudMaster.Database.SQLite.File", "data/cloud.db");
@@ -168,6 +176,21 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.Alerts.WebhookUrl", "");
             masterConfigData.set("CloudMaster.Templates.TestingMode", false);
             masterConfigData.set("CloudMaster.Templates.AutoUpdateAfterRestart", true);
+            masterConfigData.set("CloudMaster.Permissions.Runtime.Enabled", true);
+            masterConfigData.set("CloudMaster.Permissions.Runtime.Provider", "cloud");
+            masterConfigData.set("CloudMaster.Permissions.Runtime.EnforcePrefixSuffix", true);
+            masterConfigData.set("CloudMaster.Permissions.Runtime.PermissionPrefixFilter", "cloud.");
+            masterConfigData.set("CloudMaster.Permissions.Runtime.CloudSyncCommand", "");
+            masterConfigData.set("CloudMaster.Monitoring.CPU.Warning", 90.0);
+            masterConfigData.set("CloudMaster.Monitoring.CPU.Critical", 97.0);
+            masterConfigData.set("CloudMaster.Monitoring.Memory.Warning", 90.0);
+            masterConfigData.set("CloudMaster.Monitoring.Memory.Critical", 96.0);
+            masterConfigData.set("CloudMaster.Monitoring.TPS.Warning", 18.0);
+            masterConfigData.set("CloudMaster.Monitoring.TPS.Critical", 15.0);
+            masterConfigData.set("CloudMaster.Monitoring.RequiredConsecutiveBreaches", 2);
+            masterConfigData.set("CloudMaster.Monitoring.Cooldown.WarningMs", 60000);
+            masterConfigData.set("CloudMaster.Monitoring.Cooldown.CriticalMs", 120000);
+            masterConfigData.set("CloudMaster.Monitoring.Cooldown.InfoMs", 300000);
 
             masterConfigData.save(masterConfigFile);
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -340,6 +363,19 @@ public class ConfigManager {
         return serverGroupsData.getInt("Ports.DynamicStart", 25566);
     }
 
+    public int getMasterTcpPort() {
+        return masterConfigData.getInt("CloudMaster.Network.TcpPort", 54555);
+    }
+
+    public int getMasterUdpPort() {
+        return masterConfigData.getInt("CloudMaster.Network.UdpPort", 54777);
+    }
+
+    public String getMasterConnectHost() {
+        return masterConfigData.getString("CloudMaster.Network.ConnectHost",
+                masterConfigData.getString("CloudMaster.Hostname", "127.0.0.1"));
+    }
+
     // ========================================
     // Server Group Configuration Methods
     // ========================================
@@ -414,6 +450,46 @@ public class ConfigManager {
 
     public boolean isTemplateAutoUpdateAfterRestart() {
         return masterConfigData.getBoolean("CloudMaster.Templates.AutoUpdateAfterRestart", true);
+    }
+
+    public double getMonitoringCpuWarning() {
+        return masterConfigData.getDouble("CloudMaster.Monitoring.CPU.Warning", 90.0);
+    }
+
+    public double getMonitoringCpuCritical() {
+        return masterConfigData.getDouble("CloudMaster.Monitoring.CPU.Critical", 97.0);
+    }
+
+    public double getMonitoringMemoryWarning() {
+        return masterConfigData.getDouble("CloudMaster.Monitoring.Memory.Warning", 90.0);
+    }
+
+    public double getMonitoringMemoryCritical() {
+        return masterConfigData.getDouble("CloudMaster.Monitoring.Memory.Critical", 96.0);
+    }
+
+    public double getMonitoringTpsWarning() {
+        return masterConfigData.getDouble("CloudMaster.Monitoring.TPS.Warning", 18.0);
+    }
+
+    public double getMonitoringTpsCritical() {
+        return masterConfigData.getDouble("CloudMaster.Monitoring.TPS.Critical", 15.0);
+    }
+
+    public int getMonitoringRequiredConsecutiveBreaches() {
+        return masterConfigData.getInt("CloudMaster.Monitoring.RequiredConsecutiveBreaches", 2);
+    }
+
+    public long getMonitoringWarningCooldownMs() {
+        return masterConfigData.getLong("CloudMaster.Monitoring.Cooldown.WarningMs", 60_000L);
+    }
+
+    public long getMonitoringCriticalCooldownMs() {
+        return masterConfigData.getLong("CloudMaster.Monitoring.Cooldown.CriticalMs", 120_000L);
+    }
+
+    public long getMonitoringInfoCooldownMs() {
+        return masterConfigData.getLong("CloudMaster.Monitoring.Cooldown.InfoMs", 300_000L);
     }
 
     public Integer getMaxPlayersForGroup(String groupName) {
@@ -523,6 +599,19 @@ public class ConfigManager {
         changed |= clampInt(serverGroupsData, "Ports.FirstProxy", 1, 65535, 25577);
         changed |= clampInt(serverGroupsData, "Ports.FirstLobby", 1, 65535, 25565);
         changed |= clampInt(serverGroupsData, "Ports.DynamicStart", 1, 65535, 25566);
+        changed |= clampInt(masterConfigData, "CloudMaster.Network.TcpPort", 1, 65535, 54555);
+        changed |= clampInt(masterConfigData, "CloudMaster.Network.UdpPort", 1, 65535, 54777);
+
+        changed |= clampDouble(masterConfigData, "CloudMaster.Monitoring.CPU.Warning", 10.0, 100.0, 90.0);
+        changed |= clampDouble(masterConfigData, "CloudMaster.Monitoring.CPU.Critical", 10.0, 100.0, 97.0);
+        changed |= clampDouble(masterConfigData, "CloudMaster.Monitoring.Memory.Warning", 10.0, 100.0, 90.0);
+        changed |= clampDouble(masterConfigData, "CloudMaster.Monitoring.Memory.Critical", 10.0, 100.0, 96.0);
+        changed |= clampDouble(masterConfigData, "CloudMaster.Monitoring.TPS.Warning", 1.0, 20.0, 18.0);
+        changed |= clampDouble(masterConfigData, "CloudMaster.Monitoring.TPS.Critical", 1.0, 20.0, 15.0);
+        changed |= clampInt(masterConfigData, "CloudMaster.Monitoring.RequiredConsecutiveBreaches", 1, 10, 2);
+        changed |= clampInt(masterConfigData, "CloudMaster.Monitoring.Cooldown.WarningMs", 5000, 3600000, 60000);
+        changed |= clampInt(masterConfigData, "CloudMaster.Monitoring.Cooldown.CriticalMs", 5000, 3600000, 120000);
+        changed |= clampInt(masterConfigData, "CloudMaster.Monitoring.Cooldown.InfoMs", 5000, 3600000, 300000);
 
         if (serverGroupsData.contains("ServerGroup") && serverGroupsData.getConfigurationSection("ServerGroup") != null) {
             for (String group : serverGroupsData.getConfigurationSection("ServerGroup").getKeys(false)) {
@@ -559,6 +648,56 @@ public class ConfigManager {
         boolean changed = false;
         if (!CONFIG_VERSION.equals(current)) {
             masterConfigData.set("CloudMaster.ConfigVersion", CONFIG_VERSION);
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.TcpPort")) {
+            masterConfigData.set("CloudMaster.Network.TcpPort", 54555);
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.UdpPort")) {
+            masterConfigData.set("CloudMaster.Network.UdpPort", 54777);
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.ConnectHost")) {
+            masterConfigData.set("CloudMaster.Network.ConnectHost",
+                    masterConfigData.getString("CloudMaster.Hostname", "127.0.0.1"));
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.ProxyBindHost")) {
+            masterConfigData.set("CloudMaster.Network.ProxyBindHost", "0.0.0.0");
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.EnforceBackendBind")) {
+            masterConfigData.set("CloudMaster.Network.EnforceBackendBind", true);
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.BackendBindAddress")) {
+            masterConfigData.set("CloudMaster.Network.BackendBindAddress", "127.0.0.1");
+            changed = true;
+        }
+        if (masterConfigData.getString("CloudMaster.Network.ForwardingSecret", "").isBlank()) {
+            masterConfigData.set("CloudMaster.Network.ForwardingSecret",
+                    java.util.UUID.randomUUID().toString().replace("-", ""));
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Permissions.Runtime.Enabled")) {
+            masterConfigData.set("CloudMaster.Permissions.Runtime.Enabled", true);
+            changed = true;
+        }
+        if (masterConfigData.getString("CloudMaster.Permissions.Runtime.Provider", "").isBlank()) {
+            masterConfigData.set("CloudMaster.Permissions.Runtime.Provider", "cloud");
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Permissions.Runtime.EnforcePrefixSuffix")) {
+            masterConfigData.set("CloudMaster.Permissions.Runtime.EnforcePrefixSuffix", true);
+            changed = true;
+        }
+        if (masterConfigData.getString("CloudMaster.Permissions.Runtime.PermissionPrefixFilter", "").isBlank()) {
+            masterConfigData.set("CloudMaster.Permissions.Runtime.PermissionPrefixFilter", "cloud.");
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Permissions.Runtime.CloudSyncCommand")) {
+            masterConfigData.set("CloudMaster.Permissions.Runtime.CloudSyncCommand", "");
             changed = true;
         }
         if (masterConfigData.getString("CloudMaster.API.AdminKey", "").isBlank()) {

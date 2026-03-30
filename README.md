@@ -27,6 +27,7 @@ Ein modulares Minecraft-Cloudsystem mit:
 ### Permissions / Social
 - Cross-Server Permission-Sync
 - Runtime Permission-Enforcement im Master Join-/Switch-Pfad
+- Runtime Permission-Enforcer im Wrapper/Serverprocess-Pfad (Cloud-Provider Standard, LuckPerms optional)
 - Friend-/Party-Daten persistent im DataStore
 - Pending Friend/Party Requests persistent inkl. TTL + Cleanup Job
 
@@ -57,19 +58,18 @@ Ein modulares Minecraft-Cloudsystem mit:
 ## Voraussetzungen
 
 - Java 20+ (empfohlen 21)
-- Maven installiert (fuer lokale Builds)
 - Optional: MySQL oder MongoDB
 
-> Hinweis: `mvnw`/`mvnw.cmd` sind vorhanden, nutzen aktuell lokal installiertes Maven.
+> Hinweis: `mvnw`/`mvnw.cmd` laden Maven automatisch aus `distributionUrl` in `.mvn/wrapper/maven-wrapper.properties`.
 
 ---
 
 ## Build & Start
 
 ```bash
-mvn -DskipTests compile
-mvn test
-mvn package
+./mvnw -DskipTests compile
+./mvnw test
+./mvnw package
 ```
 
 Start:
@@ -101,6 +101,33 @@ Wichtige Dateien:
 - `CloudMaster.API.TLS.KeystorePath`
 - `CloudMaster.API.TLS.KeystorePassword`
 - `CloudMaster.API.TLS.KeystoreType`
+- `CloudMaster.Network.ProxyOnlineMode` (Default: `true`)
+- `CloudMaster.Network.TcpPort` (Master TCP, Default: `54555`)
+- `CloudMaster.Network.UdpPort` (Master UDP, Default: `54777`)
+- `CloudMaster.Network.ConnectHost` (Wrapper Zielhost)
+- `CloudMaster.Network.ProxyBindHost` (Proxy listener bind, Default: `0.0.0.0`)
+- `CloudMaster.Network.EnforceBackendBind` (erzwingt Backend `server-ip`)
+- `CloudMaster.Network.BackendBindAddress` (Default: `127.0.0.1`)
+- `CloudMaster.Network.ForwardingSecret` (Proxy forwarding secret sync)
+
+### Runtime Permission Enforcer
+- `CloudMaster.Permissions.Runtime.Enabled`
+- `CloudMaster.Permissions.Runtime.Provider` (`cloud` Standard, optional `luckperms`)
+- `CloudMaster.Permissions.Runtime.EnforcePrefixSuffix`
+- `CloudMaster.Permissions.Runtime.PermissionPrefixFilter` (Default: `cloud.`)
+- `CloudMaster.Permissions.Runtime.CloudSyncCommand` (optional, Platzhalter: `{uuid}`, `{server}`)
+
+### Monitoring Thresholds (konfigurierbar)
+- `CloudMaster.Monitoring.CPU.Warning`
+- `CloudMaster.Monitoring.CPU.Critical`
+- `CloudMaster.Monitoring.Memory.Warning`
+- `CloudMaster.Monitoring.Memory.Critical`
+- `CloudMaster.Monitoring.TPS.Warning`
+- `CloudMaster.Monitoring.TPS.Critical`
+- `CloudMaster.Monitoring.RequiredConsecutiveBreaches`
+- `CloudMaster.Monitoring.Cooldown.WarningMs`
+- `CloudMaster.Monitoring.Cooldown.CriticalMs`
+- `CloudMaster.Monitoring.Cooldown.InfoMs`
 
 ### API Port
 - `CloudMaster.API.Port` (Default: `8081`)
@@ -116,6 +143,7 @@ Wenn TLS aktiv ist:
 
 ### Core / Server
 - `help`, `list`, `status`, `reloadconfig`
+- `setup [--fix]`
 - `startserver <name> <group>`
 - `stopserver <name>`
 - `restartserver <name>`
@@ -132,6 +160,8 @@ Wenn TLS aktiv ist:
 - `groupwhitelist <group> <uuid1,uuid2,...>`
 - `templatediff <group>`
 - `templaterollback <group> <version>`
+- `templatepull <serverName>`
+- `templatepush <serverName> [--clear] [--restart]`
 - `scalenow <group> <count>`
 
 ### Permissions
@@ -157,15 +187,13 @@ Wenn TLS aktiv ist:
 - ` /screens`: listet verfuegbare Screens
 - ` /exit`: zurueck zum Main-Screen
 - ` exit` / `stop`: beendet den Prozess
+- `screen <list|main|server>`: Screen-Navigation
+- `screentail <server> [lines]`: letzte Zeilen eines Server-Screens
+- `screencmd <server> <command...>`: Befehl an laufenden Server senden
 
 Aktueller Status:
 - Screen-Input wird im Server-Screen an den lokalen `Serverprocess` gesendet.
 - Bei nicht lokal verfuegbarem Server erfolgt Warnung + Log-Echo.
-
-Geplante Console-Ops (optional, noch nicht implementiert):
-- `/tail <server>`
-- `/clear`
-- `/screen close <server>`
 
 ---
 
@@ -191,6 +219,14 @@ Geplante Console-Ops (optional, noch nicht implementiert):
 - `GET /api/v1/metrics/history`
 - `GET /api/v1/metrics/prometheus`
 - `GET /api/v1/alerts`
+- `POST /api/v1/alerts/clear`
+
+---
+
+### Operations / Setup
+- `GET /api/v1/setup/report`
+- `POST /api/v1/wrappers/drain`
+- `GET /api/v1/logs/recent`
 
 ---
 

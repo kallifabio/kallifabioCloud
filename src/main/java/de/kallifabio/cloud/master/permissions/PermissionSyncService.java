@@ -78,6 +78,7 @@ public class PermissionSyncService {
         sync.primaryGroup = profile.primaryGroup;
         sync.prefix = profile.prefix;
         sync.suffix = profile.suffix;
+        sync.targetServer = master.getPlayerSessionManager().getCurrentServer(playerUuid);
         sync.timestamp = System.currentTimeMillis();
 
         master.getServer().sendToAllTCP(sync);

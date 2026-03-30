@@ -16,6 +16,9 @@ import de.kallifabio.cloud.master.permissions.PermissionGroup;
 import org.bson.Document;
 
 import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -35,6 +38,8 @@ public class CloudDataStore {
     private MongoClient mongoClient;
     private MongoDatabase mongoDatabase;
     private BackendType backendType = BackendType.SQLITE;
+    private volatile long lastDbErrorLogAt = 0L;
+    private volatile String lastDbErrorSignature = "";
 
     public synchronized void initialize(ConfigManager config) {
         String type = config.getDatabaseType();
@@ -65,8 +70,10 @@ public class CloudDataStore {
     }
 
     private void initJdbc(String jdbcUrl, String user, String pass) {
+        String effectiveJdbcUrl = normalizeAndPrepareJdbcUrl(jdbcUrl);
+
         HikariConfig hc = new HikariConfig();
-        hc.setJdbcUrl(jdbcUrl);
+        hc.setJdbcUrl(effectiveJdbcUrl);
         if (user != null && !user.isBlank()) hc.setUsername(user);
         if (pass != null && !pass.isBlank()) hc.setPassword(pass);
         hc.setMaximumPoolSize(10);
@@ -76,6 +83,41 @@ public class CloudDataStore {
         hc.setInitializationFailTimeout(-1);
         hc.setPoolName("CloudDataPool");
         dataSource = new HikariDataSource(hc);
+    }
+
+    private String normalizeAndPrepareJdbcUrl(String jdbcUrl) {
+        if (jdbcUrl == null) {
+            return null;
+        }
+        String lower = jdbcUrl.toLowerCase();
+        if (!lower.startsWith("jdbc:sqlite:")) {
+            return jdbcUrl;
+        }
+
+        try {
+            String filePart = jdbcUrl.substring("jdbc:sqlite:".length());
+            int paramsIdx = filePart.indexOf('?');
+            if (paramsIdx >= 0) {
+                filePart = filePart.substring(0, paramsIdx);
+            }
+            filePart = filePart.trim();
+            if (filePart.isEmpty() || ":memory:".equalsIgnoreCase(filePart)) {
+                return jdbcUrl;
+            }
+
+            Path dbPath = Paths.get(filePart);
+            if (!dbPath.isAbsolute()) {
+                dbPath = Path.of(System.getProperty("user.dir")).resolve(dbPath).normalize();
+            }
+            Path parent = dbPath.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            return "jdbc:sqlite:" + dbPath.toString().replace("\\", "/");
+        } catch (Exception e) {
+            CentralLogger.error("DataStore", "Failed to prepare SQLite path for JDBC URL: " + jdbcUrl, e);
+            return jdbcUrl;
+        }
     }
 
     private void initMongo(String uri, String db) {
@@ -757,6 +799,11 @@ public class CloudDataStore {
             long b = mongoDatabase.getCollection("party_invites").deleteMany(Filters.lt("expires_at", now)).getDeletedCount();
             return (int) (a + b);
         }
+        if (dataSource == null) {
+            logDbErrorThrottled("cleanup:no-datasource", null,
+                    "Skipped cleanup social pending records: datasource not initialized");
+            return 0;
+        }
 
         try (Connection c = dataSource.getConnection()) {
             try (PreparedStatement a = c.prepareStatement("DELETE FROM friend_requests WHERE expires_at < ?")) {
@@ -768,9 +815,23 @@ public class CloudDataStore {
                 removed += b.executeUpdate();
             }
         } catch (SQLException e) {
-            CentralLogger.error("DataStore", "Failed to cleanup social pending records", e);
+            logDbErrorThrottled("cleanup:sql", e, "Failed to cleanup social pending records");
         }
         return removed;
+    }
+
+    private void logDbErrorThrottled(String action, Exception e, String message) {
+        String signature = action + "|" + (e == null ? "-" : String.valueOf(e.getMessage()));
+        long now = System.currentTimeMillis();
+        if (!signature.equals(lastDbErrorSignature) || (now - lastDbErrorLogAt) > 120_000L) {
+            if (e == null) {
+                CentralLogger.warn("DataStore", message);
+            } else {
+                CentralLogger.error("DataStore", message, e);
+            }
+            lastDbErrorSignature = signature;
+            lastDbErrorLogAt = now;
+        }
     }
 
     private PlayerData fromResultSet(ResultSet rs) throws SQLException {

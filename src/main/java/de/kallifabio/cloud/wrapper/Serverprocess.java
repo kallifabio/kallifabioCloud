@@ -14,6 +14,8 @@ import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
 import de.kallifabio.cloud.libs.logging.CentralLogger;
 import oshi.SystemInfo;
 import oshi.software.os.OSProcess;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -22,11 +24,16 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -62,6 +69,10 @@ public class Serverprocess {
     private long lastNetworkSampleAt = 0L;
     private String networkCollectionMode = "NONE";
     private long lastMetricUpdate = 0;
+    private final Map<String, Set<String>> enforcedPermissionsByPlayer = new ConcurrentHashMap<>();
+    private final Map<String, String> enforcedGroupByPlayer = new ConcurrentHashMap<>();
+    private final Map<String, String> enforcedPrefixByPlayer = new ConcurrentHashMap<>();
+    private final Map<String, String> enforcedSuffixByPlayer = new ConcurrentHashMap<>();
 
     // Monitoring
     private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor();
@@ -99,16 +110,19 @@ public class Serverprocess {
 
         // Setup server directory
         File serverDir = setupServerDirectory();
-        runStartupPreflight(serverDir);
 
-        // Prepare server files (template copy)
+        // Prepare server files (template copy/bootstrap)
         prepareServerFiles(serverDir);
+
+        // Validate/setup runtime prerequisites
+        runStartupPreflight(serverDir);
 
         // WICHTIG: Akzeptiere EULA automatisch
         acceptEula(serverDir);
 
         // WICHTIG: Update server.properties mit korrektem Port
         updateServerProperties(serverDir, port);
+        configureNetworkFiles(serverDir);
 
         // Get JAR file (resolved via preflight/candidate lookup)
         String jarFile = getJarFileName();
@@ -173,7 +187,45 @@ public class Serverprocess {
     private void prepareServerFiles(File serverDir) throws IOException {
         if (isDynamicGroup()) {
             copyTemplateFiles(serverDir);
+            return;
         }
+
+        if (shouldBootstrapFromTemplate(serverDir)) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Bootstrap aus Template fuer statischen Server " + serverName + " gestartet");
+            copyTemplateFiles(serverDir);
+        } else {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Statischer Server " + serverName + " nutzt bestehende Dateien (kein Template-Overwrite)");
+        }
+    }
+
+    private boolean shouldBootstrapFromTemplate(File serverDir) throws IOException {
+        if (!serverDir.exists()) {
+            return true;
+        }
+
+        try (Stream<Path> files = Files.list(serverDir.toPath())) {
+            if (!files.findAny().isPresent()) {
+                return true;
+            }
+        }
+
+        String expectedJar = getJarFileName();
+        File primaryJar = new File(serverDir, expectedJar);
+        if (primaryJar.exists()) {
+            return false;
+        }
+
+        for (String alias : getJarCandidateNames(expectedJar)) {
+            if (new File(serverDir, alias).exists()) {
+                return false;
+            }
+        }
+        if (findMatchingJarInDirectory(serverDir, getJarCandidateNames(expectedJar)) != null) {
+            return false;
+        }
+        return true;
     }
 
     private void runStartupPreflight(File serverDir) throws IOException {
@@ -183,9 +235,9 @@ public class Serverprocess {
 
     private void ensureTemplateDirectories() throws IOException {
         File templateDir = configManager.isTemplateTestingMode()
-                ? new File("./templates_test/" + groupName)
-                : new File("./templates/" + groupName);
-        File backupTemplateDir = new File("./templates_backup/" + groupName);
+                ? resolveGroupDirectory("./templates_test")
+                : resolveGroupDirectory("./templates");
+        File backupTemplateDir = resolveGroupDirectory("./templates_backup");
 
         if (templateDir.exists() || backupTemplateDir.exists()) {
             return;
@@ -201,9 +253,9 @@ public class Serverprocess {
 
     private void copyTemplateFiles(File serverDir) throws IOException {
         File templateDir = configManager.isTemplateTestingMode()
-                ? new File("./templates_test/" + groupName)
-                : new File("./templates/" + groupName);
-        File backupTemplateDir = new File("./templates_backup/" + groupName);
+                ? resolveGroupDirectory("./templates_test")
+                : resolveGroupDirectory("./templates");
+        File backupTemplateDir = resolveGroupDirectory("./templates_backup");
 
         if (!templateDir.exists()) {
             if (!backupTemplateDir.exists()) {
@@ -296,10 +348,12 @@ public class Serverprocess {
 
     private void updateServerProperties(File serverDir, int port) throws IOException {
         File propertiesFile = new File(serverDir, "server.properties");
+        boolean enforceBind = getBackendBindEnforcement();
+        String backendBindAddress = getBackendBindAddress();
 
         if (!propertiesFile.exists()) {
             // Erstelle neue server.properties
-            createDefaultProperties(propertiesFile, port);
+            createDefaultProperties(propertiesFile, port, enforceBind, backendBindAddress);
         } else {
             // Update existierende server.properties
             List<String> lines = Files.readAllLines(propertiesFile.toPath());
@@ -308,6 +362,7 @@ public class Serverprocess {
             boolean portSet = false;
             boolean onlineModeSet = false;
             boolean maxPlayersSet = false;
+            boolean serverIpSet = false;
 
             for (String line : lines) {
                 if (line.startsWith("server-port=")) {
@@ -319,6 +374,13 @@ public class Serverprocess {
                 } else if (line.startsWith("max-players=")) {
                     newLines.add("max-players=" + maxPlayers);
                     maxPlayersSet = true;
+                } else if (line.startsWith("server-ip=")) {
+                    if (!isProxyGroup() && enforceBind) {
+                        newLines.add("server-ip=" + backendBindAddress);
+                    } else {
+                        newLines.add(line);
+                    }
+                    serverIpSet = true;
                 } else {
                     newLines.add(line);
                 }
@@ -334,6 +396,9 @@ public class Serverprocess {
             if (!maxPlayersSet) {
                 newLines.add("max-players=" + maxPlayers);
             }
+            if (!serverIpSet && !isProxyGroup() && enforceBind) {
+                newLines.add("server-ip=" + backendBindAddress);
+            }
 
             Files.write(propertiesFile.toPath(), newLines);
         }
@@ -342,13 +407,16 @@ public class Serverprocess {
                 " server.properties aktualisiert (Port: " + port + ", Max-Players: " + maxPlayers + ")");
     }
 
-    private void createDefaultProperties(File propertiesFile, int port) throws IOException {
+    private void createDefaultProperties(File propertiesFile, int port, boolean enforceBind, String backendBindAddress) throws IOException {
         StringBuilder properties = new StringBuilder();
         properties.append("#Minecraft server properties\n");
         properties.append("#").append(new java.util.Date()).append("\n");
         properties.append("server-port=").append(port).append("\n");
         properties.append("max-players=").append(maxPlayers).append("\n");
         properties.append("online-mode=false\n");
+        if (!isProxyGroup() && enforceBind) {
+            properties.append("server-ip=").append(backendBindAddress).append("\n");
+        }
         properties.append("view-distance=8\n");
         properties.append("simulation-distance=10\n");
         properties.append("difficulty=easy\n");
@@ -358,6 +426,179 @@ public class Serverprocess {
         properties.append("motd=Cloud Server - ").append(serverName).append("\n");
 
         Files.write(propertiesFile.toPath(), properties.toString().getBytes());
+    }
+
+    private void configureNetworkFiles(File serverDir) {
+        try {
+            if (isProxyGroup()) {
+                configureProxyConfig(serverDir);
+                configureProxyForwardingSecret(serverDir);
+            } else {
+                configureSpigotConfig(serverDir);
+                registerBackendInLocalProxyConfigs();
+            }
+        } catch (Exception e) {
+            CentralLogger.error("NetworkConfig", "Automatische Netzwerk-Konfiguration fehlgeschlagen fuer " + serverName, e);
+        }
+    }
+
+    private boolean isProxyGroup() {
+        String g = groupName == null ? "" : groupName.toLowerCase(Locale.ROOT);
+        return g.contains("proxy") || g.contains("bungee") || g.contains("waterfall") || g.contains("velocity");
+    }
+
+    private void configureSpigotConfig(File serverDir) throws IOException {
+        File spigotFile = new File(serverDir, "spigot.yml");
+        YamlConfiguration spigot = YamlConfiguration.loadConfiguration(spigotFile);
+        spigot.set("settings.bungeecord", true);
+        spigot.save(spigotFile);
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                " spigot.yml aktualisiert (settings.bungeecord=true) fuer " + serverName);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void configureProxyConfig(File serverDir) throws IOException {
+        File proxyConfigFile = new File(serverDir, "config.yml");
+        YamlConfiguration proxyCfg = YamlConfiguration.loadConfiguration(proxyConfigFile);
+
+        proxyCfg.set("ip_forward", true);
+        proxyCfg.set("online_mode", getProxyOnlineModeDefaultTrue());
+
+        String lobbyName = "Lobby-1";
+        int lobbyPort = configManager.getFirstLobbyPort();
+
+        List<Map<String, Object>> listeners = (List<Map<String, Object>>) proxyCfg.getList("listeners");
+        Map<String, Object> listener;
+        if (listeners == null || listeners.isEmpty()) {
+            listener = new LinkedHashMap<>();
+        } else {
+            listener = new LinkedHashMap<>(listeners.get(0));
+        }
+
+        listener.put("host", getProxyBindHost() + ":" + port);
+        listener.put("query_port", port + 1);
+        listener.put("max_players", maxPlayers);
+        listener.put("force_default_server", true);
+        listener.put("tab_size", 60);
+        listener.put("bind_local_address", true);
+        listener.put("ping_passthrough", false);
+        listener.put("query_enabled", false);
+        listener.put("proxy_protocol", false);
+        listener.put("priorities", List.of(lobbyName));
+        listener.put("forced_hosts", new LinkedHashMap<String, List<String>>());
+        if (!listener.containsKey("motd")) {
+            listener.put("motd", "&1KalliCloud Proxy");
+        }
+        if (!listener.containsKey("tab_list")) {
+            listener.put("tab_list", "GLOBAL_PING");
+        }
+        proxyCfg.set("listeners", List.of(listener));
+        proxyCfg.set("forced_hosts", new LinkedHashMap<String, List<String>>());
+
+        ConfigurationSection serversSection = proxyCfg.getConfigurationSection("servers");
+        if (serversSection == null) {
+            serversSection = proxyCfg.createSection("servers");
+        }
+        serversSection.set(lobbyName + ".motd", "&aLobby");
+        serversSection.set(lobbyName + ".address", "127.0.0.1:" + lobbyPort);
+        serversSection.set(lobbyName + ".restricted", false);
+
+        proxyCfg.save(proxyConfigFile);
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                " Proxy config.yml aktualisiert (Listener/Forwarding/Lobby-Route) fuer " + serverName);
+    }
+
+    private void configureProxyForwardingSecret(File serverDir) {
+        try {
+            String secret = configManager.getMaster("CloudMaster.Network.ForwardingSecret");
+            if (secret == null || secret.isBlank()) {
+                return;
+            }
+            File secretFile = new File(serverDir, "forwarding.secret");
+            Files.writeString(secretFile.toPath(), secret.trim());
+        } catch (Exception e) {
+            CentralLogger.warn("NetworkConfig", "Konnte forwarding.secret nicht schreiben fuer " + serverName);
+        }
+    }
+
+    private boolean getProxyOnlineModeDefaultTrue() {
+        String configured = configManager.getMaster("CloudMaster.Network.ProxyOnlineMode");
+        if (configured == null || configured.isBlank()) {
+            return true;
+        }
+        return Boolean.parseBoolean(configured);
+    }
+
+    private String getProxyBindHost() {
+        String configured = configManager.getMaster("CloudMaster.Network.ProxyBindHost");
+        if (configured == null || configured.isBlank()) {
+            return "0.0.0.0";
+        }
+        return configured.trim();
+    }
+
+    private boolean getBackendBindEnforcement() {
+        String configured = configManager.getMaster("CloudMaster.Network.EnforceBackendBind");
+        if (configured == null || configured.isBlank()) {
+            return true;
+        }
+        return Boolean.parseBoolean(configured);
+    }
+
+    private String getBackendBindAddress() {
+        String configured = configManager.getMaster("CloudMaster.Network.BackendBindAddress");
+        if (configured == null || configured.isBlank()) {
+            return "127.0.0.1";
+        }
+        return configured.trim();
+    }
+
+    private void registerBackendInLocalProxyConfigs() {
+        try {
+            List<File> proxyConfigFiles = new ArrayList<>();
+
+            for (Serverprocess process : wrapper.getManagedServers().values()) {
+                if (!isProxyGroupName(process.getGroupName())) {
+                    continue;
+                }
+                File cfg = new File("./servers/" + process.getGroupName() + "/" + process.getServerName() + "/config.yml");
+                proxyConfigFiles.add(cfg);
+            }
+
+            File proxiesRoot = new File("./servers/Proxy");
+            if (proxiesRoot.exists() && proxiesRoot.isDirectory()) {
+                File[] proxyDirs = proxiesRoot.listFiles(File::isDirectory);
+                if (proxyDirs != null) {
+                    for (File proxyDir : proxyDirs) {
+                        proxyConfigFiles.add(new File(proxyDir, "config.yml"));
+                    }
+                }
+            }
+
+            for (File proxyConfig : proxyConfigFiles) {
+                if (!proxyConfig.exists()) {
+                    continue;
+                }
+                YamlConfiguration cfg = YamlConfiguration.loadConfiguration(proxyConfig);
+                ConfigurationSection serversSection = cfg.getConfigurationSection("servers");
+                if (serversSection == null) {
+                    serversSection = cfg.createSection("servers");
+                }
+                serversSection.set(serverName + ".motd", "&a" + serverName);
+                serversSection.set(serverName + ".address", "127.0.0.1:" + port);
+                serversSection.set(serverName + ".restricted", false);
+                cfg.save(proxyConfig);
+            }
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Proxy-Backends aktualisiert: " + serverName + " -> 127.0.0.1:" + port);
+        } catch (Exception e) {
+            CentralLogger.error("NetworkConfig", "Konnte Proxy-Backend-Routing nicht aktualisieren fuer " + serverName, e);
+        }
+    }
+
+    private boolean isProxyGroupName(String group) {
+        String g = group == null ? "" : group.toLowerCase(Locale.ROOT);
+        return g.contains("proxy") || g.contains("bungee") || g.contains("waterfall") || g.contains("velocity");
     }
 
     private String getJarFileName() {
@@ -375,15 +616,20 @@ public class Serverprocess {
         }
 
         List<String> aliasNames = getJarCandidateNames(expectedJarName);
-        List<File> candidates = buildJarCandidates(serverDir, aliasNames);
-        for (File candidate : candidates) {
-            if (!candidate.exists()) {
-                continue;
+        List<File> searchDirectories = getJarSearchDirectories(serverDir);
+        File matched = null;
+        for (File dir : searchDirectories) {
+            matched = findMatchingJarInDirectory(dir, aliasNames);
+            if (matched != null) {
+                break;
             }
-            Files.copy(candidate.toPath(), targetJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
+        List<File> candidates = buildJarCandidates(searchDirectories, aliasNames);
+        if (matched != null) {
+            Files.copy(matched.toPath(), targetJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
             ConsoleScreenManager.printToTerminal(
                     ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                            " Preflight: Fehlende " + expectedJarName + " aus " + candidate.getAbsolutePath() +
+                            " Preflight: Fehlende " + expectedJarName + " aus " + matched.getAbsolutePath() +
                             " uebernommen"
             );
             return targetJar;
@@ -396,7 +642,8 @@ public class Serverprocess {
                 .orElse("keine Kandidaten");
         throw new FileNotFoundException(
                 "JAR-Datei nicht gefunden: " + targetJar.getAbsolutePath() +
-                        " | Gepruefte Pfade: " + searched
+                        " | Gepruefte Pfade: " + searched +
+                        " | Hinweis: Suche ist case-insensitive und prueft auch <name>-*.jar"
         );
     }
 
@@ -407,23 +654,78 @@ public class Serverprocess {
         return List.of("spigot.jar", "paper.jar", "purpur.jar", "server.jar");
     }
 
-    private List<File> buildJarCandidates(File serverDir, List<String> aliasNames) {
+    private List<File> buildJarCandidates(List<File> searchDirectories, List<String> aliasNames) {
         List<File> candidates = new ArrayList<>();
-        String[] baseDirs = new String[] {
-                serverDir.getAbsolutePath(),
-                "./templates/" + groupName,
-                "./templates_test/" + groupName,
-                "./templates_backup/" + groupName,
-                "./jars/" + groupName,
-                "./jars",
-                "."
-        };
-        for (String baseDir : baseDirs) {
+        for (File baseDir : searchDirectories) {
             for (String alias : aliasNames) {
                 candidates.add(new File(baseDir, alias));
+                candidates.add(new File(baseDir, alias.replace(".jar", "-*.jar")));
             }
         }
         return candidates;
+    }
+
+    private List<File> getJarSearchDirectories(File serverDir) {
+        File templateDir = resolveGroupDirectory("./templates");
+        File templateTestDir = resolveGroupDirectory("./templates_test");
+        File templateBackupDir = resolveGroupDirectory("./templates_backup");
+        File jarsGroupDir = resolveGroupDirectory("./jars");
+        return List.of(
+                serverDir,
+                templateDir,
+                templateTestDir,
+                templateBackupDir,
+                jarsGroupDir,
+                new File("./jars"),
+                new File(".")
+        );
+    }
+
+    private File findMatchingJarInDirectory(File directory, List<String> aliasNames) {
+        if (directory == null || !directory.exists() || !directory.isDirectory()) {
+            return null;
+        }
+        File[] files = directory.listFiles(File::isFile);
+        if (files == null || files.length == 0) {
+            return null;
+        }
+
+        for (String alias : aliasNames) {
+            String aliasLower = alias.toLowerCase(Locale.ROOT);
+            String baseLower = aliasLower.endsWith(".jar")
+                    ? aliasLower.substring(0, aliasLower.length() - 4)
+                    : aliasLower;
+            for (File file : files) {
+                String name = file.getName().toLowerCase(Locale.ROOT);
+                if (!name.endsWith(".jar")) {
+                    continue;
+                }
+                if (name.equals(aliasLower)) {
+                    return file;
+                }
+                if (name.startsWith(baseLower + "-")) {
+                    return file;
+                }
+            }
+        }
+        return null;
+    }
+
+    private File resolveGroupDirectory(String baseDir) {
+        File base = new File(baseDir);
+        File exact = new File(base, groupName);
+        if (exact.exists()) {
+            return exact;
+        }
+        File[] children = base.listFiles(File::isDirectory);
+        if (children != null) {
+            for (File child : children) {
+                if (child.getName().equalsIgnoreCase(groupName)) {
+                    return child;
+                }
+            }
+        }
+        return exact;
     }
 
     private void setupProcessIO() {
@@ -493,6 +795,158 @@ public class Serverprocess {
             return "DEBUG";
         }
         return "INFO";
+    }
+
+    public void applyPermissionSync(Message.PermissionSync sync) {
+        if (!running || sync == null || sync.playerUuid == null || sync.playerUuid.isBlank()) {
+            return;
+        }
+        if (!isRuntimePermissionEnforcerEnabled()) {
+            return;
+        }
+        String provider = getRuntimePermissionProvider();
+        try {
+            if ("luckperms".equalsIgnoreCase(provider)) {
+                applyLuckPermsProfile(sync);
+            } else {
+                applyCloudProfile(sync);
+            }
+        } catch (Exception e) {
+            CentralLogger.warn("PermissionEnforcer", "Runtime-Apply fehlgeschlagen fuer " + sync.playerUuid +
+                    " auf " + serverName + ": " + e.getMessage());
+        }
+    }
+
+    private void applyCloudProfile(Message.PermissionSync sync) {
+        String uuid = sync.playerUuid;
+        Set<String> incoming = new java.util.LinkedHashSet<>();
+        if (sync.permissions != null) {
+            for (String perm : sync.permissions) {
+                if (perm == null || perm.isBlank()) continue;
+                if (isPermissionManagedByCloud(perm)) {
+                    incoming.add(perm.trim());
+                }
+            }
+        }
+        enforcedPermissionsByPlayer.put(uuid, new java.util.LinkedHashSet<>(incoming));
+        enforcedGroupByPlayer.put(uuid, normalizeMeta(sync.primaryGroup));
+        if (isPrefixSuffixEnforcementEnabled()) {
+            enforcedPrefixByPlayer.put(uuid, normalizeMeta(sync.prefix));
+            enforcedSuffixByPlayer.put(uuid, normalizeMeta(sync.suffix));
+        }
+
+        String syncCommand = getCloudRuntimeSyncCommand();
+        if (syncCommand != null && !syncCommand.isBlank()) {
+            sendCommand(syncCommand
+                    .replace("{uuid}", uuid)
+                    .replace("{server}", serverName));
+        }
+    }
+
+    private void applyLuckPermsProfile(Message.PermissionSync sync) {
+        String uuid = sync.playerUuid;
+        Set<String> incoming = new java.util.LinkedHashSet<>();
+        if (sync.permissions != null) {
+            for (String perm : sync.permissions) {
+                if (perm == null || perm.isBlank()) continue;
+                if (isPermissionManagedByCloud(perm)) {
+                    incoming.add(perm.trim());
+                }
+            }
+        }
+        Set<String> previous = enforcedPermissionsByPlayer.getOrDefault(uuid, Set.of());
+
+        for (String removed : previous) {
+            if (!incoming.contains(removed)) {
+                sendCommand("lp user " + uuid + " permission unset " + removed);
+            }
+        }
+        for (String perm : incoming) {
+            if (!previous.contains(perm)) {
+                sendCommand("lp user " + uuid + " permission set " + perm + " true");
+            }
+        }
+
+        String currentGroup = normalizeMeta(sync.primaryGroup);
+        String previousGroup = enforcedGroupByPlayer.get(uuid);
+        if (!Objects.equals(previousGroup, currentGroup) && currentGroup != null) {
+            sendCommand("lp user " + uuid + " parent set " + currentGroup);
+            enforcedGroupByPlayer.put(uuid, currentGroup);
+        }
+
+        if (isPrefixSuffixEnforcementEnabled()) {
+            String prefix = normalizeMeta(sync.prefix);
+            String suffix = normalizeMeta(sync.suffix);
+            String previousPrefix = enforcedPrefixByPlayer.get(uuid);
+            String previousSuffix = enforcedSuffixByPlayer.get(uuid);
+            if (!Objects.equals(previousPrefix, prefix)) {
+                if (prefix == null) {
+                    sendCommand("lp user " + uuid + " meta clearsetprefix");
+                } else {
+                    sendCommand("lp user " + uuid + " meta setprefix 100 " + quote(prefix));
+                }
+                enforcedPrefixByPlayer.put(uuid, prefix);
+            }
+            if (!Objects.equals(previousSuffix, suffix)) {
+                if (suffix == null) {
+                    sendCommand("lp user " + uuid + " meta clearsetsuffix");
+                } else {
+                    sendCommand("lp user " + uuid + " meta setsuffix 100 " + quote(suffix));
+                }
+                enforcedSuffixByPlayer.put(uuid, suffix);
+            }
+        }
+
+        enforcedPermissionsByPlayer.put(uuid, new java.util.LinkedHashSet<>(incoming));
+    }
+
+    private boolean isPermissionManagedByCloud(String permission) {
+        String filter = configManager.getMaster("CloudMaster.Permissions.Runtime.PermissionPrefixFilter");
+        if (filter == null || filter.isBlank()) {
+            filter = "cloud.";
+        }
+        String p = permission.toLowerCase(Locale.ROOT);
+        String f = filter.toLowerCase(Locale.ROOT);
+        return p.equals("*") || p.equals("cloud.*") || p.startsWith(f);
+    }
+
+    private boolean isRuntimePermissionEnforcerEnabled() {
+        String configured = configManager.getMaster("CloudMaster.Permissions.Runtime.Enabled");
+        if (configured == null || configured.isBlank()) {
+            return true;
+        }
+        return Boolean.parseBoolean(configured);
+    }
+
+    private boolean isPrefixSuffixEnforcementEnabled() {
+        String configured = configManager.getMaster("CloudMaster.Permissions.Runtime.EnforcePrefixSuffix");
+        if (configured == null || configured.isBlank()) {
+            return true;
+        }
+        return Boolean.parseBoolean(configured);
+    }
+
+    private String getRuntimePermissionProvider() {
+        String configured = configManager.getMaster("CloudMaster.Permissions.Runtime.Provider");
+        if (configured == null || configured.isBlank()) {
+            return "cloud";
+        }
+        return configured.trim();
+    }
+
+    private String getCloudRuntimeSyncCommand() {
+        String configured = configManager.getMaster("CloudMaster.Permissions.Runtime.CloudSyncCommand");
+        return configured == null ? "" : configured.trim();
+    }
+
+    private String normalizeMeta(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String quote(String value) {
+        return "\"" + value.replace("\"", "\\\"") + "\"";
     }
 
     private void parseLogLine(String line) {

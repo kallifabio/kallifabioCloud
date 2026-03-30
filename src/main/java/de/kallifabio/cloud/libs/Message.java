@@ -295,6 +295,7 @@ public class Message {
         public String primaryGroup;
         public String prefix;
         public String suffix;
+        public String targetServer;
         public long timestamp;
         public PermissionSync() {}
     }

@@ -240,11 +240,18 @@ public class Launcher {
     }
 
     private static void performShutdown() {
+        if (shutdownRequested) {
+            return;
+        }
         shutdownRequested = true;
 
         ConsoleScreenManager.printToTerminal(" ");
         ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " Cloud-System wird heruntergefahren...");
+
+        if (master != null) {
+            master.initiateShutdownMode();
+        }
 
         // Stop Wrapper ZUERST (damit Reconnect gestoppt wird)
         if (wrapper != null) {
@@ -280,6 +287,10 @@ public class Launcher {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    public static void requestShutdown() {
+        performShutdown();
     }
 
     private static void keepAlive() {

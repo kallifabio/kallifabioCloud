@@ -11,7 +11,9 @@ import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class ConsoleScreenManager {
 
@@ -25,6 +27,7 @@ public class ConsoleScreenManager {
 
     private static Terminal terminal;
     private static LineReader lineReader;
+    private static Thread inputThread;
 
     public static void setCommandHandler(CommandHandler handler) {
         commandHandler = handler;
@@ -43,7 +46,7 @@ public class ConsoleScreenManager {
             terminal = TerminalBuilder.builder().system(true).build();
             lineReader = LineReaderBuilder.builder().terminal(terminal).build();
 
-            Thread inputThread = new Thread(() -> {
+            inputThread = new Thread(() -> {
                 while (running) {
                     try {
                         String input = lineReader.readLine(ConsoleColors.PREFIX);
@@ -60,7 +63,8 @@ public class ConsoleScreenManager {
                             handleExitCommand();
                         } else if (input.equalsIgnoreCase("exit") || input.equalsIgnoreCase("stop")) {
                             printToTerminal("Fahre System herunter...");
-                            System.exit(0);
+                            Launcher.requestShutdown();
+                            break;
                         } else if (currentScreen != mainScreen) {
                             sendInputToCurrentServer(input);
                         } else {
@@ -71,6 +75,9 @@ public class ConsoleScreenManager {
                             }
                         }
                     } catch (UserInterruptException e) {
+                        if (!running) {
+                            break;
+                        }
                         printToTerminal("Verwende 'exit' zum Beenden.");
                     } catch (EndOfFileException e) {
                         break;
@@ -94,10 +101,22 @@ public class ConsoleScreenManager {
 
     public static void stopConsole() {
         running = false;
+        if (inputThread != null) {
+            inputThread.interrupt();
+        }
         if (terminal != null) {
             try {
+                terminal.writer().println();
+                terminal.flush();
                 terminal.close();
             } catch (Exception ignored) {
+            }
+        }
+        if (inputThread != null) {
+            try {
+                inputThread.join(1000);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
             }
         }
     }
@@ -149,6 +168,53 @@ public class ConsoleScreenManager {
 
     public static void switchToMainScreen() {
         currentScreen = mainScreen;
+    }
+
+    public static boolean switchToScreen(String screenName) {
+        if (screenName == null) {
+            return false;
+        }
+        ConsoleScreen target = screens.get(screenName);
+        if (target == null) {
+            return false;
+        }
+        currentScreen = target;
+        return true;
+    }
+
+    public static boolean hasScreen(String screenName) {
+        return screenName != null && screens.containsKey(screenName);
+    }
+
+    public static Set<String> getScreenNames() {
+        return Set.copyOf(screens.keySet());
+    }
+
+    public static List<String> getScreenMessages(String screenName, int limit) {
+        ConsoleScreen screen = screens.get(screenName);
+        if (screen == null) {
+            return List.of();
+        }
+        List<String> snapshot = screen.getMessagesSnapshot();
+        if (limit <= 0 || snapshot.size() <= limit) {
+            return snapshot;
+        }
+        return snapshot.subList(snapshot.size() - limit, snapshot.size());
+    }
+
+    public static boolean sendCommandToServer(String serverName, String command) {
+        if (serverName == null || serverName.isBlank() || command == null || command.isBlank()) {
+            return false;
+        }
+        if (Launcher.getWrapper() == null) {
+            return false;
+        }
+        var process = Launcher.getWrapper().getManagedServers().get(serverName);
+        if (process == null || !process.isRunning()) {
+            return false;
+        }
+        process.sendCommand(command);
+        return true;
     }
 
     public static ConsoleScreen getCurrentScreen() {

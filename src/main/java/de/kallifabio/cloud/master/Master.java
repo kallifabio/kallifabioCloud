@@ -45,6 +45,7 @@ public class Master {
     private Server server;
     private String masterHost = detectIp();
     private Integer masterPort = 54555;
+    private Integer masterUdpPort = 54777;
     private ConfigManager configManager;
     private Wrapper wrapper;
 
@@ -81,6 +82,8 @@ public class Master {
     private static final long SERVER_HEARTBEAT_TIMEOUT_MS = 30000;
     private static final long SERVER_STARTING_TIMEOUT_MS = 120000;
     private static final long WRAPPER_PONG_TIMEOUT_MS = 20000;
+    private volatile boolean shuttingDown = false;
+    private volatile boolean shutdownCompleted = false;
 
     public void start() {
         instance = this;
@@ -100,6 +103,13 @@ public class Master {
         this.FIRST_LOBBY_PORT = configManager.getFirstLobbyPort();
         this.nextAvailablePort = configManager.getDynamicPortStart();
 
+        // Resolve master network settings from config
+        this.masterHost = configManager.getMaster("CloudMaster.Hostname") == null
+                ? detectIp()
+                : configManager.getMaster("CloudMaster.Hostname");
+        this.masterPort = configManager.getMasterTcpPort();
+        this.masterUdpPort = configManager.getMasterUdpPort();
+
         // Initialize Server
         server = new Server(32768, 8192);
         Kryo kryo = server.getKryo();
@@ -116,7 +126,7 @@ public class Master {
 
         // Bind and Start Server
         try {
-            server.bind(54555, 54777);
+            server.bind(masterPort, masterUdpPort);
         } catch (IOException e) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " FEHLER: Konnte Server nicht binden: " + e.getMessage());
@@ -729,10 +739,12 @@ public class Master {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Wrapper getrennt: " + wrapper.wrapperId);
 
-            runningServers.values().stream()
-                    .filter(s -> s.wrapperId.equals(wrapper.wrapperId))
-                    .toList()
-                    .forEach(s -> handleServerFailure(s, true));
+            if (!shuttingDown) {
+                runningServers.values().stream()
+                        .filter(s -> s.wrapperId.equals(wrapper.wrapperId))
+                        .toList()
+                        .forEach(s -> handleServerFailure(s, true));
+            }
 
             clusterManager.notifyWrapperLeft(wrapper);
         }
@@ -786,6 +798,9 @@ public class Master {
     }
 
     private void autoStartServers() {
+        if (shuttingDown) {
+            return;
+        }
         // Pruefe ob Auto-Start aktiviert ist
         if (!configManager.isAutoStartEnabled()) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
@@ -799,7 +814,9 @@ public class Master {
                     ConsoleColors.getCurrentTime() + " Kein Wrapper verfuegbar fuer Auto-Start - Retry in 5s");
 
             executorService.schedule(() -> {
-                autoStartServers();
+                if (!shuttingDown) {
+                    autoStartServers();
+                }
             }, 5, TimeUnit.SECONDS);
             return;
         }
@@ -839,6 +856,9 @@ public class Master {
     }
 
     private void checkWrapperHealth() {
+        if (shuttingDown) {
+            return;
+        }
         long now = System.currentTimeMillis();
         connectedWrappers.values().forEach(wrapper -> {
             if (now - wrapper.lastHeartbeat > 30000) {
@@ -855,6 +875,9 @@ public class Master {
     }
 
     private void pingWrappers() {
+        if (shuttingDown) {
+            return;
+        }
         long now = System.currentTimeMillis();
         for (WrapperConnection wrapper : connectedWrappers.values()) {
             Message.Ping ping = new Message.Ping();
@@ -866,6 +889,9 @@ public class Master {
     }
 
     private void checkServerHealth() {
+        if (shuttingDown) {
+            return;
+        }
         long now = System.currentTimeMillis();
         for (ServerInstance server : new ArrayList<>(runningServers.values())) {
             if ("ONLINE".equals(server.status) && now - server.lastUpdate > SERVER_HEARTBEAT_TIMEOUT_MS) {
@@ -884,6 +910,9 @@ public class Master {
     }
 
     private void handleServerFailure(ServerInstance server, boolean recover) {
+        if (shuttingDown) {
+            recover = false;
+        }
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server-Ausfall erkannt: " + server.serverName + " - Initiiere Wiederherstellung");
         monitoringService.publishEvent("SERVER_CRASH", Map.of(
@@ -943,6 +972,9 @@ public class Master {
     }
 
     public void startServer(String serverName, String groupName) {
+        if (shuttingDown) {
+            return;
+        }
         WrapperConnection bestWrapper = loadBalancerManager.getBestWrapperForServer(groupName);
 
         if (bestWrapper == null) {
@@ -1044,6 +1076,9 @@ public class Master {
     }
 
     public void restartServer(String serverName) {
+        if (shuttingDown) {
+            return;
+        }
         ServerInstance instance = runningServers.get(serverName);
         if (instance != null) {
             String groupName = instance.groupName;
@@ -1062,6 +1097,10 @@ public class Master {
     }
 
     public void shutdown() {
+        if (shutdownCompleted) {
+            return;
+        }
+        shuttingDown = true;
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Cloud-System wird heruntergefahren...");
 
@@ -1085,6 +1124,11 @@ public class Master {
         if (dataStore != null) {
             dataStore.shutdown();
         }
+        shutdownCompleted = true;
+    }
+
+    public void initiateShutdownMode() {
+        shuttingDown = true;
     }
 
     public String detectIp() {
@@ -1100,6 +1144,7 @@ public class Master {
     // Getters
     public static Master getInstance() { return instance; }
     public Integer getMasterPort() { return masterPort; }
+    public Integer getMasterUdpPort() { return masterUdpPort; }
     public String getMasterHost() { return masterHost; }
     public Server getServer() { return server; }
     public Wrapper getWrapper() { return wrapper; }
@@ -1147,6 +1192,7 @@ public class Master {
         configManager.backupConfigs(trigger);
         configManager.reloadAllConfigs();
         autoScalingManager.reloadPolicies();
+        monitoringService.reloadThresholds();
         for (String group : configManager.getAllServerGroups()) {
             templateManager.createSnapshot(group);
             templateManager.applyIncrementalBackup(group);
@@ -1189,12 +1235,18 @@ public class Master {
     }
 
     private void syncActivePermissionProfiles() {
+        if (shuttingDown) {
+            return;
+        }
         for (String playerUuid : playerSessionManager.getPlayerServerMapSnapshot().keySet()) {
             permissionSyncService.syncPlayerPermissions(playerUuid);
         }
     }
 
     private void cleanupPendingSocialRequests() {
+        if (shuttingDown) {
+            return;
+        }
         int removed = dataStore.cleanupExpiredSocialPending(System.currentTimeMillis());
         if (removed > 0) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
