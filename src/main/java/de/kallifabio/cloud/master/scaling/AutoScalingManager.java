@@ -16,7 +16,6 @@ import de.kallifabio.cloud.master.ServerInstance;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class AutoScalingManager {
@@ -44,19 +43,39 @@ public class AutoScalingManager {
     }
 
     private void initializeScalingPolicies() {
-        // Create default scaling policy for Lobby
-        ScalingPolicy lobbyPolicy = new ScalingPolicy(
-                "Lobby",
-                1,  // min servers
-                5,  // max servers
-                70, // scale up at 70% capacity
-                30, // scale down at 30% capacity
-                true // enable predictive scaling
-        );
-        scalingPolicies.put("Lobby", lobbyPolicy);
+        scalingPolicies.clear();
+
+        List<String> configuredGroups = configManager.getAllServerGroups();
+        if (configuredGroups.isEmpty()) {
+            configuredGroups = List.of("Lobby");
+        }
+
+        for (String groupName : configuredGroups) {
+            if (!configManager.isAutoScalingEnabled(groupName)) {
+                continue;
+            }
+
+            ScalingPolicy policy = new ScalingPolicy(
+                    groupName,
+                    configManager.getMinServersForGroup(groupName),
+                    configManager.getMaxServersForGroup(groupName),
+                    thresholdToPercent(configManager.getScaleUpThreshold(groupName)),
+                    thresholdToPercent(configManager.getScaleDownThreshold(groupName)),
+                    true
+            );
+
+            scalingPolicies.put(groupName, policy);
+        }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Auto-Scaling Manager initialisiert");
+                " Auto-Scaling Manager initialisiert (" + scalingPolicies.size() + " Policies)");
+    }
+
+    private int thresholdToPercent(double threshold) {
+        if (threshold <= 1.0) {
+            return (int) Math.round(threshold * 100.0);
+        }
+        return (int) Math.round(threshold);
     }
 
     public void evaluate() {
@@ -64,16 +83,21 @@ public class AutoScalingManager {
             String groupName = entry.getKey();
             ScalingPolicy policy = entry.getValue();
 
-            if (!policy.enabled) continue;
+            if (!policy.isEnabled()) {
+                continue;
+            }
 
             List<ServerInstance> servers = getGroupServers(groupName);
             int currentCount = servers.size();
 
             // Calculate average load
             double avgLoad = calculateAverageLoad(servers);
+            int queuedPlayers = master.getPlayerQueueManager() != null
+                    ? master.getPlayerQueueManager().getQueueSize(groupName)
+                    : 0;
 
             // Decide scaling action
-            if (shouldScaleUp(policy, currentCount, avgLoad)) {
+            if (shouldScaleUp(policy, currentCount, avgLoad, queuedPlayers)) {
                 scaleUp(groupName, policy, currentCount);
             } else if (shouldScaleDown(policy, currentCount, avgLoad)) {
                 scaleDown(groupName, policy, currentCount);
@@ -81,46 +105,50 @@ public class AutoScalingManager {
         }
     }
 
-    private boolean shouldScaleUp(ScalingPolicy policy, int currentCount, double avgLoad) {
+    private boolean shouldScaleUp(ScalingPolicy policy, int currentCount, double avgLoad, int queuedPlayers) {
         // Don't scale if at max
-        if (currentCount >= policy.maxServers) {
+        if (currentCount >= policy.getMaxServers()) {
             return false;
         }
 
         // Check cooldown
-        Long lastScaleUp = lastScaleUpTime.get(policy.groupName);
+        Long lastScaleUp = lastScaleUpTime.get(policy.getGroupName());
         if (lastScaleUp != null && System.currentTimeMillis() - lastScaleUp < SCALE_UP_COOLDOWN_MS) {
             return false;
         }
 
+        if (queuedPlayers > 0) {
+            return true;
+        }
+
         // Check if load exceeds threshold
-        return avgLoad > policy.scaleUpThreshold;
+        return avgLoad > policy.getScaleUpThreshold();
     }
 
     private boolean shouldScaleDown(ScalingPolicy policy, int currentCount, double avgLoad) {
         // Don't scale if at min
-        if (currentCount <= policy.minServers) {
+        if (currentCount <= policy.getMinServers()) {
             return false;
         }
 
         // Check cooldown
-        Long lastScaleDown = lastScaleDownTime.get(policy.groupName);
+        Long lastScaleDown = lastScaleDownTime.get(policy.getGroupName());
         if (lastScaleDown != null && System.currentTimeMillis() - lastScaleDown < SCALE_DOWN_COOLDOWN_MS) {
             return false;
         }
 
         // Check if load is below threshold
-        return avgLoad < policy.scaleDownThreshold;
+        return avgLoad < policy.getScaleDownThreshold();
     }
 
     private void scaleUp(String groupName, ScalingPolicy policy, int currentCount) {
-        int targetCount = Math.min(currentCount + 1, policy.maxServers);
+        int targetCount = Math.min(currentCount + 1, policy.getMaxServers());
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Scale-Up: " + groupName + " von " + currentCount + " auf " + targetCount);
 
         // Start new server
-        String serverName = groupName + "-" + (currentCount + 1);
+        String serverName = findNextServerName(groupName);
         master.startServer(serverName, groupName);
 
         // Record decision
@@ -129,7 +157,7 @@ public class AutoScalingManager {
     }
 
     private void scaleDown(String groupName, ScalingPolicy policy, int currentCount) {
-        int targetCount = Math.max(currentCount - 1, policy.minServers);
+        int targetCount = Math.max(currentCount - 1, policy.getMinServers());
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Scale-Down: " + groupName + " von " + currentCount + " auf " + targetCount);
@@ -138,25 +166,32 @@ public class AutoScalingManager {
         ServerInstance serverToStop = findLeastLoadedServer(groupName);
         if (serverToStop != null) {
             master.stopServer(serverToStop.serverName);
+            // Record decision
+            recordScalingDecision(groupName, "SCALE_DOWN", targetCount, "Load below threshold");
+            lastScaleDownTime.put(groupName, System.currentTimeMillis());
+        } else {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Scale-Down abgebrochen: kein leerer Server in " + groupName + " verfuegbar");
         }
-
-        // Record decision
-        recordScalingDecision(groupName, "SCALE_DOWN", targetCount, "Load below threshold");
-        lastScaleDownTime.put(groupName, System.currentTimeMillis());
     }
 
     private double calculateAverageLoad(List<ServerInstance> servers) {
         if (servers.isEmpty()) return 0.0;
 
         double totalLoad = 0.0;
+        int onlineServers = 0;
         for (ServerInstance server : servers) {
             if ("ONLINE".equals(server.status)) {
                 double load = (double) server.playerCount / server.maxPlayers * 100;
                 totalLoad += load;
+                onlineServers++;
             }
         }
 
-        return totalLoad / servers.size();
+        if (onlineServers == 0) {
+            return 0.0;
+        }
+        return totalLoad / onlineServers;
     }
 
     private List<ServerInstance> getGroupServers(String groupName) {
@@ -170,8 +205,19 @@ public class AutoScalingManager {
         return master.getRunningServers().values().stream()
                 .filter(s -> s.groupName.equalsIgnoreCase(groupName))
                 .filter(s -> "ONLINE".equals(s.status))
+                .filter(s -> s.playerCount <= 0)
+                .filter(s -> !s.isCritical)
                 .min(Comparator.comparingInt(s -> s.playerCount))
                 .orElse(null);
+    }
+
+    private String findNextServerName(String groupName) {
+        Set<String> existingNames = master.getRunningServers().keySet();
+        int index = 1;
+        while (existingNames.contains(groupName + "-" + index)) {
+            index++;
+        }
+        return groupName + "-" + index;
     }
 
     public void evaluateMetrics(Message.ServerMetrics metrics) {
@@ -239,6 +285,10 @@ public class AutoScalingManager {
 
     public Map<String, ScalingPolicy> getScalingPolicies() {
         return new HashMap<>(scalingPolicies);
+    }
+
+    public void reloadPolicies() {
+        initializeScalingPolicies();
     }
 
     public void updateScalingPolicy(String groupName, ScalingPolicy policy) {

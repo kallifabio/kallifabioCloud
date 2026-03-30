@@ -8,6 +8,7 @@
 package de.kallifabio.cloud.libs.console;
 
 import de.kallifabio.cloud.commands.CommandHandler;
+import de.kallifabio.cloud.libs.logging.CentralLogger;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -201,6 +202,7 @@ public class ConsoleScreenManager {
     }
 
     public static void printToTerminal(String message) {
+        CentralLogger.info("Console", message);
         if (terminal != null && lineReader != null) {
             // Verwende LineReader's printAbove für saubere Ausgabe über der Eingabezeile
             lineReader.printAbove(message);

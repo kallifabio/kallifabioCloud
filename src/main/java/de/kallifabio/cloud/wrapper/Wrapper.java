@@ -11,9 +11,11 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryonet.Client;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
+import de.kallifabio.cloud.config.ConfigManager;
 import de.kallifabio.cloud.libs.console.ConsoleColors;
 import de.kallifabio.cloud.libs.Message;
 import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
+import de.kallifabio.cloud.libs.logging.CentralLogger;
 import de.kallifabio.cloud.master.Master;
 
 import java.io.*;
@@ -117,6 +119,8 @@ public class Wrapper {
         kryo.register(Message.WrapperRegisterAck.class);
         kryo.register(Message.WrapperHeartbeat.class);
         kryo.register(Message.WrapperCommand.class);
+        kryo.register(Message.Ping.class);
+        kryo.register(Message.Pong.class);
 
         // Server Metrics
         kryo.register(Message.ServerMetrics.class);
@@ -131,6 +135,10 @@ public class Wrapper {
 
         // Queue Management
         kryo.register(Message.QueueUpdate.class);
+        kryo.register(Message.QueueKeepAlive.class);
+        kryo.register(Message.ServerLog.class);
+        kryo.register(Message.PermissionSync.class);
+        kryo.register(Message.PlayerNotification.class);
 
         // Cluster Management
         kryo.register(Message.ClusterSync.class);
@@ -245,6 +253,7 @@ public class Wrapper {
 
         // Start heartbeat
         startHeartbeat();
+        syncManagedServersAfterReconnect();
     }
 
     private void handleDisconnected(Connection connection) {
@@ -288,9 +297,21 @@ public class Wrapper {
             handleRegisterAck((Message.WrapperRegisterAck) object);
         } else if (object instanceof Message.ServerCommand) {
             handleServerCommand((Message.ServerCommand) object);
+        } else if (object instanceof Message.Ping) {
+            handlePing((Message.Ping) object);
+        } else if (object instanceof Message.ConfigUpdate) {
+            reloadLocalConfig((Message.ConfigUpdate) object);
         } else if (object instanceof Message.PlayerTransfer) {
             handlePlayerTransfer((Message.PlayerTransfer) object);
         }
+    }
+
+    private void handlePing(Message.Ping ping) {
+        Message.Pong pong = new Message.Pong();
+        pong.sourceId = wrapperId;
+        pong.pingTimestamp = ping.timestamp;
+        pong.timestamp = System.currentTimeMillis();
+        client.sendTCP(pong);
     }
 
     private void handleRegisterAck(Message.WrapperRegisterAck ack) {
@@ -306,7 +327,8 @@ public class Wrapper {
     private void handleServerCommand(Message.ServerCommand command) {
         switch (command.command.toUpperCase()) {
             case "START" -> startServer(command.serverName, command.groupName, command.port);
-            case "STOP" -> stopServer(command.serverName);
+            case "STOP", "GRACEFUL_STOP" -> stopServer(command.serverName, true);
+            case "FORCE_STOP" -> stopServer(command.serverName, false);
             case "RESTART" -> restartServer(command.serverName);
             default -> ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Unbekannter Befehl: " + command.command);
@@ -360,6 +382,10 @@ public class Wrapper {
     }
 
     private void stopServer(String serverName) {
+        stopServer(serverName, true);
+    }
+
+    private void stopServer(String serverName, boolean graceful) {
         Serverprocess server = managedServers.get(serverName);
         if (server == null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
@@ -370,7 +396,7 @@ public class Wrapper {
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Stoppe Server: " + serverName);
 
-        server.stop();
+        server.stop(graceful);
         managedServers.remove(serverName);
 
         // Update available memory
@@ -479,6 +505,10 @@ public class Wrapper {
         scheduler.scheduleAtFixedRate(() -> {
             checkServerHealth();
         }, 30, 30, TimeUnit.SECONDS);
+
+        scheduler.scheduleAtFixedRate(() -> {
+            checkWrapperHealth();
+        }, 15, 15, TimeUnit.SECONDS);
     }
 
     private void collectAndSendMetrics() {
@@ -548,8 +578,64 @@ public class Wrapper {
         Message.ServerStatusMessage message = new Message.ServerStatusMessage();
         message.serverName = serverName;
         message.status = status;
+        Serverprocess process = managedServers.get(serverName);
+        if (process != null) {
+            message.groupName = process.getGroupName();
+            message.playerCount = process.getPlayerCount();
+            message.maxPlayers = process.getMaxPlayers();
+        }
 
         client.sendTCP(message);
+    }
+
+    public void sendServerLog(String serverName, String level, String line) {
+        if (!connected) {
+            return;
+        }
+
+        Message.ServerLog log = new Message.ServerLog();
+        log.serverName = serverName;
+        log.level = level;
+        log.message = line;
+        log.timestamp = System.currentTimeMillis();
+        client.sendTCP(log);
+    }
+
+    private void syncManagedServersAfterReconnect() {
+        scheduler.schedule(() -> {
+            if (!connected) {
+                return;
+            }
+
+            for (Serverprocess process : managedServers.values()) {
+                sendServerStatus(process.getServerName(), process.isRunning() ? "ONLINE" : "OFFLINE");
+                Message.ServerMetrics metrics = process.collectMetrics();
+                if (metrics != null) {
+                    client.sendTCP(metrics);
+                }
+            }
+        }, 2, TimeUnit.SECONDS);
+    }
+
+    private void checkWrapperHealth() {
+        availableMemory = calculateAvailableMemory();
+        double cpu = getCpuUsage();
+        if (cpu > 95.0) {
+            CentralLogger.warn("Wrapper/" + wrapperId, "CPU kritisch: " + String.format("%.2f", cpu) + "%");
+        }
+        if (availableMemory < 512) {
+            CentralLogger.warn("Wrapper/" + wrapperId, "Wenig freier RAM: " + availableMemory + "MB");
+        }
+    }
+
+    private void reloadLocalConfig(Message.ConfigUpdate update) {
+        try {
+            ConfigManager manager = new ConfigManager();
+            manager.reloadAllConfigs();
+            CentralLogger.audit("wrapper:" + wrapperId, "config_reload", update.configType);
+        } catch (Exception e) {
+            CentralLogger.error("Wrapper/" + wrapperId, "Config-Reload fehlgeschlagen", e);
+        }
     }
 
     public void shutdown() {

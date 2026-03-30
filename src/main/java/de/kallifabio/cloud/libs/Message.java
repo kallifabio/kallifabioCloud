@@ -130,6 +130,19 @@ public class Message {
         public WrapperHeartbeat() {}
     }
 
+    public static class Ping {
+        public String sourceId;
+        public long timestamp;
+        public Ping() {}
+    }
+
+    public static class Pong {
+        public String sourceId;
+        public long pingTimestamp;
+        public long timestamp;
+        public Pong() {}
+    }
+
     // Server Metrics
     public static class ServerMetrics {
         public String serverName;
@@ -139,6 +152,11 @@ public class Message {
         public double tps;
         public long memoryUsage;
         public double cpuUsage;
+        public long networkInBytes;
+        public long networkOutBytes;
+        public String networkMode;
+        public long diskReadBytes;
+        public long diskWriteBytes;
         public long timestamp;
         public ServerMetrics() {}
     }
@@ -254,6 +272,39 @@ public class Message {
         public int totalInQueue;
         public String estimatedWait;
         public QueueUpdate() {}
+    }
+
+    public static class QueueKeepAlive {
+        public String playerUuid;
+        public String groupName;
+        public long timestamp;
+        public QueueKeepAlive() {}
+    }
+
+    public static class ServerLog {
+        public String serverName;
+        public String level;
+        public String message;
+        public long timestamp;
+        public ServerLog() {}
+    }
+
+    public static class PermissionSync {
+        public String playerUuid;
+        public java.util.List<String> permissions;
+        public String primaryGroup;
+        public String prefix;
+        public String suffix;
+        public long timestamp;
+        public PermissionSync() {}
+    }
+
+    public static class PlayerNotification {
+        public String playerUuid;
+        public String type;
+        public String message;
+        public long timestamp;
+        public PlayerNotification() {}
     }
 
     // Server Template Sync

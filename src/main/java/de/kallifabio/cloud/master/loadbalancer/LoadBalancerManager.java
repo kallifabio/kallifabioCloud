@@ -16,6 +16,7 @@ import de.kallifabio.cloud.master.WrapperConnection;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class LoadBalancerManager {
@@ -30,9 +31,11 @@ public class LoadBalancerManager {
 
     // Player affinity (sticky sessions)
     private final Map<String, String> playerAffinity = new ConcurrentHashMap<>();
+    private final Map<String, Long> drainingWrappers = new ConcurrentHashMap<>();
 
     // Request counter for round-robin
     private final AtomicInteger requestCounter = new AtomicInteger(0);
+    private static final long LOAD_STALE_MS = 30000;
 
     public LoadBalancerManager(Master master) {
         this.master = master;
@@ -48,6 +51,7 @@ public class LoadBalancerManager {
     }
 
     public String getBestServer(String groupName, String playerUuid) {
+        cleanupStaleTracking();
         List<ServerInstance> servers = getAvailableServers(groupName);
 
         if (servers.isEmpty()) {
@@ -58,6 +62,8 @@ public class LoadBalancerManager {
         String affinityServer = playerAffinity.get(playerUuid);
         if (affinityServer != null && isServerAvailable(affinityServer)) {
             return affinityServer;
+        } else if (affinityServer != null) {
+            playerAffinity.remove(playerUuid);
         }
 
         // Use appropriate strategy
@@ -72,21 +78,41 @@ public class LoadBalancerManager {
         return selectedServer;
     }
 
+    public String getBestServerAllowFull(String groupName, String playerUuid) {
+        cleanupStaleTracking();
+        List<ServerInstance> servers = master.getRunningServers().values().stream()
+                .filter(s -> s.groupName.equalsIgnoreCase(groupName))
+                .filter(s -> "ONLINE".equals(s.status))
+                .filter(s -> !isWrapperDraining(s.wrapperId))
+                .sorted(Comparator.comparing(s -> s.serverName))
+                .toList();
+        if (servers.isEmpty()) {
+            return null;
+        }
+        LoadBalancingStrategy strategy = strategyMap.getOrDefault(groupName, LoadBalancingStrategy.LEAST_LOADED);
+        return selectServerByStrategy(servers, strategy);
+    }
+
     private List<ServerInstance> getAvailableServers(String groupName) {
         return master.getRunningServers().values().stream()
                 .filter(s -> s.groupName.equalsIgnoreCase(groupName))
                 .filter(s -> "ONLINE".equals(s.status))
+                .filter(s -> !isWrapperDraining(s.wrapperId))
                 .filter(s -> {
                     ServerLoad load = serverLoads.get(s.serverName);
                     return load == null || load.acceptingPlayers;
                 })
                 .filter(s -> s.playerCount < s.maxPlayers)
+                .sorted(Comparator.comparing(s -> s.serverName))
                 .toList();
     }
 
     private boolean isServerAvailable(String serverName) {
         ServerInstance server = master.getRunningServers().get(serverName);
         if (server == null || !"ONLINE".equals(server.status)) {
+            return false;
+        }
+        if (isWrapperDraining(server.wrapperId)) {
             return false;
         }
 
@@ -106,7 +132,7 @@ public class LoadBalancerManager {
 
     private String selectRoundRobin(List<ServerInstance> servers) {
         if (servers.isEmpty()) return null;
-        int index = requestCounter.getAndIncrement() % servers.size();
+        int index = Math.floorMod(requestCounter.getAndIncrement(), servers.size());
         return servers.get(index).serverName;
     }
 
@@ -151,11 +177,15 @@ public class LoadBalancerManager {
 
     private String selectRandom(List<ServerInstance> servers) {
         if (servers.isEmpty()) return null;
-        return servers.get(new Random().nextInt(servers.size())).serverName;
+        return servers.get(ThreadLocalRandom.current().nextInt(servers.size())).serverName;
     }
 
     private double calculateLoadScore(ServerInstance server) {
         // Lower score = less loaded
+        if (server.maxPlayers <= 0 || server.allocatedRam <= 0) {
+            return 1.0;
+        }
+
         double playerLoad = (double) server.playerCount / server.maxPlayers;
         double tpsLoad = server.tps < 18 ? 1.0 : (20.0 - server.tps) / 20.0;
         double memoryLoad = server.memoryUsage / (double) (server.allocatedRam * 1024 * 1024);
@@ -164,13 +194,18 @@ public class LoadBalancerManager {
     }
 
     public void updateServerLoad(Message.ServerMetrics metrics) {
+        ServerInstance instance = master.getRunningServers().get(metrics.serverName);
+        if (instance == null) {
+            return;
+        }
+
         ServerLoad load = serverLoads.computeIfAbsent(metrics.serverName, k -> new ServerLoad(metrics.serverName));
 
         load.playerCount = metrics.playerCount;
         load.maxPlayers = metrics.maxPlayers;
         load.tps = metrics.tps;
         load.memoryUsage = metrics.memoryUsage;
-        load.loadScore = calculateLoadScore(master.getRunningServers().get(metrics.serverName));
+        load.loadScore = calculateLoadScore(instance);
         load.lastUpdate = System.currentTimeMillis();
 
         // Auto-disable if overloaded
@@ -182,10 +217,44 @@ public class LoadBalancerManager {
     }
 
     public WrapperConnection getBestWrapperForServer(String groupName) {
-        return master.getConnectedWrappers().values().stream()
+        Optional<WrapperConnection> candidate = master.getConnectedWrappers().values().stream()
                 .filter(w -> w.getAvailableMemory() >= 1024) // At least 1GB available
-                .min(Comparator.comparingInt(w -> w.getActiveServers()))
+                .filter(WrapperConnection::isHealthy)
+                .filter(w -> !isWrapperDraining(w.getWrapperId()))
+                .min(Comparator
+                        .comparingInt(WrapperConnection::getActiveServers)
+                        .thenComparingDouble(WrapperConnection::getCpuUsage));
+        if (candidate.isPresent()) {
+            return candidate.get();
+        }
+
+        // Fallback if all wrappers are draining, to avoid deadlock.
+        return master.getConnectedWrappers().values().stream()
+                .filter(w -> w.getAvailableMemory() >= 1024)
+                .filter(WrapperConnection::isHealthy)
+                .min(Comparator
+                        .comparingInt(WrapperConnection::getActiveServers)
+                        .thenComparingDouble(WrapperConnection::getCpuUsage))
                 .orElse(null);
+    }
+
+    public void setWrapperDraining(String wrapperId, boolean draining) {
+        if (wrapperId == null || wrapperId.isBlank()) {
+            return;
+        }
+        if (draining) {
+            drainingWrappers.put(wrapperId, System.currentTimeMillis());
+        } else {
+            drainingWrappers.remove(wrapperId);
+        }
+    }
+
+    public boolean isWrapperDraining(String wrapperId) {
+        return wrapperId != null && drainingWrappers.containsKey(wrapperId);
+    }
+
+    public Map<String, Long> getDrainingWrappers() {
+        return new HashMap<>(drainingWrappers);
     }
 
     public void removePlayerAffinity(String playerUuid) {
@@ -202,6 +271,14 @@ public class LoadBalancerManager {
 
     public Map<String, ServerLoad> getServerLoadDetails() {
         return new HashMap<>(serverLoads);
+    }
+
+    private void cleanupStaleTracking() {
+        long now = System.currentTimeMillis();
+        serverLoads.entrySet().removeIf(entry -> now - entry.getValue().lastUpdate > LOAD_STALE_MS);
+        playerAffinity.entrySet().removeIf(entry -> !isServerAvailable(entry.getValue()));
+        drainingWrappers.entrySet().removeIf(entry ->
+                master.getConnectedWrappers().values().stream().noneMatch(w -> w.getWrapperId().equals(entry.getKey())));
     }
 }
 

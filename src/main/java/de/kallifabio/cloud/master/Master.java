@@ -11,15 +11,22 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
 import com.esotericsoftware.kryonet.Server;
+import de.kallifabio.cloud.data.CloudDataStore;
 import de.kallifabio.cloud.libs.console.ConsoleColors;
 import de.kallifabio.cloud.libs.Message;
 import de.kallifabio.cloud.config.ConfigManager;
 import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
+import de.kallifabio.cloud.libs.logging.CentralLogger;
 import de.kallifabio.cloud.master.cluster.ClusterManager;
 import de.kallifabio.cloud.master.loadbalancer.LoadBalancerManager;
 import de.kallifabio.cloud.master.monitoring.MonitoringService;
+import de.kallifabio.cloud.master.player.PlayerSessionManager;
+import de.kallifabio.cloud.master.permissions.PermissionGroup;
+import de.kallifabio.cloud.master.permissions.PermissionEnforcer;
+import de.kallifabio.cloud.master.permissions.PermissionSyncService;
 import de.kallifabio.cloud.master.queue.PlayerQueueManager;
 import de.kallifabio.cloud.master.scaling.AutoScalingManager;
+import de.kallifabio.cloud.master.template.TemplateManager;
 import de.kallifabio.cloud.wrapper.Wrapper;
 
 import java.io.*;
@@ -47,6 +54,11 @@ public class Master {
     private MonitoringService monitoringService;
     private LoadBalancerManager loadBalancerManager;
     private PlayerQueueManager playerQueueManager;
+    private CloudDataStore dataStore;
+    private PlayerSessionManager playerSessionManager;
+    private TemplateManager templateManager;
+    private PermissionSyncService permissionSyncService;
+    private PermissionEnforcer permissionEnforcer;
     private ScheduledExecutorService executorService;
 
     // Connected Wrappers Management
@@ -66,6 +78,9 @@ public class Master {
     private String masterId = UUID.randomUUID().toString();
     private boolean isPrimaryMaster = true;
     private Set<String> clusterPeers = ConcurrentHashMap.newKeySet();
+    private static final long SERVER_HEARTBEAT_TIMEOUT_MS = 30000;
+    private static final long SERVER_STARTING_TIMEOUT_MS = 120000;
+    private static final long WRAPPER_PONG_TIMEOUT_MS = 20000;
 
     public void start() {
         instance = this;
@@ -73,6 +88,12 @@ public class Master {
 
         // Initialize Configuration ZUERST
         this.configManager = new ConfigManager();
+        this.dataStore = new CloudDataStore();
+        this.dataStore.initialize(configManager);
+        this.playerSessionManager = new PlayerSessionManager(dataStore);
+        this.templateManager = new TemplateManager();
+        this.permissionSyncService = new PermissionSyncService(this, dataStore);
+        this.permissionEnforcer = new PermissionEnforcer(permissionSyncService);
 
         // Lade Port-Konfiguration aus Config
         this.FIRST_PROXY_PORT = configManager.getFirstProxyPort();
@@ -88,6 +109,7 @@ public class Master {
 
         // Initialize Enterprise Components
         initializeEnterpriseComponents();
+        ensureDefaultPermissionGroup();
 
         // Setup Network Listener
         setupNetworkListener();
@@ -141,6 +163,8 @@ public class Master {
         kryo.register(Message.WrapperRegisterAck.class);
         kryo.register(Message.WrapperHeartbeat.class);
         kryo.register(Message.WrapperCommand.class);
+        kryo.register(Message.Ping.class);
+        kryo.register(Message.Pong.class);
 
         // Server Metrics
         kryo.register(Message.ServerMetrics.class);
@@ -155,6 +179,10 @@ public class Master {
 
         // Queue Management
         kryo.register(Message.QueueUpdate.class);
+        kryo.register(Message.QueueKeepAlive.class);
+        kryo.register(Message.ServerLog.class);
+        kryo.register(Message.PermissionSync.class);
+        kryo.register(Message.PlayerNotification.class);
 
         // Cluster Management
         kryo.register(Message.ClusterSync.class);
@@ -258,7 +286,7 @@ public class Master {
         autoScalingManager = new AutoScalingManager(this, configManager);
         monitoringService = new MonitoringService(this);
         loadBalancerManager = new LoadBalancerManager(this);
-        playerQueueManager = new PlayerQueueManager(this, loadBalancerManager);
+        playerQueueManager = new PlayerQueueManager(this, loadBalancerManager, dataStore);
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Enterprise-Komponenten initialisiert");
@@ -310,20 +338,32 @@ public class Master {
             handleWrapperRegister(connection, (Message.WrapperRegister) object);
         } else if (object instanceof Message.WrapperHeartbeat) {
             handleWrapperHeartbeat(connection, (Message.WrapperHeartbeat) object);
+        } else if (object instanceof Message.Pong) {
+            handlePong(connection, (Message.Pong) object);
+        } else if (object instanceof Message.Ping) {
+            handlePing(connection, (Message.Ping) object);
         } else if (object instanceof Message.ServerStatusMessage) {
             handleServerStatus(connection, (Message.ServerStatusMessage) object);
         } else if (object instanceof Message.ServerMetrics) {
             handleServerMetrics(connection, (Message.ServerMetrics) object);
+        } else if (object instanceof Message.ServerLog) {
+            handleServerLog((Message.ServerLog) object);
         } else if (object instanceof Message.ServerCommand) {
             handleServerCommand(connection, (Message.ServerCommand) object);
         } else if (object instanceof Message.PlayerJoinRequest) {
             handlePlayerJoinRequest(connection, (Message.PlayerJoinRequest) object);
+        } else if (object instanceof Message.PlayerConnectRequest) {
+            handlePlayerConnectRequest(connection, (Message.PlayerConnectRequest) object);
+        } else if (object instanceof Message.QueueKeepAlive) {
+            handleQueueKeepAlive((Message.QueueKeepAlive) object);
         } else if (object instanceof Message.ClusterSync) {
             handleClusterSync(connection, (Message.ClusterSync) object);
         } else if (object instanceof Message.ServerListRequest) {
             handleServerListRequest(connection, (Message.ServerListRequest) object);
         } else if (object instanceof Message.PluginHeartbeat) {
             handlePluginHeartbeat((Message.PluginHeartbeat) object);
+        } else if (object instanceof Message.ConfigUpdate) {
+            handleConfigUpdate((Message.ConfigUpdate) object);
         }
     }
 
@@ -395,17 +435,44 @@ public class Master {
     private void handleWrapperHeartbeat(Connection connection, Message.WrapperHeartbeat heartbeat) {
         WrapperConnection wrapper = connectedWrappers.get(connection.getID());
         if (wrapper != null) {
-            wrapper.lastHeartbeat = System.currentTimeMillis();
-            wrapper.availableMemory = heartbeat.availableMemory;
-            wrapper.cpuUsage = heartbeat.cpuUsage;
-            wrapper.activeServers = heartbeat.activeServers;
+            wrapper.updateHeartbeat(heartbeat.availableMemory, heartbeat.cpuUsage, heartbeat.activeServers);
 
             monitoringService.recordWrapperMetrics(wrapper);
         }
     }
 
+    private void handlePong(Connection connection, Message.Pong pong) {
+        WrapperConnection wrapper = connectedWrappers.get(connection.getID());
+        if (wrapper != null) {
+            wrapper.markPong(pong.pingTimestamp);
+        }
+    }
+
+    private void handlePing(Connection connection, Message.Ping ping) {
+        Message.Pong pong = new Message.Pong();
+        pong.sourceId = masterId;
+        pong.pingTimestamp = ping.timestamp;
+        pong.timestamp = System.currentTimeMillis();
+        connection.sendTCP(pong);
+    }
+
     private void handleServerStatus(Connection connection, Message.ServerStatusMessage message) {
         ServerInstance instance = runningServers.get(message.serverName);
+        boolean recoverableStatus = "ONLINE".equalsIgnoreCase(message.status) || "STARTING".equalsIgnoreCase(message.status);
+        if (instance == null && recoverableStatus && message.groupName != null && !message.groupName.isBlank()) {
+            WrapperConnection wrapper = connectedWrappers.get(connection.getID());
+            String wrapperId = wrapper != null ? wrapper.wrapperId : "unknown";
+            instance = new ServerInstance(
+                    message.serverName,
+                    message.groupName,
+                    wrapperId,
+                    configManager.getRamForGroup(message.groupName)
+            );
+            runningServers.put(message.serverName, instance);
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Wiederhergestellt nach Reconnect: " + message.serverName + " (" + message.groupName + ")");
+        }
+
         if (instance != null) {
             instance.status = message.status;
             instance.lastUpdate = System.currentTimeMillis();
@@ -421,11 +488,28 @@ public class Master {
 
     private void handleServerMetrics(Connection connection, Message.ServerMetrics metrics) {
         ServerInstance instance = runningServers.get(metrics.serverName);
+        if (instance == null) {
+            WrapperConnection wrapper = connectedWrappers.get(connection.getID());
+            String group = (metrics.groupName != null && !metrics.groupName.isBlank())
+                    ? metrics.groupName
+                    : inferGroupFromServerName(metrics.serverName);
+            String wrapperId = wrapper != null ? wrapper.wrapperId : "unknown";
+            instance = new ServerInstance(metrics.serverName, group, wrapperId, configManager.getRamForGroup(group));
+            runningServers.put(metrics.serverName, instance);
+        }
+
         if (instance != null) {
             instance.playerCount = metrics.playerCount;
             instance.maxPlayers = metrics.maxPlayers;
             instance.tps = metrics.tps;
             instance.memoryUsage = metrics.memoryUsage;
+            instance.cpuUsage = metrics.cpuUsage;
+            instance.networkInBytes = metrics.networkInBytes;
+            instance.networkOutBytes = metrics.networkOutBytes;
+            instance.networkMode = metrics.networkMode == null ? "NONE" : metrics.networkMode;
+            instance.diskReadBytes = metrics.diskReadBytes;
+            instance.diskWriteBytes = metrics.diskWriteBytes;
+            instance.lastUpdate = System.currentTimeMillis();
 
             monitoringService.recordServerMetrics(instance);
             loadBalancerManager.updateServerLoad(metrics);
@@ -450,7 +534,77 @@ public class Master {
     }
 
     private void handlePlayerJoinRequest(Connection connection, Message.PlayerJoinRequest request) {
+        if (request.playerUuid == null || request.playerUuid.isBlank()) {
+            Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
+            response.success = false;
+            response.message = "Invalid player UUID";
+            connection.sendTCP(response);
+            return;
+        }
+
+        if (playerSessionManager.isDuplicateConnection(request.playerUuid)) {
+            Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
+            response.playerUuid = request.playerUuid;
+            response.success = false;
+            response.message = "Duplicate connection detected";
+            connection.sendTCP(response);
+            return;
+        }
+
+        playerSessionManager.touch(request.playerUuid);
+
+        if (!permissionEnforcer.canJoinNetwork(request.playerUuid)) {
+            Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
+            response.playerUuid = request.playerUuid;
+            response.success = false;
+            response.message = "Missing permission: cloud.join";
+            connection.sendTCP(response);
+            return;
+        }
+
+        if (!permissionEnforcer.canJoinGroup(request.playerUuid, request.groupName)) {
+            Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
+            response.playerUuid = request.playerUuid;
+            response.success = false;
+            response.message = "Missing permission for group " + request.groupName;
+            connection.sendTCP(response);
+            return;
+        }
+
+        String lastServer = playerSessionManager.getLastServer(request.playerUuid);
+        if (lastServer != null && !lastServer.isBlank()) {
+            ServerInstance previous = runningServers.get(lastServer);
+            if (previous != null && "ONLINE".equals(previous.status)) {
+                Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
+                response.playerUuid = request.playerUuid;
+                response.targetServer = lastServer;
+                response.success = true;
+                response.message = "Reconnecting to last server";
+                connection.sendTCP(response);
+                playerSessionManager.assignServer(request.playerUuid, lastServer);
+                return;
+            }
+        }
+
+        boolean staffBypass = request.priority >= 100 || permissionEnforcer.canBypassMaintenance(request.playerUuid);
+        boolean vipBypass = request.priority >= 50 || permissionEnforcer.canBypassServerFull(request.playerUuid);
+
+        if (configManager.isMaintenanceMode(request.groupName) && !staffBypass) {
+            List<String> whitelist = configManager.getGroupWhitelist(request.groupName);
+            if (!whitelist.contains(request.playerUuid)) {
+                Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
+                response.playerUuid = request.playerUuid;
+                response.success = false;
+                response.message = "Group is in maintenance mode";
+                connection.sendTCP(response);
+                return;
+            }
+        }
+
         String targetServer = loadBalancerManager.getBestServer(request.groupName, request.playerUuid);
+        if (targetServer == null && vipBypass) {
+            targetServer = loadBalancerManager.getBestServerAllowFull(request.groupName, request.playerUuid);
+        }
 
         if (targetServer != null) {
             Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
@@ -458,19 +612,115 @@ public class Master {
             response.targetServer = targetServer;
             response.success = true;
             connection.sendTCP(response);
+            playerSessionManager.assignServer(request.playerUuid, targetServer);
+            permissionSyncService.syncPlayerPermissions(request.playerUuid);
+            notifyFriendsAboutLogin(request.playerUuid, targetServer);
         } else {
+            if (permissionEnforcer.canBypassQueue(request.playerUuid)) {
+                Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
+                response.playerUuid = request.playerUuid;
+                response.success = false;
+                response.message = "No server available (queue bypass active)";
+                connection.sendTCP(response);
+                return;
+            }
             playerQueueManager.addToQueue(request.playerUuid, request.groupName);
 
             Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
             response.playerUuid = request.playerUuid;
             response.success = false;
-            response.queuePosition = playerQueueManager.getQueuePosition(request.playerUuid);
+            response.queuePosition = playerQueueManager.getQueuePosition(request.playerUuid, request.groupName);
+            response.message = "No server available, added to queue";
             connection.sendTCP(response);
         }
     }
 
     private void handleClusterSync(Connection connection, Message.ClusterSync sync) {
         clusterManager.handleSyncMessage(sync);
+    }
+
+    private void handleServerLog(Message.ServerLog log) {
+        String source = "Server/" + log.serverName;
+        if ("ERROR".equalsIgnoreCase(log.level)) {
+            CentralLogger.error(source, log.message);
+        } else if ("WARN".equalsIgnoreCase(log.level) || "WARNING".equalsIgnoreCase(log.level)) {
+            CentralLogger.warn(source, log.message);
+        } else if ("DEBUG".equalsIgnoreCase(log.level)) {
+            CentralLogger.debug(source, log.message);
+        } else {
+            CentralLogger.info(source, log.message);
+        }
+    }
+
+    private void handleConfigUpdate(Message.ConfigUpdate update) {
+        reloadConfiguration("remote:" + update.configType);
+    }
+
+    private void handleQueueKeepAlive(Message.QueueKeepAlive keepAlive) {
+        playerQueueManager.markQueueActivity(keepAlive.playerUuid, keepAlive.groupName);
+    }
+
+    private void handlePlayerConnectRequest(Connection connection, Message.PlayerConnectRequest request) {
+        if (!permissionEnforcer.canSwitchServer(request.playerUuid)) {
+            sendConnectResponse(connection, request.playerUuid, false, null, "Missing permission: cloud.server.switch");
+            return;
+        }
+
+        String target = request.targetServer;
+        if (target == null || target.isBlank()) {
+            sendConnectResponse(connection, request.playerUuid, false, null, "targetServer required");
+            return;
+        }
+
+        if ("hub".equalsIgnoreCase(target)) {
+            if (!permissionEnforcer.canUseHub(request.playerUuid)) {
+                sendConnectResponse(connection, request.playerUuid, false, null, "Missing permission: cloud.hub");
+                return;
+            }
+            String lobby = loadBalancerManager.getBestServer("Lobby", request.playerUuid);
+            if (lobby == null) {
+                sendConnectResponse(connection, request.playerUuid, false, null, "No lobby available");
+                return;
+            }
+            target = lobby;
+        }
+
+        ServerInstance instance = runningServers.get(target);
+        if (instance == null || !"ONLINE".equals(instance.status)) {
+            sendConnectResponse(connection, request.playerUuid, false, null, "Target server offline");
+            return;
+        }
+
+        if (configManager.isMaintenanceMode(instance.groupName) && !permissionEnforcer.canBypassMaintenance(request.playerUuid)) {
+            List<String> whitelist = configManager.getGroupWhitelist(instance.groupName);
+            if (!whitelist.contains(request.playerUuid)) {
+                sendConnectResponse(connection, request.playerUuid, false, null, "Target group in maintenance");
+                return;
+            }
+        }
+
+        if (instance.playerCount >= instance.maxPlayers && !permissionEnforcer.canBypassServerFull(request.playerUuid)) {
+            sendConnectResponse(connection, request.playerUuid, false, null, "Target server full");
+            return;
+        }
+
+        Message.PlayerTransfer transfer = new Message.PlayerTransfer();
+        transfer.playerUuid = request.playerUuid;
+        transfer.fromServer = request.fromServer;
+        transfer.toServer = target;
+        transfer.reason = "Manual switch";
+        server.sendToAllTCP(transfer);
+        playerSessionManager.assignServer(request.playerUuid, target);
+        sendConnectResponse(connection, request.playerUuid, true, target, "Switch initiated");
+    }
+
+    private void sendConnectResponse(Connection connection, String playerUuid, boolean success, String targetServer, String message) {
+        Message.PlayerConnectResponse response = new Message.PlayerConnectResponse();
+        response.playerUuid = playerUuid;
+        response.success = success;
+        response.targetServer = targetServer;
+        response.message = message;
+        connection.sendTCP(response);
     }
 
     private void handleDisconnection(Connection connection) {
@@ -481,7 +731,8 @@ public class Master {
 
             runningServers.values().stream()
                     .filter(s -> s.wrapperId.equals(wrapper.wrapperId))
-                    .forEach(s -> handleServerFailure(s));
+                    .toList()
+                    .forEach(s -> handleServerFailure(s, true));
 
             clusterManager.notifyWrapperLeft(wrapper);
         }
@@ -490,6 +741,14 @@ public class Master {
     private void startEnterpriseServices() {
         executorService.scheduleAtFixedRate(() -> {
             checkWrapperHealth();
+        }, 10, 10, TimeUnit.SECONDS);
+
+        executorService.scheduleAtFixedRate(() -> {
+            pingWrappers();
+        }, 5, 5, TimeUnit.SECONDS);
+
+        executorService.scheduleAtFixedRate(() -> {
+            checkServerHealth();
         }, 10, 10, TimeUnit.SECONDS);
 
         executorService.scheduleAtFixedRate(() -> {
@@ -507,6 +766,14 @@ public class Master {
         executorService.scheduleAtFixedRate(() -> {
             playerQueueManager.processQueue();
         }, 1, 1, TimeUnit.SECONDS);
+
+        executorService.scheduleAtFixedRate(() -> {
+            syncActivePermissionProfiles();
+        }, 60, 60, TimeUnit.SECONDS);
+
+        executorService.scheduleAtFixedRate(() -> {
+            cleanupPendingSocialRequests();
+        }, 60, 60, TimeUnit.SECONDS);
 
         // Auto-Start configured servers after 10 seconds
         int autoStartDelay = configManager.getAutoStartDelay();
@@ -578,13 +845,53 @@ public class Master {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                         " Wrapper " + wrapper.wrapperId + " antwortet nicht - wird als offline markiert");
                 wrapper.connection.close();
+            } else if (now - wrapper.lastPong > WRAPPER_PONG_TIMEOUT_MS) {
+                ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                        ConsoleColors.getCurrentTime() + " Wrapper " + wrapper.wrapperId +
+                        " hat kein Pong gesendet - Verbindung wird geprüft");
+                wrapper.connection.close();
             }
         });
     }
 
-    private void handleServerFailure(ServerInstance server) {
+    private void pingWrappers() {
+        long now = System.currentTimeMillis();
+        for (WrapperConnection wrapper : connectedWrappers.values()) {
+            Message.Ping ping = new Message.Ping();
+            ping.sourceId = masterId;
+            ping.timestamp = now;
+            wrapper.markPingSent(now);
+            wrapper.connection.sendTCP(ping);
+        }
+    }
+
+    private void checkServerHealth() {
+        long now = System.currentTimeMillis();
+        for (ServerInstance server : new ArrayList<>(runningServers.values())) {
+            if ("ONLINE".equals(server.status) && now - server.lastUpdate > SERVER_HEARTBEAT_TIMEOUT_MS) {
+                ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                        ConsoleColors.getCurrentTime() + " Kein Heartbeat von " + server.serverName +
+                        " seit " + ((now - server.lastUpdate) / 1000) + "s - markiere als CRASHED");
+                handleServerFailure(server, true);
+            } else if ("STARTING".equals(server.status) && now - server.startTime > SERVER_STARTING_TIMEOUT_MS) {
+                ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                        ConsoleColors.getCurrentTime() + " STARTING-Timeout bei " + server.serverName +
+                        " - stoppe und starte neu");
+                forceStopServer(server.serverName);
+                executorService.schedule(() -> startServer(server.serverName, server.groupName), 3, TimeUnit.SECONDS);
+            }
+        }
+    }
+
+    private void handleServerFailure(ServerInstance server, boolean recover) {
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server-Ausfall erkannt: " + server.serverName + " - Initiiere Wiederherstellung");
+        monitoringService.publishEvent("SERVER_CRASH", Map.of(
+                "server", server.serverName,
+                "group", server.groupName,
+                "wrapper", server.wrapperId,
+                "recover", recover
+        ));
 
         // Release port
         Integer port = serverPorts.remove(server.serverName);
@@ -594,9 +901,45 @@ public class Master {
 
         runningServers.remove(server.serverName);
 
-        if (server.isCritical) {
+        if (recover || server.isCritical) {
+            transferPlayersFromFailedServer(server);
             autoScalingManager.replaceFailedServer(server);
         }
+    }
+
+    private void transferPlayersFromFailedServer(ServerInstance failedServer) {
+        String fallback = loadBalancerManager.getBestServer("Lobby", "recovery-" + System.currentTimeMillis());
+        if (fallback == null) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Kein Fallback-Lobby-Server verfuegbar fuer " + failedServer.serverName);
+            monitoringService.publishEvent("NO_FALLBACK_SERVER", Map.of(
+                    "failedServer", failedServer.serverName,
+                    "group", failedServer.groupName
+            ));
+            return;
+        }
+
+        Map<String, String> sessions = playerSessionManager.getPlayerServerMapSnapshot();
+        List<String> affectedPlayers = sessions.entrySet().stream()
+                .filter(entry -> failedServer.serverName.equalsIgnoreCase(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .toList();
+
+        for (String playerUuid : affectedPlayers) {
+            Message.PlayerTransfer transfer = new Message.PlayerTransfer();
+            transfer.playerUuid = playerUuid;
+            transfer.fromServer = failedServer.serverName;
+            transfer.toServer = fallback;
+            transfer.reason = "Server crashed";
+            server.sendToAllTCP(transfer);
+            playerSessionManager.assignServer(playerUuid, fallback);
+        }
+
+        monitoringService.publishEvent("CRASH_PLAYER_TRANSFER", Map.of(
+                "fromServer", failedServer.serverName,
+                "toServer", fallback,
+                "playersTransferred", affectedPlayers.size()
+        ));
     }
 
     public void startServer(String serverName, String groupName) {
@@ -630,6 +973,12 @@ public class Master {
         command.port = assignedPort;  // Port wird jetzt korrekt gesetzt!
 
         bestWrapper.connection.sendTCP(command);
+        monitoringService.publishEvent("SERVER_START", Map.of(
+                "server", serverName,
+                "group", groupName,
+                "wrapper", bestWrapper.wrapperId,
+                "port", assignedPort
+        ));
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server " + serverName + " wird auf Wrapper " + bestWrapper.wrapperId +
@@ -647,9 +996,15 @@ public class Master {
         WrapperConnection wrapper = getWrapperById(instance.wrapperId);
         if (wrapper != null) {
             Message.ServerCommand command = new Message.ServerCommand();
-            command.command = "STOP";
+            command.command = "GRACEFUL_STOP";
             command.serverName = serverName;
             wrapper.connection.sendTCP(command);
+            monitoringService.publishEvent("SERVER_STOP", Map.of(
+                    "server", serverName,
+                    "group", instance.groupName,
+                    "wrapper", wrapper.wrapperId,
+                    "mode", "graceful"
+            ));
         }
 
         // Release port
@@ -658,6 +1013,33 @@ public class Master {
             releasePort(port);
         }
 
+        runningServers.remove(serverName);
+    }
+
+    public void forceStopServer(String serverName) {
+        ServerInstance instance = runningServers.get(serverName);
+        if (instance == null) {
+            return;
+        }
+
+        WrapperConnection wrapper = getWrapperById(instance.wrapperId);
+        if (wrapper != null) {
+            Message.ServerCommand command = new Message.ServerCommand();
+            command.command = "FORCE_STOP";
+            command.serverName = serverName;
+            wrapper.connection.sendTCP(command);
+            monitoringService.publishEvent("SERVER_STOP", Map.of(
+                    "server", serverName,
+                    "group", instance.groupName,
+                    "wrapper", wrapper.wrapperId,
+                    "mode", "force"
+            ));
+        }
+
+        Integer port = serverPorts.remove(serverName);
+        if (port != null) {
+            releasePort(port);
+        }
         runningServers.remove(serverName);
     }
 
@@ -699,6 +1081,10 @@ public class Master {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Server erfolgreich geschlossen");
         }
+
+        if (dataStore != null) {
+            dataStore.shutdown();
+        }
     }
 
     public String detectIp() {
@@ -735,5 +1121,84 @@ public class Master {
 
     public int getFIRST_PROXY_PORT() {
         return FIRST_PROXY_PORT;
+    }
+
+    public ConfigManager getConfigManager() {
+        return configManager;
+    }
+
+    public CloudDataStore getDataStore() {
+        return dataStore;
+    }
+
+    public TemplateManager getTemplateManager() {
+        return templateManager;
+    }
+
+    public PlayerSessionManager getPlayerSessionManager() {
+        return playerSessionManager;
+    }
+
+    public void syncPermissionsForPlayer(String playerUuid) {
+        permissionSyncService.syncPlayerPermissions(playerUuid);
+    }
+
+    public void reloadConfiguration(String trigger) {
+        configManager.backupConfigs(trigger);
+        configManager.reloadAllConfigs();
+        autoScalingManager.reloadPolicies();
+        for (String group : configManager.getAllServerGroups()) {
+            templateManager.createSnapshot(group);
+            templateManager.applyIncrementalBackup(group);
+        }
+        CentralLogger.audit("system", "config_reload", trigger);
+        ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
+                ConsoleColors.getCurrentTime() + " Konfiguration neu geladen (" + trigger + ")");
+    }
+
+    private void ensureDefaultPermissionGroup() {
+        PermissionGroup existing = dataStore.getPermissionGroup("default");
+        if (existing != null) {
+            return;
+        }
+        PermissionGroup group = new PermissionGroup("default");
+        group.weight = 0;
+        group.prefix = "";
+        group.suffix = "";
+        group.permissions = List.of("cloud.join", "cloud.queue");
+        dataStore.upsertPermissionGroup(group);
+    }
+
+    private void notifyFriendsAboutLogin(String playerUuid, String serverName) {
+        List<String> friends = dataStore.getFriends(playerUuid);
+        for (String friend : friends) {
+            Message.PlayerNotification notification = new Message.PlayerNotification();
+            notification.playerUuid = friend;
+            notification.type = "FRIEND_ONLINE";
+            notification.message = playerUuid + " is now on " + serverName;
+            notification.timestamp = System.currentTimeMillis();
+            server.sendToAllTCP(notification);
+        }
+    }
+
+    private String inferGroupFromServerName(String serverName) {
+        if (serverName == null || !serverName.contains("-")) {
+            return "Lobby";
+        }
+        return serverName.substring(0, serverName.indexOf('-'));
+    }
+
+    private void syncActivePermissionProfiles() {
+        for (String playerUuid : playerSessionManager.getPlayerServerMapSnapshot().keySet()) {
+            permissionSyncService.syncPlayerPermissions(playerUuid);
+        }
+    }
+
+    private void cleanupPendingSocialRequests() {
+        int removed = dataStore.cleanupExpiredSocialPending(System.currentTimeMillis());
+        if (removed > 0) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Cleanup: " + removed + " abgelaufene Friend/Party Pending-Eintraege entfernt");
+        }
     }
 }

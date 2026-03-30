@@ -15,11 +15,17 @@ import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 public class ConfigManager {
+    private static final String CONFIG_VERSION = "1.1";
 
     File masterConfigFile = new File("config", "CloudSystem_Config.yml");
     FileConfiguration masterConfigData = YamlConfiguration.loadConfiguration(masterConfigFile);
@@ -42,6 +48,8 @@ public class ConfigManager {
         loadSignLayoutConfig();
         loadSignsConfig();
         loadClusterConfig();
+        ensureConfigVersion();
+        validateAndSanitize();
     }
 
     public void loadMasterConfig() {
@@ -99,6 +107,36 @@ public class ConfigManager {
         }
     }
 
+    public synchronized void reloadAllConfigs() {
+        loadMasterConfig();
+        loadServergroupConfig();
+        loadSignLayoutConfig();
+        loadSignsConfig();
+        loadClusterConfig();
+        ensureConfigVersion();
+        validateAndSanitize();
+    }
+
+    public synchronized void backupConfigs(String trigger) {
+        try {
+            String ts = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+            Path backupDir = Path.of("config", "backups", ts + "-" + safeName(trigger));
+            Files.createDirectories(backupDir);
+
+            copyIfExists(masterConfigFile.toPath(), backupDir.resolve(masterConfigFile.getName()));
+            copyIfExists(serverGroupsFile.toPath(), backupDir.resolve(serverGroupsFile.getName()));
+            copyIfExists(signLayoutFile.toPath(), backupDir.resolve(signLayoutFile.getName()));
+            copyIfExists(signsFile.toPath(), backupDir.resolve(signsFile.getName()));
+            copyIfExists(clusterConfigFile.toPath(), backupDir.resolve(clusterConfigFile.getName()));
+
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Config-Backup erstellt: " + backupDir);
+        } catch (IOException e) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Config-Backup fehlgeschlagen: " + e.getMessage());
+        }
+    }
+
     private void createDefaultMasterConfig() {
         try {
             masterConfigFile.getParentFile().mkdirs();
@@ -113,6 +151,23 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.API.Enabled", true);
             masterConfigData.set("CloudMaster.API.Port", 8080);
             masterConfigData.set("CloudMaster.API.AllowedOrigins", "*");
+            masterConfigData.set("CloudMaster.API.AdminKey", java.util.UUID.randomUUID().toString());
+            masterConfigData.set("CloudMaster.API.DashboardKey", java.util.UUID.randomUUID().toString());
+            masterConfigData.set("CloudMaster.API.TLS.Enabled", false);
+            masterConfigData.set("CloudMaster.API.TLS.KeystorePath", "config/tls/keystore.p12");
+            masterConfigData.set("CloudMaster.API.TLS.KeystorePassword", "");
+            masterConfigData.set("CloudMaster.API.TLS.KeystoreType", "PKCS12");
+            masterConfigData.set("CloudMaster.ConfigVersion", CONFIG_VERSION);
+            masterConfigData.set("CloudMaster.Database.Type", "sqlite");
+            masterConfigData.set("CloudMaster.Database.SQLite.File", "data/cloud.db");
+            masterConfigData.set("CloudMaster.Database.MySQL.Url", "jdbc:mysql://localhost:3306/cloud");
+            masterConfigData.set("CloudMaster.Database.MySQL.User", "root");
+            masterConfigData.set("CloudMaster.Database.MySQL.Password", "");
+            masterConfigData.set("CloudMaster.Database.Mongo.Uri", "mongodb://localhost:27017");
+            masterConfigData.set("CloudMaster.Database.Mongo.Database", "cloud");
+            masterConfigData.set("CloudMaster.Alerts.WebhookUrl", "");
+            masterConfigData.set("CloudMaster.Templates.TestingMode", false);
+            masterConfigData.set("CloudMaster.Templates.AutoUpdateAfterRestart", true);
 
             masterConfigData.save(masterConfigFile);
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -152,6 +207,9 @@ public class ConfigManager {
             serverGroupsData.set("ServerGroup.Proxy.Maintenance", false);
             serverGroupsData.set("ServerGroup.Proxy.AutoScaling", false);
             serverGroupsData.set("ServerGroup.Proxy.Priority", "CRITICAL");
+            serverGroupsData.set("ServerGroup.Proxy.Parent", "");
+            serverGroupsData.set("ServerGroup.Proxy.Tags", List.of("STABLE"));
+            serverGroupsData.set("ServerGroup.Proxy.Whitelist", List.of());
 
             // ========================================
             // Lobby Server Group
@@ -166,6 +224,9 @@ public class ConfigManager {
             serverGroupsData.set("ServerGroup.Lobby.ScaleUpThreshold", 0.75);
             serverGroupsData.set("ServerGroup.Lobby.ScaleDownThreshold", 0.30);
             serverGroupsData.set("ServerGroup.Lobby.Priority", "HIGH");
+            serverGroupsData.set("ServerGroup.Lobby.Parent", "");
+            serverGroupsData.set("ServerGroup.Lobby.Tags", List.of("DEFAULT"));
+            serverGroupsData.set("ServerGroup.Lobby.Whitelist", List.of());
 
             serverGroupsData.save(serverGroupsFile);
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -294,12 +355,73 @@ public class ConfigManager {
         return clusterConfigData.getString(key);
     }
 
+    public String getConfigVersion() {
+        return masterConfigData.getString("CloudMaster.ConfigVersion", CONFIG_VERSION);
+    }
+
+    public String getDatabaseType() {
+        return masterConfigData.getString("CloudMaster.Database.Type", "sqlite");
+    }
+
+    public String getSqliteJdbcUrl() {
+        String file = masterConfigData.getString("CloudMaster.Database.SQLite.File", "data/cloud.db");
+        return "jdbc:sqlite:" + file;
+    }
+
+    public String getDatabaseUrl() {
+        return masterConfigData.getString("CloudMaster.Database.MySQL.Url", "jdbc:mysql://localhost:3306/cloud");
+    }
+
+    public String getDatabaseUsername() {
+        return masterConfigData.getString("CloudMaster.Database.MySQL.User", "root");
+    }
+
+    public String getDatabasePassword() {
+        return masterConfigData.getString("CloudMaster.Database.MySQL.Password", "");
+    }
+
+    public String getMongoUri() {
+        return masterConfigData.getString("CloudMaster.Database.Mongo.Uri", "mongodb://localhost:27017");
+    }
+
+    public String getMongoDatabase() {
+        return masterConfigData.getString("CloudMaster.Database.Mongo.Database", "cloud");
+    }
+
+    public String getAlertWebhookUrl() {
+        return masterConfigData.getString("CloudMaster.Alerts.WebhookUrl", "");
+    }
+
+    public boolean isApiTlsEnabled() {
+        return masterConfigData.getBoolean("CloudMaster.API.TLS.Enabled", false);
+    }
+
+    public String getApiTlsKeystorePath() {
+        return masterConfigData.getString("CloudMaster.API.TLS.KeystorePath", "config/tls/keystore.p12");
+    }
+
+    public String getApiTlsKeystorePassword() {
+        return masterConfigData.getString("CloudMaster.API.TLS.KeystorePassword", "");
+    }
+
+    public String getApiTlsKeystoreType() {
+        return masterConfigData.getString("CloudMaster.API.TLS.KeystoreType", "PKCS12");
+    }
+
+    public boolean isTemplateTestingMode() {
+        return masterConfigData.getBoolean("CloudMaster.Templates.TestingMode", false);
+    }
+
+    public boolean isTemplateAutoUpdateAfterRestart() {
+        return masterConfigData.getBoolean("CloudMaster.Templates.AutoUpdateAfterRestart", true);
+    }
+
     public Integer getMaxPlayersForGroup(String groupName) {
-        return serverGroupsData.getInt("ServerGroup." + groupName + ".MaxPlayers", 100);
+        return resolveIntSetting(groupName, "MaxPlayers", 100);
     }
 
     public Integer getRamForGroup(String groupName) {
-        return serverGroupsData.getInt("ServerGroup." + groupName + ".Ram", 1024);
+        return resolveIntSetting(groupName, "Ram", 1024);
     }
 
     public boolean isDynamicGroup(String groupName) {
@@ -307,31 +429,77 @@ public class ConfigManager {
     }
 
     public int getMinServersForGroup(String groupName) {
-        return serverGroupsData.getInt("ServerGroup." + groupName + ".MinServers", 1);
+        return resolveIntSetting(groupName, "MinServers", 1);
     }
 
     public int getMaxServersForGroup(String groupName) {
-        return serverGroupsData.getInt("ServerGroup." + groupName + ".MaxServers", 5);
+        return resolveIntSetting(groupName, "MaxServers", 5);
     }
 
     public boolean isAutoScalingEnabled(String groupName) {
-        return serverGroupsData.getBoolean("ServerGroup." + groupName + ".AutoScaling", false);
+        return resolveBooleanSetting(groupName, "AutoScaling", false);
     }
 
     public double getScaleUpThreshold(String groupName) {
-        return serverGroupsData.getDouble("ServerGroup." + groupName + ".ScaleUpThreshold", 0.75);
+        return resolveDoubleSetting(groupName, "ScaleUpThreshold", 0.75);
     }
 
     public double getScaleDownThreshold(String groupName) {
-        return serverGroupsData.getDouble("ServerGroup." + groupName + ".ScaleDownThreshold", 0.30);
+        return resolveDoubleSetting(groupName, "ScaleDownThreshold", 0.30);
     }
 
     public String getServerGroupPriority(String groupName) {
-        return serverGroupsData.getString("ServerGroup." + groupName + ".Priority", "NORMAL");
+        return resolveStringSetting(groupName, "Priority", "NORMAL");
     }
 
     public boolean isMaintenanceMode(String groupName) {
-        return serverGroupsData.getBoolean("ServerGroup." + groupName + ".Maintenance", false);
+        return resolveBooleanSetting(groupName, "Maintenance", false);
+    }
+
+    public List<String> getGroupWhitelist(String groupName) {
+        return serverGroupsData.getStringList("ServerGroup." + groupName + ".Whitelist");
+    }
+
+    public List<String> getGroupTags(String groupName) {
+        return serverGroupsData.getStringList("ServerGroup." + groupName + ".Tags");
+    }
+
+    public boolean createOrUpdateGroup(String groupName, String parentGroup) {
+        String base = "ServerGroup." + groupName;
+        serverGroupsData.set(base + ".Parent", parentGroup == null ? "" : parentGroup);
+        serverGroupsData.set(base + ".Ram", 1024);
+        serverGroupsData.set(base + ".MaxPlayers", 100);
+        serverGroupsData.set(base + ".Dynamic", true);
+        serverGroupsData.set(base + ".MinServers", 1);
+        serverGroupsData.set(base + ".MaxServers", 3);
+        serverGroupsData.set(base + ".Maintenance", false);
+        serverGroupsData.set(base + ".AutoScaling", true);
+        serverGroupsData.set(base + ".ScaleUpThreshold", 0.75);
+        serverGroupsData.set(base + ".ScaleDownThreshold", 0.30);
+        serverGroupsData.set(base + ".Priority", "NORMAL");
+        serverGroupsData.set(base + ".Tags", List.of());
+        serverGroupsData.set(base + ".Whitelist", List.of());
+        return saveServerGroups();
+    }
+
+    public boolean deleteGroup(String groupName) {
+        serverGroupsData.set("ServerGroup." + groupName, null);
+        return saveServerGroups();
+    }
+
+    public boolean setGroupSetting(String groupName, String key, Object value) {
+        serverGroupsData.set("ServerGroup." + groupName + "." + key, value);
+        return saveServerGroups();
+    }
+
+    public boolean setGroupMaintenance(String groupName, boolean maintenance) {
+        serverGroupsData.set("ServerGroup." + groupName + ".Maintenance", maintenance);
+        return saveServerGroups();
+    }
+
+    public boolean setGroupWhitelist(String groupName, List<String> whitelist) {
+        serverGroupsData.set("ServerGroup." + groupName + ".Whitelist", whitelist);
+        return saveServerGroups();
     }
 
     // ========================================
@@ -347,6 +515,162 @@ public class ConfigManager {
         }
 
         return groups;
+    }
+
+    private void validateAndSanitize() {
+        boolean changed = false;
+
+        changed |= clampInt(serverGroupsData, "Ports.FirstProxy", 1, 65535, 25577);
+        changed |= clampInt(serverGroupsData, "Ports.FirstLobby", 1, 65535, 25565);
+        changed |= clampInt(serverGroupsData, "Ports.DynamicStart", 1, 65535, 25566);
+
+        if (serverGroupsData.contains("ServerGroup") && serverGroupsData.getConfigurationSection("ServerGroup") != null) {
+            for (String group : serverGroupsData.getConfigurationSection("ServerGroup").getKeys(false)) {
+                String base = "ServerGroup." + group + ".";
+                changed |= clampInt(serverGroupsData, base + "Ram", 256, 65536, 1024);
+                changed |= clampInt(serverGroupsData, base + "MaxPlayers", 1, 2000, 100);
+                changed |= clampInt(serverGroupsData, base + "MinServers", 0, 100, 1);
+                changed |= clampInt(serverGroupsData, base + "MaxServers", 0, 100, 5);
+                changed |= clampDouble(serverGroupsData, base + "ScaleUpThreshold", 0.10, 1.0, 0.75);
+                changed |= clampDouble(serverGroupsData, base + "ScaleDownThreshold", 0.0, 0.9, 0.30);
+
+                int min = serverGroupsData.getInt(base + "MinServers", 1);
+                int max = serverGroupsData.getInt(base + "MaxServers", 5);
+                if (max < min) {
+                    serverGroupsData.set(base + "MaxServers", min);
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed) {
+            try {
+                serverGroupsData.save(serverGroupsFile);
+                masterConfigData.save(masterConfigFile);
+            } catch (IOException e) {
+                ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                        ConsoleColors.getCurrentTime() + " Config-Validation konnte nicht gespeichert werden: " + e.getMessage());
+            }
+        }
+    }
+
+    private void ensureConfigVersion() {
+        String current = masterConfigData.getString("CloudMaster.ConfigVersion", "");
+        boolean changed = false;
+        if (!CONFIG_VERSION.equals(current)) {
+            masterConfigData.set("CloudMaster.ConfigVersion", CONFIG_VERSION);
+            changed = true;
+        }
+        if (masterConfigData.getString("CloudMaster.API.AdminKey", "").isBlank()) {
+            masterConfigData.set("CloudMaster.API.AdminKey", java.util.UUID.randomUUID().toString());
+            changed = true;
+        }
+        if (masterConfigData.getString("CloudMaster.API.DashboardKey", "").isBlank()) {
+            masterConfigData.set("CloudMaster.API.DashboardKey", java.util.UUID.randomUUID().toString());
+            changed = true;
+        }
+        if (changed) {
+            try {
+                masterConfigData.save(masterConfigFile);
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    private boolean clampInt(FileConfiguration config, String key, int min, int max, int defaultValue) {
+        int value = config.getInt(key, defaultValue);
+        int clamped = Math.max(min, Math.min(max, value));
+        if (value != clamped || !config.contains(key)) {
+            config.set(key, clamped);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean clampDouble(FileConfiguration config, String key, double min, double max, double defaultValue) {
+        double value = config.getDouble(key, defaultValue);
+        double clamped = Math.max(min, Math.min(max, value));
+        if (Math.abs(value - clamped) > 0.0001 || !config.contains(key)) {
+            config.set(key, clamped);
+            return true;
+        }
+        return false;
+    }
+
+    private int resolveIntSetting(String groupName, String key, int defaultValue) {
+        String current = groupName;
+        for (int i = 0; i < 10; i++) {
+            String path = "ServerGroup." + current + "." + key;
+            if (serverGroupsData.contains(path)) {
+                return serverGroupsData.getInt(path, defaultValue);
+            }
+            current = serverGroupsData.getString("ServerGroup." + current + ".Parent", "");
+            if (current == null || current.isBlank()) break;
+        }
+        return defaultValue;
+    }
+
+    private double resolveDoubleSetting(String groupName, String key, double defaultValue) {
+        String current = groupName;
+        for (int i = 0; i < 10; i++) {
+            String path = "ServerGroup." + current + "." + key;
+            if (serverGroupsData.contains(path)) {
+                return serverGroupsData.getDouble(path, defaultValue);
+            }
+            current = serverGroupsData.getString("ServerGroup." + current + ".Parent", "");
+            if (current == null || current.isBlank()) break;
+        }
+        return defaultValue;
+    }
+
+    private boolean resolveBooleanSetting(String groupName, String key, boolean defaultValue) {
+        String current = groupName;
+        for (int i = 0; i < 10; i++) {
+            String path = "ServerGroup." + current + "." + key;
+            if (serverGroupsData.contains(path)) {
+                return serverGroupsData.getBoolean(path, defaultValue);
+            }
+            current = serverGroupsData.getString("ServerGroup." + current + ".Parent", "");
+            if (current == null || current.isBlank()) break;
+        }
+        return defaultValue;
+    }
+
+    private String resolveStringSetting(String groupName, String key, String defaultValue) {
+        String current = groupName;
+        for (int i = 0; i < 10; i++) {
+            String path = "ServerGroup." + current + "." + key;
+            if (serverGroupsData.contains(path)) {
+                return serverGroupsData.getString(path, defaultValue);
+            }
+            current = serverGroupsData.getString("ServerGroup." + current + ".Parent", "");
+            if (current == null || current.isBlank()) break;
+        }
+        return defaultValue;
+    }
+
+    private boolean saveServerGroups() {
+        try {
+            serverGroupsData.save(serverGroupsFile);
+            return true;
+        } catch (IOException e) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Konnte ServerGroups.yml nicht speichern: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private void copyIfExists(Path src, Path dest) throws IOException {
+        if (Files.exists(src)) {
+            Files.copy(src, dest, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private String safeName(String trigger) {
+        if (trigger == null || trigger.isBlank()) {
+            return "manual";
+        }
+        return trigger.replaceAll("[^a-zA-Z0-9-_]", "_");
     }
 
     // ========================================

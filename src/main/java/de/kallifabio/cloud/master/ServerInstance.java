@@ -29,6 +29,11 @@ public class ServerInstance {
     public double tps = 20.0;
     public long memoryUsage = 0;
     public double cpuUsage = 0.0;
+    public long networkInBytes = 0;
+    public long networkOutBytes = 0;
+    public String networkMode = "NONE";
+    public long diskReadBytes = 0;
+    public long diskWriteBytes = 0;
 
     // Flags
     public boolean isCritical = false;

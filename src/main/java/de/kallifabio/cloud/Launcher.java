@@ -11,6 +11,7 @@ import de.kallifabio.cloud.api.CloudHttpServer;
 import de.kallifabio.cloud.commands.CommandHandler;
 import de.kallifabio.cloud.libs.console.ConsoleColors;
 import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
+import de.kallifabio.cloud.libs.logging.CentralLogger;
 import de.kallifabio.cloud.master.Master;
 import de.kallifabio.cloud.wrapper.Wrapper;
 
@@ -29,6 +30,8 @@ public class Launcher {
     private static LaunchMode launchMode = LaunchMode.COMBINED;
 
     public static void main(String[] args) {
+        CentralLogger.init();
+
         // Parse launch arguments
         parseLaunchArguments(args);
 

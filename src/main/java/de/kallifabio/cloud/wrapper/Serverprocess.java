@@ -11,6 +11,9 @@ import de.kallifabio.cloud.libs.console.ConsoleColors;
 import de.kallifabio.cloud.libs.Message;
 import de.kallifabio.cloud.config.ConfigManager;
 import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
+import de.kallifabio.cloud.libs.logging.CentralLogger;
+import oshi.SystemInfo;
+import oshi.software.os.OSProcess;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -18,12 +21,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 public class Serverprocess {
 
@@ -46,15 +52,29 @@ public class Serverprocess {
     private volatile int maxPlayers = 100;
     private volatile double tps = 20.0;
     private volatile long memoryUsage = 0;
+    private volatile double cpuUsage = 0.0;
+    private volatile long diskReadBytes = 0L;
+    private volatile long diskWriteBytes = 0L;
+    private long networkInBytes = 0L;
+    private long networkOutBytes = 0L;
+    private long lastObservedSocketInBytes = -1L;
+    private long lastObservedSocketOutBytes = -1L;
+    private long lastNetworkSampleAt = 0L;
+    private String networkCollectionMode = "NONE";
     private long lastMetricUpdate = 0;
 
     // Monitoring
     private final ScheduledExecutorService metricsScheduler = Executors.newSingleThreadScheduledExecutor();
+    private final SystemInfo systemInfo = new SystemInfo();
+    private long processId = -1L;
+    private OSProcess previousProcess;
 
     // Regex patterns for log parsing
     private static final Pattern PLAYER_JOIN_PATTERN = Pattern.compile("(\\w+)\\[.+\\] logged in");
     private static final Pattern PLAYER_LEAVE_PATTERN = Pattern.compile("(\\w+) lost connection");
     private static final Pattern TPS_PATTERN = Pattern.compile("TPS from last \\d+m.*?([0-9.]+)");
+    private static final Pattern SS_BYTES_RECEIVED_PATTERN = Pattern.compile("bytes_received:(\\d+)");
+    private static final Pattern SS_BYTES_ACKED_PATTERN = Pattern.compile("bytes_acked:(\\d+)");
 
     public Serverprocess(String serverName, String groupName, int port, Wrapper wrapper) {
         this.serverName = serverName;
@@ -75,6 +95,7 @@ public class Serverprocess {
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Starte Server: " + serverName + " (" + groupName + ") auf Port " + port);
+        long startNs = System.nanoTime();
 
         // Setup server directory
         File serverDir = setupServerDirectory();
@@ -125,6 +146,8 @@ public class Serverprocess {
         process = processBuilder.start();
         running = true;
         startTime = System.currentTimeMillis();
+        processId = process.pid();
+        previousProcess = systemInfo.getOperatingSystem().getProcess((int) processId);
 
         // Setup process I/O
         setupProcessIO();
@@ -137,55 +160,105 @@ public class Serverprocess {
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " Server " + serverName + " gestartet auf Port " + port);
+        long tookMs = (System.nanoTime() - startNs) / 1_000_000;
+        CentralLogger.performance("server_start", tookMs, serverName + " (" + groupName + ")");
     }
 
     private File setupServerDirectory() throws IOException {
         File serverDir = new File("./servers/" + groupName + "/" + serverName);
-        if (!serverDir.exists()) {
-            serverDir.mkdirs();
+        if (isDynamicGroup() && serverDir.exists()) {
+            clearDirectory(serverDir.toPath());
         }
+        Files.createDirectories(serverDir.toPath());
         return serverDir;
     }
 
     private void prepareServerFiles(File serverDir) throws IOException {
-        boolean isDynamic = "true".equalsIgnoreCase(
-                configManager.getServergroup("ServerGroup." + groupName + ".Dynamic")
-        );
-
-        if (isDynamic) {
+        if (isDynamicGroup()) {
             copyTemplateFiles(serverDir);
         }
     }
 
     private void copyTemplateFiles(File serverDir) throws IOException {
-        File templateDir = new File("./templates/" + groupName);
+        File templateDir = configManager.isTemplateTestingMode()
+                ? new File("./templates_test/" + groupName)
+                : new File("./templates/" + groupName);
+        File backupTemplateDir = new File("./templates_backup/" + groupName);
 
         if (!templateDir.exists()) {
-            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Template-Verzeichnis nicht gefunden, erstelle es: " +
-                    templateDir.getAbsolutePath());
-            templateDir.mkdirs();
+            if (!backupTemplateDir.exists()) {
+                throw new FileNotFoundException("Template-Verzeichnis nicht gefunden: " + templateDir.getAbsolutePath());
+            }
+            copyDirectory(backupTemplateDir.toPath(), serverDir.toPath());
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Backup-Template verwendet für " + serverName);
             return;
         }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Kopiere Template-Dateien für " + serverName + "...");
+                " Kopiere Template-Dateien fuer " + serverName + "...");
 
-        Files.walk(templateDir.toPath()).forEach(source -> {
-            try {
-                Path target = serverDir.toPath().resolve(templateDir.toPath().relativize(source));
-                if (Files.isDirectory(source)) {
-                    if (!Files.exists(target)) {
-                        Files.createDirectories(target);
-                    }
-                } else {
-                    Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
-                }
-            } catch (IOException e) {
-                ConsoleScreenManager.printToTerminal(ConsoleColors.RED +
-                        "Fehler beim Kopieren: " + e.getMessage());
+        try {
+            copyDirectory(templateDir.toPath(), serverDir.toPath());
+        } catch (IOException ex) {
+            CentralLogger.error("Template", "Template-Kopie fehlgeschlagen für " + serverName + ", versuche Backup", ex);
+            if (!backupTemplateDir.exists()) {
+                throw ex;
             }
-        });
+            clearDirectory(serverDir.toPath());
+            copyDirectory(backupTemplateDir.toPath(), serverDir.toPath());
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Korruptes Template erkannt, Backup-Template verwendet für " + serverName);
+        }
+    }
+
+    private boolean isDynamicGroup() {
+        return "true".equalsIgnoreCase(
+                configManager.getServergroup("ServerGroup." + groupName + ".Dynamic")
+        );
+    }
+
+    private void clearDirectory(Path directory) throws IOException {
+        try (Stream<Path> walk = Files.walk(directory)) {
+            walk.sorted(Comparator.reverseOrder())
+                    .filter(path -> !path.equals(directory))
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException e) {
+                            throw new RuntimeException("Konnte Datei nicht loeschen: " + path, e);
+                        }
+                    });
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw e;
+        }
+    }
+
+    private void copyDirectory(Path sourceDirectory, Path targetDirectory) throws IOException {
+        try (Stream<Path> stream = Files.walk(sourceDirectory)) {
+            stream.forEach(source -> {
+                try {
+                    Path target = targetDirectory.resolve(sourceDirectory.relativize(source));
+                    if (Files.isDirectory(source)) {
+                        if (!Files.exists(target)) {
+                            Files.createDirectories(target);
+                        }
+                    } else {
+                        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException("Fehler beim Kopieren: " + e.getMessage(), e);
+                }
+            });
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw e;
+        }
     }
 
     private void acceptEula(File serverDir) throws IOException {
@@ -284,6 +357,8 @@ public class Serverprocess {
 
                 String line;
                 while ((line = reader.readLine()) != null && running) {
+                    wrapper.sendServerLog(serverName, determineLogLevel(line), line);
+
                     // NEU: Nur wichtige Logs an Main-Screen
                     if (shouldprintToTerminal(line)) {
                         ConsoleScreenManager.printToTerminal(
@@ -328,6 +403,20 @@ public class Serverprocess {
                 || line.contains("SEVERE");
     }
 
+    private String determineLogLevel(String line) {
+        String upper = line.toUpperCase();
+        if (upper.contains("ERROR") || upper.contains("SEVERE") || upper.contains("EXCEPTION")) {
+            return "ERROR";
+        }
+        if (upper.contains("WARN")) {
+            return "WARN";
+        }
+        if (upper.contains("DEBUG")) {
+            return "DEBUG";
+        }
+        return "INFO";
+    }
+
     private void parseLogLine(String line) {
         // Parse player joins
         Matcher joinMatcher = PLAYER_JOIN_PATTERN.matcher(line);
@@ -369,15 +458,198 @@ public class Serverprocess {
 
     private void updateMemoryMetrics() {
         try {
-            // Get memory usage from process (approximation)
-            Runtime runtime = Runtime.getRuntime();
-            memoryUsage = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024; // MB
+            OSProcess current = systemInfo.getOperatingSystem().getProcess((int) processId);
+            if (current != null) {
+                memoryUsage = current.getResidentSetSize() / 1024 / 1024;
+                diskReadBytes = current.getBytesRead();
+                diskWriteBytes = current.getBytesWritten();
+                if (previousProcess != null) {
+                    cpuUsage = current.getProcessCpuLoadBetweenTicks(previousProcess) * 100.0;
+                    if (cpuUsage < 0) {
+                        cpuUsage = 0.0;
+                    }
+                }
+                previousProcess = current;
+            }
+            updateNetworkMetrics();
         } catch (Exception e) {
             // Ignore
         }
     }
 
+    private void updateNetworkMetrics() {
+        boolean linuxSocketBytes = collectLinuxSocketBytes();
+        if (!linuxSocketBytes) {
+            collectFallbackNetworkEstimate();
+        }
+    }
+
+    private boolean collectLinuxSocketBytes() {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (!osName.contains("linux")) {
+            return false;
+        }
+
+        String command = "ss -tin \"( sport = :" + port + " )\"";
+        ProcessBuilder builder = new ProcessBuilder("sh", "-c", command);
+        builder.redirectErrorStream(true);
+
+        long receivedSum = 0L;
+        long ackedSum = 0L;
+        int byteMatches = 0;
+
+        try {
+            Process p = builder.start();
+            String output;
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = br.readLine()) != null) {
+                    sb.append(line).append('\n');
+                }
+                output = sb.toString();
+            }
+            p.waitFor(2, TimeUnit.SECONDS);
+            if (p.isAlive()) {
+                p.destroyForcibly();
+                return false;
+            }
+
+            Matcher inMatcher = SS_BYTES_RECEIVED_PATTERN.matcher(output);
+            while (inMatcher.find()) {
+                receivedSum += Long.parseLong(inMatcher.group(1));
+                byteMatches++;
+            }
+
+            Matcher outMatcher = SS_BYTES_ACKED_PATTERN.matcher(output);
+            while (outMatcher.find()) {
+                ackedSum += Long.parseLong(outMatcher.group(1));
+                byteMatches++;
+            }
+
+            if (byteMatches == 0) {
+                return false;
+            }
+
+            long deltaIn = counterDelta(receivedSum, lastObservedSocketInBytes);
+            long deltaOut = counterDelta(ackedSum, lastObservedSocketOutBytes);
+
+            networkInBytes += Math.max(0L, deltaIn);
+            networkOutBytes += Math.max(0L, deltaOut);
+            lastObservedSocketInBytes = receivedSum;
+            lastObservedSocketOutBytes = ackedSum;
+            networkCollectionMode = "LINUX_SOCKET_BYTES";
+            lastNetworkSampleAt = System.currentTimeMillis();
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void collectFallbackNetworkEstimate() {
+        int establishedConnections = countEstablishedConnections();
+        long now = System.currentTimeMillis();
+        long previousSample = lastNetworkSampleAt;
+        lastNetworkSampleAt = now;
+
+        if (previousSample <= 0L) {
+            networkCollectionMode = "ESTIMATED_CONNECTIONS";
+            return;
+        }
+
+        long elapsedSeconds = Math.max(1L, (now - previousSample) / 1000L);
+        long bytesPerConnectionPerSecond = 2048L;
+        long estimatedDelta = establishedConnections * elapsedSeconds * bytesPerConnectionPerSecond;
+        networkInBytes += estimatedDelta;
+        networkOutBytes += estimatedDelta;
+        networkCollectionMode = "ESTIMATED_CONNECTIONS";
+    }
+
+    private int countEstablishedConnections() {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        try {
+            if (osName.contains("windows")) {
+                return countEstablishedConnectionsWindows();
+            }
+            return countEstablishedConnectionsLinux();
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private int countEstablishedConnectionsWindows() throws IOException, InterruptedException {
+        ProcessBuilder builder = new ProcessBuilder("cmd", "/c", "netstat -ano -p tcp");
+        builder.redirectErrorStream(true);
+        Process p = builder.start();
+
+        int count = 0;
+        String portSuffix = ":" + port;
+        String pidString = String.valueOf(processId);
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String normalized = line.trim().replaceAll("\\s+", " ");
+                if (!normalized.startsWith("TCP ")) {
+                    continue;
+                }
+                String[] parts = normalized.split(" ");
+                if (parts.length < 5) {
+                    continue;
+                }
+                String localAddress = parts[1];
+                String state = parts[3];
+                String pid = parts[4];
+                if (localAddress.endsWith(portSuffix) && "ESTABLISHED".equalsIgnoreCase(state) && pidString.equals(pid)) {
+                    count++;
+                }
+            }
+        }
+        p.waitFor(2, TimeUnit.SECONDS);
+        if (p.isAlive()) {
+            p.destroyForcibly();
+        }
+        return count;
+    }
+
+    private int countEstablishedConnectionsLinux() throws IOException, InterruptedException {
+        String command = "ss -tn state established \"( sport = :" + port + " )\"";
+        ProcessBuilder builder = new ProcessBuilder("sh", "-c", command);
+        builder.redirectErrorStream(true);
+        Process p = builder.start();
+
+        int count = 0;
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("Recv-Q") || trimmed.startsWith("Netid")) {
+                    continue;
+                }
+                count++;
+            }
+        }
+        p.waitFor(2, TimeUnit.SECONDS);
+        if (p.isAlive()) {
+            p.destroyForcibly();
+        }
+        return count;
+    }
+
+    private long counterDelta(long current, long previous) {
+        if (previous < 0L) {
+            return 0L;
+        }
+        if (current >= previous) {
+            return current - previous;
+        }
+        return current;
+    }
+
     public void stop() {
+        stop(true);
+    }
+
+    public void stop(boolean graceful) {
         if (!running) {
             return;
         }
@@ -387,7 +659,26 @@ public class Serverprocess {
 
         running = false;
 
+        if (!graceful) {
+            process.destroyForcibly();
+            cleanup();
+            wrapper.sendServerStatus(serverName, "KILLED");
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Server " + serverName + " wurde hart beendet");
+            return;
+        }
+
         // Send stop command gracefully
+        if (!groupName.equalsIgnoreCase("Proxy")) {
+            sendCommand("say Server shutdown in 30 seconds.");
+            sleepQuietly(15000);
+            sendCommand("say Server shutdown in 15 seconds.");
+            sleepQuietly(5000);
+            sendCommand("say Server shutdown in 10 seconds.");
+            sleepQuietly(5000);
+            sendCommand("say Server shutdown in 5 seconds.");
+            sleepQuietly(5000);
+        }
         sendCommand("stop");
 
         // Wait for graceful shutdown
@@ -397,6 +688,7 @@ public class Serverprocess {
                         ConsoleColors.getCurrentTime() + " Server " + serverName +
                         " reagiert nicht, erzwinge Beendigung...");
                 process.destroyForcibly();
+                wrapper.sendServerStatus(serverName, "KILLED");
             }
         } catch (InterruptedException e) {
             process.destroyForcibly();
@@ -411,6 +703,14 @@ public class Serverprocess {
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server " + serverName + " gestoppt");
+    }
+
+    private void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void cleanup() {
@@ -471,7 +771,12 @@ public class Serverprocess {
         metrics.maxPlayers = maxPlayers;
         metrics.tps = tps;
         metrics.memoryUsage = memoryUsage;
-        metrics.cpuUsage = 0.0; // Could be calculated if needed
+        metrics.cpuUsage = cpuUsage;
+        metrics.networkInBytes = networkInBytes;
+        metrics.networkOutBytes = networkOutBytes;
+        metrics.networkMode = networkCollectionMode;
+        metrics.diskReadBytes = diskReadBytes;
+        metrics.diskWriteBytes = diskWriteBytes;
         metrics.timestamp = System.currentTimeMillis();
 
         lastMetricUpdate = System.currentTimeMillis();
@@ -551,3 +856,4 @@ public class Serverprocess {
         return System.currentTimeMillis() - startTime;
     }
 }
+

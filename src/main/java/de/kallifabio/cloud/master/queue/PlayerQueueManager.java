@@ -1,14 +1,9 @@
-/**
- * Erstellt von Gamer_Kidd_LP | kallifabio
- * am 09.01.2026 um 20:55
- * Projektname: CloudSystemTest
- * Packagename: de.kallifabio.cloud.master.queue
- */
-
 package de.kallifabio.cloud.master.queue;
 
-import de.kallifabio.cloud.libs.console.ConsoleColors;
+import de.kallifabio.cloud.data.CloudDataStore;
+import de.kallifabio.cloud.data.QueueEntry;
 import de.kallifabio.cloud.libs.Message;
+import de.kallifabio.cloud.libs.console.ConsoleColors;
 import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
 import de.kallifabio.cloud.master.Master;
 import de.kallifabio.cloud.master.loadbalancer.LoadBalancerManager;
@@ -24,25 +19,24 @@ public class PlayerQueueManager {
 
     private final Master master;
     private final LoadBalancerManager loadBalancer;
+    private final CloudDataStore dataStore;
 
-    // Queues per group
     private final Map<String, PriorityBlockingQueue<QueuedPlayer>> groupQueues = new ConcurrentHashMap<>();
-
-    // Player tracking
     private final Map<String, QueuedPlayer> playerQueue = new ConcurrentHashMap<>();
-
-    // Queue statistics
+    private final Map<String, Long> queueActivity = new ConcurrentHashMap<>();
     private final Map<String, QueueStats> queueStats = new ConcurrentHashMap<>();
 
-    // VIP priorities
-    private static final int PRIORITY_VIP_PLUS = 100;
-    private static final int PRIORITY_VIP = 50;
     private static final int PRIORITY_NORMAL = 0;
+    private static final int MAX_MATCHES_PER_TICK = 10;
+    private static final long QUEUE_TIMEOUT_MS = 10 * 60 * 1000L;
+    private static final long QUEUE_AFK_TIMEOUT_MS = 2 * 60 * 1000L;
 
-    public PlayerQueueManager(Master master, LoadBalancerManager loadBalancer) {
+    public PlayerQueueManager(Master master, LoadBalancerManager loadBalancer, CloudDataStore dataStore) {
         this.master = master;
         this.loadBalancer = loadBalancer;
+        this.dataStore = dataStore;
         initializeQueues();
+        loadPersistentQueues();
     }
 
     private void initializeQueues() {
@@ -50,7 +44,7 @@ public class PlayerQueueManager {
         groupQueues.put("Proxy", new PriorityBlockingQueue<>());
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Player Queue Manager initialisiert");
+                " Player Queue Manager initialized");
     }
 
     public void addToQueue(String playerUuid, String groupName) {
@@ -58,10 +52,12 @@ public class PlayerQueueManager {
     }
 
     public void addToQueue(String playerUuid, String playerName, String groupName, int priority) {
-        PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(groupName);
-        if (queue == null) {
-            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " FEHLER: Queue für Gruppe " + groupName + " nicht gefunden");
+        PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.computeIfAbsent(groupName, k -> new PriorityBlockingQueue<>());
+        String queueKey = queueKey(groupName, playerUuid);
+
+        QueuedPlayer existing = playerQueue.get(queueKey);
+        if (existing != null) {
+            notifyPlayerQueueUpdate(existing);
             return;
         }
 
@@ -74,15 +70,15 @@ public class PlayerQueueManager {
         );
 
         queue.offer(queuedPlayer);
-        playerQueue.put(playerUuid, queuedPlayer);
+        playerQueue.put(queueKey, queuedPlayer);
+        queueActivity.put(queueKey, System.currentTimeMillis());
+        persistQueueEntry(queuedPlayer);
 
         updateQueueStats(groupName);
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Spieler zur Queue hinzugefügt: " + playerName + " (" + groupName + ") - Position: " +
-                getQueuePosition(playerUuid));
+                " Player queued: " + playerName + " (" + groupName + ") position " + getQueuePosition(playerUuid));
 
-        // Notify player of queue position
         notifyPlayerQueueUpdate(queuedPlayer);
     }
 
@@ -90,49 +86,65 @@ public class PlayerQueueManager {
         for (Map.Entry<String, PriorityBlockingQueue<QueuedPlayer>> entry : groupQueues.entrySet()) {
             String groupName = entry.getKey();
             PriorityBlockingQueue<QueuedPlayer> queue = entry.getValue();
+            removeExpiredEntries(groupName);
 
-            if (queue.isEmpty()) continue;
-
-            // Try to place queued players
-            while (!queue.isEmpty()) {
-                String availableServer = loadBalancer.getBestServer(groupName, queue.peek().playerUuid);
-
-                if (availableServer != null) {
-                    QueuedPlayer player = queue.poll();
-                    playerQueue.remove(player.playerUuid);
-
-                    // Send player to server
-                    sendPlayerToServer(player, availableServer);
-
-                    updateQueueStats(groupName);
-                } else {
-                    break; // No servers available, stop processing
-                }
+            if (queue.isEmpty()) {
+                continue;
             }
 
-            // Update waiting players
+            int processedThisTick = 0;
+            while (!queue.isEmpty() && processedThisTick < MAX_MATCHES_PER_TICK) {
+                List<QueuedPlayer> orderedQueue = getOrderedQueue(groupName);
+                if (orderedQueue.isEmpty()) {
+                    break;
+                }
+
+                QueuedPlayer nextPlayer = orderedQueue.get(0);
+                String availableServer = loadBalancer.getBestServer(groupName, nextPlayer.playerUuid);
+
+                if (availableServer == null) {
+                    break;
+                }
+
+                boolean removed = queue.remove(nextPlayer);
+                if (!removed) {
+                    break;
+                }
+
+                playerQueue.remove(queueKey(nextPlayer.groupName, nextPlayer.playerUuid));
+                queueActivity.remove(queueKey(nextPlayer.groupName, nextPlayer.playerUuid));
+                removePersistedQueueEntry(nextPlayer);
+
+                sendPlayerToServer(nextPlayer, availableServer);
+                recordPlayerPlaced(groupName, System.currentTimeMillis() - nextPlayer.queuedAt);
+                processedThisTick++;
+
+                updateQueueStats(groupName);
+            }
+
             notifyWaitingPlayers(groupName);
         }
     }
 
     private void sendPlayerToServer(QueuedPlayer player, String targetServer) {
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Sende Spieler aus Queue: " + player.playerName + " -> " + targetServer);
+                " Queue dispatch: " + player.playerName + " -> " + targetServer);
 
         Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
         response.playerUuid = player.playerUuid;
         response.targetServer = targetServer;
         response.success = true;
-        response.message = "Server verfügbar - Verbindung wird hergestellt";
+        response.message = "Server available - connecting";
 
-        // Send to appropriate wrapper/server
-        // In real implementation, would route to correct connection
         master.getServer().sendToAllTCP(response);
+        if (master.getPlayerSessionManager() != null) {
+            master.getPlayerSessionManager().assignServer(player.playerUuid, targetServer);
+        }
     }
 
     private void notifyPlayerQueueUpdate(QueuedPlayer player) {
-        int position = getQueuePosition(player.playerUuid);
-        int totalInQueue = groupQueues.get(player.groupName).size();
+        int position = getQueuePosition(player.playerUuid, player.groupName);
+        int totalInQueue = getQueueSize(player.groupName);
 
         Message.QueueUpdate update = new Message.QueueUpdate();
         update.playerUuid = player.playerUuid;
@@ -144,17 +156,14 @@ public class PlayerQueueManager {
     }
 
     private void notifyWaitingPlayers(String groupName) {
-        PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(groupName);
-        if (queue == null) return;
-
-        List<QueuedPlayer> queueList = new ArrayList<>(queue);
+        List<QueuedPlayer> queueList = getOrderedQueue(groupName);
         for (int i = 0; i < queueList.size(); i++) {
             QueuedPlayer player = queueList.get(i);
 
             Message.QueueUpdate update = new Message.QueueUpdate();
             update.playerUuid = player.playerUuid;
             update.position = i + 1;
-            update.totalInQueue = queue.size();
+            update.totalInQueue = queueList.size();
             update.estimatedWait = calculateEstimatedWait(groupName, i + 1);
 
             master.getServer().sendToAllTCP(update);
@@ -164,47 +173,64 @@ public class PlayerQueueManager {
     private String calculateEstimatedWait(String groupName, int position) {
         QueueStats stats = queueStats.get(groupName);
         if (stats == null || stats.avgProcessingTime == 0) {
-            return "Unbekannt";
+            return "Unknown";
         }
 
-        long estimatedMs = (long) (position * stats.avgProcessingTime);
+        long estimatedMs = (long) (Math.max(0, position - 1) * stats.avgProcessingTime);
         long seconds = estimatedMs / 1000;
 
         if (seconds < 60) {
-            return seconds + " Sekunden";
-        } else {
-            long minutes = seconds / 60;
-            return minutes + " Minute" + (minutes > 1 ? "n" : "");
+            return seconds + " seconds";
         }
+
+        long minutes = seconds / 60;
+        return minutes + " minute" + (minutes > 1 ? "s" : "");
     }
 
     public int getQueuePosition(String playerUuid) {
-        QueuedPlayer player = playerQueue.get(playerUuid);
-        if (player == null) return -1;
+        for (QueuedPlayer player : playerQueue.values()) {
+            int pos = getQueuePosition(playerUuid, player.groupName);
+            if (pos > 0) {
+                return pos;
+            }
+        }
+        return -1;
+    }
 
-        PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(player.groupName);
-        if (queue == null) return -1;
+    public int getQueuePosition(String playerUuid, String groupName) {
+        QueuedPlayer player = playerQueue.get(queueKey(groupName, playerUuid));
+        if (player == null) {
+            return -1;
+        }
 
-        List<QueuedPlayer> queueList = new ArrayList<>(queue);
-        return queueList.indexOf(player) + 1;
+        List<QueuedPlayer> queueList = getOrderedQueue(groupName);
+        int index = queueList.indexOf(player);
+        return index >= 0 ? index + 1 : -1;
     }
 
     public void removeFromQueue(String playerUuid) {
-        QueuedPlayer player = playerQueue.remove(playerUuid);
-        if (player != null) {
+        List<QueuedPlayer> toRemove = playerQueue.values().stream()
+                .filter(p -> p.playerUuid.equalsIgnoreCase(playerUuid))
+                .toList();
+        for (QueuedPlayer player : toRemove) {
+            playerQueue.remove(queueKey(player.groupName, player.playerUuid));
+            queueActivity.remove(queueKey(player.groupName, player.playerUuid));
             PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(player.groupName);
             if (queue != null) {
                 queue.remove(player);
-                updateQueueStats(player.groupName);
             }
+            removePersistedQueueEntry(player);
+            updateQueueStats(player.groupName);
         }
     }
 
     private void updateQueueStats(String groupName) {
         PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(groupName);
-        if (queue == null) return;
+        if (queue == null) {
+            return;
+        }
 
-        QueueStats stats = queueStats.computeIfAbsent(groupName, k -> new QueueStats(groupName));
+        QueueStats stats = queueStats.computeIfAbsent(groupName, QueueStats::new);
         stats.currentSize = queue.size();
         stats.lastUpdate = System.currentTimeMillis();
 
@@ -212,32 +238,25 @@ public class PlayerQueueManager {
             stats.peakSize = stats.currentSize;
         }
 
-        // Calculate average processing time
         if (stats.processedCount > 0) {
             stats.avgProcessingTime = stats.totalWaitTime / stats.processedCount;
         }
     }
 
     public void recordPlayerPlaced(String groupName, long waitTime) {
-        QueueStats stats = queueStats.get(groupName);
-        if (stats != null) {
-            stats.processedCount++;
-            stats.totalWaitTime += waitTime;
-            stats.avgProcessingTime = stats.totalWaitTime / stats.processedCount;
-        }
+        QueueStats stats = queueStats.computeIfAbsent(groupName, QueueStats::new);
+        stats.processedCount++;
+        stats.totalWaitTime += waitTime;
+        stats.avgProcessingTime = stats.totalWaitTime / stats.processedCount;
     }
 
     public int getTotalQueued() {
-        return groupQueues.values().stream()
-                .mapToInt(PriorityBlockingQueue::size)
-                .sum();
+        return groupQueues.values().stream().mapToInt(PriorityBlockingQueue::size).sum();
     }
 
     public Map<String, Integer> getQueueStats() {
         Map<String, Integer> stats = new HashMap<>();
-        groupQueues.forEach((groupName, queue) -> {
-            stats.put(groupName, queue.size());
-        });
+        groupQueues.forEach((groupName, queue) -> stats.put(groupName, queue.size()));
         return stats;
     }
 
@@ -249,6 +268,91 @@ public class PlayerQueueManager {
         PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(groupName);
         return queue != null ? queue.size() : 0;
     }
+
+    private List<QueuedPlayer> getOrderedQueue(String groupName) {
+        PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(groupName);
+        if (queue == null || queue.isEmpty()) {
+            return List.of();
+        }
+
+        List<QueuedPlayer> ordered = new ArrayList<>(queue);
+        ordered.sort(QueuedPlayer::compareTo);
+        return ordered;
+    }
+
+    private void persistQueueEntry(QueuedPlayer player) {
+        if (dataStore == null) {
+            return;
+        }
+        dataStore.saveQueueEntry(new QueueEntry(
+                player.playerUuid,
+                player.playerName,
+                player.groupName,
+                player.priority,
+                player.queuedAt
+        ));
+    }
+
+    private void removePersistedQueueEntry(QueuedPlayer player) {
+        if (dataStore == null) {
+            return;
+        }
+        dataStore.removeQueueEntry(player.groupName, player.playerUuid);
+    }
+
+    private void loadPersistentQueues() {
+        if (dataStore == null) {
+            return;
+        }
+
+        for (String groupName : groupQueues.keySet()) {
+            List<QueueEntry> entries = dataStore.loadQueueEntries(groupName);
+            for (QueueEntry entry : entries) {
+                QueuedPlayer qp = new QueuedPlayer(entry.playerUuid, entry.playerName, entry.groupName, entry.priority, entry.queuedAt);
+                groupQueues.get(groupName).offer(qp);
+                playerQueue.put(queueKey(entry.groupName, entry.playerUuid), qp);
+                queueActivity.put(queueKey(entry.groupName, entry.playerUuid), System.currentTimeMillis());
+            }
+            updateQueueStats(groupName);
+        }
+    }
+
+    public void markQueueActivity(String playerUuid, String groupName) {
+        queueActivity.put(queueKey(groupName, playerUuid), System.currentTimeMillis());
+    }
+
+    private void removeExpiredEntries(String groupName) {
+        PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.get(groupName);
+        if (queue == null || queue.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        List<QueuedPlayer> snapshot = new ArrayList<>(queue);
+        for (QueuedPlayer player : snapshot) {
+            String key = queueKey(player.groupName, player.playerUuid);
+            long lastActivity = queueActivity.getOrDefault(key, player.queuedAt);
+            boolean timedOut = now - player.queuedAt > QUEUE_TIMEOUT_MS;
+            boolean afk = now - lastActivity > QUEUE_AFK_TIMEOUT_MS;
+            if (timedOut || afk) {
+                queue.remove(player);
+                playerQueue.remove(key);
+                queueActivity.remove(key);
+                removePersistedQueueEntry(player);
+                updateQueueStats(groupName);
+
+                Message.PlayerNotification note = new Message.PlayerNotification();
+                note.playerUuid = player.playerUuid;
+                note.type = timedOut ? "QUEUE_TIMEOUT" : "QUEUE_AFK";
+                note.message = timedOut ? "Removed from queue after 10 minutes" : "Removed from queue due to AFK";
+                note.timestamp = now;
+                master.getServer().sendToAllTCP(note);
+            }
+        }
+    }
+
+    private String queueKey(String groupName, String playerUuid) {
+        return groupName + "|" + playerUuid;
+    }
 }
 
 class QueuedPlayer implements Comparable<QueuedPlayer> {
@@ -258,7 +362,7 @@ class QueuedPlayer implements Comparable<QueuedPlayer> {
     int priority;
     long queuedAt;
 
-    public QueuedPlayer(String playerUuid, String playerName, String groupName, int priority, long queuedAt) {
+    QueuedPlayer(String playerUuid, String playerName, String groupName, int priority, long queuedAt) {
         this.playerUuid = playerUuid;
         this.playerName = playerName;
         this.groupName = groupName;
@@ -268,7 +372,6 @@ class QueuedPlayer implements Comparable<QueuedPlayer> {
 
     @Override
     public int compareTo(QueuedPlayer other) {
-        // Higher priority first, then FIFO
         if (this.priority != other.priority) {
             return Integer.compare(other.priority, this.priority);
         }
@@ -285,7 +388,7 @@ class QueueStats {
     double avgProcessingTime;
     long lastUpdate;
 
-    public QueueStats(String groupName) {
+    QueueStats(String groupName) {
         this.groupName = groupName;
     }
 }

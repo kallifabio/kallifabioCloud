@@ -28,6 +28,9 @@ public class WrapperConnection {
     // Connection Status
     public long connectedSince;
     public long lastHeartbeat;
+    public long lastPingSent;
+    public long lastPong;
+    public long lastRttMs = -1;
 
     // Health
     public boolean healthy = true;
@@ -40,6 +43,7 @@ public class WrapperConnection {
         this.availableMemory = availableMemory;
         this.connectedSince = System.currentTimeMillis();
         this.lastHeartbeat = System.currentTimeMillis();
+        this.lastPong = System.currentTimeMillis();
     }
 
     // Getters (für HTTP API)
@@ -75,6 +79,14 @@ public class WrapperConnection {
         return lastHeartbeat;
     }
 
+    public long getLastPong() {
+        return lastPong;
+    }
+
+    public long getLastRttMs() {
+        return lastRttMs;
+    }
+
     // Convenience Methods
     public int getUsedMemory() {
         return maxMemory - availableMemory;
@@ -108,6 +120,15 @@ public class WrapperConnection {
         this.activeServers = activeServers;
         this.lastHeartbeat = System.currentTimeMillis();
         this.healthy = true;
+    }
+
+    public void markPingSent(long timestamp) {
+        this.lastPingSent = timestamp;
+    }
+
+    public void markPong(long pingTimestamp) {
+        this.lastPong = System.currentTimeMillis();
+        this.lastRttMs = Math.max(0, this.lastPong - pingTimestamp);
     }
 
     public void markUnhealthy() {
