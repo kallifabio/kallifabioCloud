@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Erstellt von Gamer_Kidd_LP | kallifabio
  * am 09.01.2026 um 21:01
  * Projektname: CloudSystemTest

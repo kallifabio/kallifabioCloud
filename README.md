@@ -20,7 +20,7 @@ Ein modulares Minecraft-Cloudsystem mit:
 ### Scaling / Queue / Routing
 - Auto-Scaling Policies pro Group
 - Manual Scaling Commands
-- Queue mit Priorität, Timeout und AFK-Handling
+- Queue mit Prioritaet, Timeout und AFK-Handling
 - Load Balancing (Least Loaded, Round Robin, ...)
 - Wrapper Draining (kein neues Routing auf draining Wrapper)
 
@@ -36,7 +36,7 @@ Ein modulares Minecraft-Cloudsystem mit:
 - Dashboard mit TailwindCSS
 - API Key Auth mit Rollen (`ADMIN`, `VIEWER`)
 - Key Rotation Endpoint
-- Optional TLS für REST + WSS
+- Optional TLS fuer REST + WSS
 - Rate Limiting
 
 ---
@@ -46,9 +46,9 @@ Ein modulares Minecraft-Cloudsystem mit:
 - `Master`
   - Orchestrierung, Routing, Scaling, Monitoring, API
 - `Wrapper`
-  - Hostet und überwacht `Serverprocess` Instanzen
+  - Hostet und ueberwacht `Serverprocess` Instanzen
 - `CloudDataStore`
-  - Persistenz-Layer für Spieler, Queue, Party, Permissions, Pending Requests
+  - Persistenz-Layer fuer Spieler, Queue, Party, Permissions, Pending Requests
 - `CloudHttpServer` + `LiveWebSocketServer`
   - API, Dashboard, Live-Updates
 
@@ -57,10 +57,10 @@ Ein modulares Minecraft-Cloudsystem mit:
 ## Voraussetzungen
 
 - Java 20+ (empfohlen 21)
-- Maven installiert (für lokale Builds)
+- Maven installiert (fuer lokale Builds)
 - Optional: MySQL oder MongoDB
 
-> Hinweis: `mvnw`/`mvnw.cmd` sind vorhanden, nutzen aktuell aber lokal installiertes Maven.
+> Hinweis: `mvnw`/`mvnw.cmd` sind vorhanden, nutzen aktuell lokal installiertes Maven.
 
 ---
 
@@ -103,8 +103,8 @@ Wichtige Dateien:
 - `CloudMaster.API.TLS.KeystoreType`
 
 Wenn TLS aktiv ist:
-- REST läuft über HTTPS
-- WebSocket läuft über WSS
+- REST laeuft ueber HTTPS
+- WebSocket laeuft ueber WSS
 
 ---
 
@@ -147,6 +147,24 @@ Wenn TLS aktiv ist:
 
 ---
 
+## Console Bedienung
+
+- ` /switch <screen>`: wechselt auf einen Screen (z. B. `Proxy-1`)
+- ` /screens`: listet verfuegbare Screens
+- ` /exit`: zurueck zum Main-Screen
+- ` exit` / `stop`: beendet den Prozess
+
+Aktueller Status:
+- Screen-Input wird im Server-Screen an den lokalen `Serverprocess` gesendet.
+- Bei nicht lokal verfuegbarem Server erfolgt Warnung + Log-Echo.
+
+Geplante Console-Ops (optional, noch nicht implementiert):
+- `/tail <server>`
+- `/clear`
+- `/screen close <server>`
+
+---
+
 ## REST API (Auszug)
 
 ### Auth / Dashboard
@@ -180,7 +198,7 @@ Wenn TLS aktiv ist:
 - WebSocket Auth:
   - `X-API-Key` Header oder `?token=...`
 - Rate Limit aktiv
-- Key Rotation über API verfügbar
+- Key Rotation ueber API verfuegbar
 
 ---
 
@@ -197,21 +215,24 @@ Datei:
 
 ## Troubleshooting
 
+- **Smoke-Compile Fehler `illegal character: '\ufeff'`**
+  - Ursache: UTF-8 BOM am Dateianfang (z. B. Java/YAML).
+  - Fix: Datei ohne BOM speichern (UTF-8 no BOM).
+
 - **`mvn` nicht gefunden**
-  - Maven installieren und im PATH verfügbar machen.
+  - Maven installieren und im PATH verfuegbar machen.
 
 - **API 401**
-  - Prüfen, ob `X-API-Key` gesetzt ist und gültiger Key genutzt wird.
+  - Pruefen, ob `X-API-Key` gesetzt ist und gueltiger Key genutzt wird.
 
 - **TLS aktiviert, Server startet nicht**
-  - Keystore Pfad/Passwort/Typ prüfen.
+  - Keystore Pfad/Passwort/Typ pruefen.
 
 - **Player kann Group nicht joinen**
-  - Runtime-Enforcer prüft `cloud.join` und Group-Join Permissions.
+  - Runtime-Enforcer prueft `cloud.join` und Group-Join Permissions.
 
 ---
 
 ## Lizenz
 
-Interne Entwicklung / Projekt-spezifisch. Bei Bedarf hier Lizenz ergänzen.
-
+Interne Entwicklung / projektspezifisch.
