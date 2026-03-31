@@ -244,7 +244,7 @@ public class CloudHttpServer {
         Map<String, Object> health = new HashMap<>();
         health.put("status", "UP");
         health.put("timestamp", System.currentTimeMillis());
-        health.put("version", "1.0.0");
+        health.put("version", "1.0.1");
 
         sendResponse(exchange, 200, health);
     }
@@ -2662,6 +2662,7 @@ public class CloudHttpServer {
         return wsPort;
     }
 }
+
 
 
 

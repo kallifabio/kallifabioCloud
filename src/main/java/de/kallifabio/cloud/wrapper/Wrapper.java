@@ -295,7 +295,7 @@ public class Wrapper {
         register.routeHost = routeHost;
         register.maxMemory = maxMemory;
         register.availableMemory = calculateAvailableMemory();
-        register.version = "1.0.0";
+        register.version = "1.0.1";
 
         client.sendTCP(register);
 
@@ -869,3 +869,4 @@ public class Wrapper {
         return new HashMap<>(restartRetryCounts);
     }
 }
+
