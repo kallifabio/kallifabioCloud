@@ -1,4 +1,4 @@
-﻿
+
         <!DOCTYPE html>
         <html lang='en'>
         <head>
@@ -123,6 +123,54 @@
                         font-size: 0.78rem;
                     }
                 }
+                @media (max-width: 640px) {
+                    .mx-auto.max-w-7xl.p-4, .mx-auto.max-w-7xl.p-4.md\:p-6 {
+                        padding-left: 0.7rem;
+                        padding-right: 0.7rem;
+                    }
+                    .dashboard-page {
+                        gap: 0.85rem !important;
+                    }
+                    .dashboard-page .rounded-2xl,
+                    .dashboard-page .rounded-xl {
+                        border-radius: 0.85rem;
+                    }
+                    .dashboard-page table {
+                        font-size: 0.74rem;
+                    }
+                    .dashboard-page th,
+                    .dashboard-page td {
+                        padding: 0.38rem 0.32rem !important;
+                        white-space: nowrap;
+                    }
+                    .dashboard-page pre {
+                        font-size: 0.68rem;
+                        line-height: 1.3;
+                    }
+                    #consoleTailBox {
+                        height: 55vh !important;
+                    }
+                }
+                @media (max-width: 420px) {
+                    .nav-link {
+                        padding: 0.38rem 0.58rem;
+                        gap: 0.35rem;
+                        font-size: 0.68rem;
+                    }
+                    h1.text-2xl.md\:text-3xl {
+                        font-size: 1.25rem !important;
+                        line-height: 1.25;
+                    }
+                    .dashboard-page button,
+                    .dashboard-page input,
+                    .dashboard-page select {
+                        min-height: 2.15rem;
+                    }
+                    #serversBody button {
+                        padding-left: 0.42rem !important;
+                        padding-right: 0.42rem !important;
+                    }
+                }
             </style>
         </head>
         <body class='min-h-screen bg-slate-950 text-slate-100'>
@@ -158,6 +206,8 @@
                         <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link'><i class='fa-solid fa-heart-pulse text-[11px]'></i><span>Monitoring</span></a>
                         <a href='/dashboard/operations' data-page-link='operations' class='nav-link'><i class='fa-solid fa-gears text-[11px]'></i><span>Operations</span></a>
                         <a href='/dashboard/setup' data-page-link='setup' class='nav-link'><i class='fa-solid fa-screwdriver-wrench text-[11px]'></i><span>Setup</span></a>
+                        <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link'><i class='fa-solid fa-flask-vial text-[11px]'></i><span>Advanced</span></a>
+                        <a href='/dashboard/console' data-page-link='console' class='nav-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
                     </div>
                 </div>
                 <div id='mobileNav' class='mobile-nav-panel mx-auto hidden max-w-7xl gap-2 px-4 pb-3 md:hidden'>
@@ -167,6 +217,8 @@
                         <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link mobile-nav-link'><i class='fa-solid fa-heart-pulse text-[12px]'></i><span>Monitoring</span></a>
                         <a href='/dashboard/operations' data-page-link='operations' class='nav-link mobile-nav-link'><i class='fa-solid fa-gears text-[12px]'></i><span>Operations</span></a>
                         <a href='/dashboard/setup' data-page-link='setup' class='nav-link mobile-nav-link'><i class='fa-solid fa-screwdriver-wrench text-[12px]'></i><span>Setup</span></a>
+                        <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link mobile-nav-link'><i class='fa-solid fa-flask-vial text-[12px]'></i><span>Advanced</span></a>
+                        <a href='/dashboard/console' data-page-link='console' class='nav-link mobile-nav-link'><i class='fa-solid fa-terminal text-[12px]'></i><span>Console</span></a>
                     </div>
                 </div>
             </nav>
@@ -187,6 +239,15 @@
                         <span id='roleState' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Role: -</span>
                         <span id='wsState' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>WS: disconnected</span>
                         <span id='lastUpdate' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Last update: -</span>
+                        <label class='inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-slate-300'>
+                            <span>Auto refresh</span>
+                            <select id='refreshInterval' class='rounded border border-slate-700 bg-slate-950 px-1 py-0.5 text-xs'>
+                                <option value='8000'>8s</option>
+                                <option value='12000' selected>12s</option>
+                                <option value='20000'>20s</option>
+                                <option value='30000'>30s</option>
+                            </select>
+                        </label>
                     </div>
                 </header>
 
@@ -243,6 +304,8 @@
                             <button id='btnClearAlerts' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400 disabled:opacity-30'>Clear alerts</button>
                             <button id='btnScaleEval' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-violet-400 disabled:opacity-30'>Scale eval</button>
                             <button id='btnReloadView' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Reload view</button>
+                            <button id='btnRestartUnhealthy' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-amber-400 disabled:opacity-30'>Restart unhealthy</button>
+                            <button id='btnExportServers' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-sky-400'>Export servers</button>
                         </div>
 
                         <h2 class='mb-3 mt-6 font-semibold'>Start Server</h2>
@@ -276,6 +339,10 @@
                                 <div id='policiesBox' class='mt-2 space-y-1 text-slate-300'></div>
                             </div>
                         </div>
+                        <div class='mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                            <div class='mb-2 font-semibold'>Cluster Nodes</div>
+                            <div id='clusterNodesBox' class='space-y-1 text-slate-300'></div>
+                        </div>
                         <div class='mt-4 grid gap-2 md:grid-cols-3'>
                             <input id='configKey' type='text' placeholder='Config key (e.g. CloudMaster.Network.ProxyOnlineMode)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-xs outline-none focus:border-cyan-400 md:col-span-2'>
                             <button id='btnConfigGet' class='rounded-lg border border-slate-700 px-2 py-2 text-xs hover:border-cyan-400 disabled:opacity-30'>Get Config</button>
@@ -302,6 +369,20 @@
                         <span class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>last 180 points</span>
                     </div>
                     <canvas id='metricsCanvas' class='h-44 w-full rounded-xl border border-slate-800 bg-slate-950/70'></canvas>
+                    <div class='mt-4 grid gap-3 md:grid-cols-3'>
+                        <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                            <div class='mb-2 font-semibold'>Top CPU Servers</div>
+                            <div id='topCpuBox' class='space-y-1 text-slate-300'></div>
+                        </div>
+                        <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                            <div class='mb-2 font-semibold'>Top RAM Servers</div>
+                            <div id='topMemBox' class='space-y-1 text-slate-300'></div>
+                        </div>
+                        <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                            <div class='mb-2 font-semibold'>Wrapper Pressure</div>
+                            <div id='wrapperPressureBox' class='space-y-1 text-slate-300'></div>
+                        </div>
+                    </div>
                 </section>
 
                 <section id='setupSection' data-page='setup' class='dashboard-page rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
@@ -310,6 +391,72 @@
                         <span id='setupSummary' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>-</span>
                     </div>
                     <div id='setupBox' class='grid gap-3 md:grid-cols-2 xl:grid-cols-3'></div>
+                </section>
+                <section id='advancedSection' data-page='advanced' class='dashboard-page grid gap-6 lg:grid-cols-3'>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-2'>
+                        <h2 class='mb-3 font-semibold'>Template Toolbox</h2>
+                        <div class='grid gap-2 md:grid-cols-3 text-xs'>
+                            <input id='tplGroup' type='text' placeholder='Group (e.g. Lobby)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400 md:col-span-2'>
+                            <button id='btnTplDiff' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400'>Template diff</button>
+                            <input id='tplVersion' type='text' placeholder='Version for rollback' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400 md:col-span-2'>
+                            <button id='btnTplVersions' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-violet-400'>List versions</button>
+                            <button id='btnTplRollback' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400 disabled:opacity-30'>Rollback</button>
+                        </div>
+                        <pre id='templateOutputBox' class='mt-3 h-52 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
+                    </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <h2 class='mb-3 font-semibold'>Group Runtime Tools</h2>
+                        <div class='space-y-2 text-xs'>
+                            <input id='groupNameInput' type='text' placeholder='Group name' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='groupParentInput' type='text' placeholder='Parent (optional)' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <div class='grid grid-cols-2 gap-2'>
+                                <button id='btnGroupCreate' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400 disabled:opacity-30'>Create group</button>
+                                <button id='btnGroupDelete' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400 disabled:opacity-30'>Delete group</button>
+                            </div>
+                            <input id='groupUpdateKey' type='text' placeholder='Update key' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='groupUpdateValue' type='text' placeholder='Update value' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <button id='btnGroupUpdate' class='w-full rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400 disabled:opacity-30'>Update group setting</button>
+                        </div>
+                    </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-3'>
+                        <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
+                            <h2 class='font-semibold'>API Debug & Export</h2>
+                            <div class='flex gap-2'>
+                                <button id='btnExportOverview' class='rounded-lg border border-slate-700 px-3 py-1 text-xs hover:border-sky-400'>Export overview JSON</button>
+                                <button id='btnExportLogs' class='rounded-lg border border-slate-700 px-3 py-1 text-xs hover:border-sky-400'>Export logs TXT</button>
+                            </div>
+                        </div>
+                        <div class='grid gap-2 md:grid-cols-4 text-xs'>
+                            <input id='authDebugPath' type='text' value='/api/v1/auth/me' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400 md:col-span-2'>
+                            <input id='authDebugMethod' type='text' value='GET' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <button id='btnAuthDebug' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-amber-400'>Run auth debug</button>
+                        </div>
+                        <pre id='advancedOutputBox' class='mt-3 h-56 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
+                    </div>
+                </section>
+                <section id='consoleSection' data-page='console' class='dashboard-page grid gap-6 lg:grid-cols-3'>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-1'>
+                        <h2 class='mb-3 font-semibold'>Live Console</h2>
+                        <div class='space-y-2 text-xs'>
+                            <label class='text-slate-300'>Server Screen</label>
+                            <select id='consoleServerSelect' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'></select>
+                            <div class='grid grid-cols-2 gap-2'>
+                                <button id='btnConsoleLoad' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400'>Load tail</button>
+                                <button id='btnConsoleClear' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400'>Clear view</button>
+                            </div>
+                            <label class='text-slate-300'>Command</label>
+                            <input id='consoleCommandInput' type='text' placeholder='say hello' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-emerald-400'>
+                            <button id='btnConsoleSend' class='w-full rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400 disabled:opacity-30'>Send command</button>
+                            <div class='text-[11px] text-slate-400'>Tail auto-refresh every ~2s while console page is open.</div>
+                        </div>
+                    </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-2'>
+                        <div class='mb-2 flex items-center justify-between'>
+                            <h2 class='font-semibold'>Screen Tail</h2>
+                            <span id='consoleMeta' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>-</span>
+                        </div>
+                        <pre id='consoleTailBox' class='h-[520px] overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
+                    </div>
                 </section>
             </div>
 
@@ -325,7 +472,8 @@
                     metricsHistory: [],
                     refreshInFlight: false,
                     refreshQueued: false,
-                    lastAutoRefreshAt: 0
+                    lastAutoRefreshAt: 0,
+                    consolePollHandle: null
                 };
                 const apiKeyInput = document.getElementById('apiKey');
                 apiKeyInput.value = state.apiKey;
@@ -364,7 +512,7 @@
                     const path = (window.location.pathname || '/dashboard').replace(/\/+$/, '');
                     const parts = path.split('/').filter(Boolean);
                     const last = parts.length ? parts[parts.length - 1].toLowerCase() : 'dashboard';
-                    const known = new Set(['overview', 'servers', 'monitoring', 'operations', 'setup']);
+                    const known = new Set(['overview', 'servers', 'monitoring', 'operations', 'setup', 'advanced', 'console']);
                     if (known.has(last)) return last;
                     return 'overview';
                 }
@@ -391,6 +539,11 @@
                     if (mobileNav && navToggle && window.innerWidth < 768) {
                         mobileNav.classList.add('hidden');
                         navToggle.setAttribute('aria-expanded', 'false');
+                    }
+                    if (current === 'console') {
+                        startConsolePolling();
+                    } else {
+                        stopConsolePolling();
                     }
                 }
 
@@ -442,12 +595,13 @@
                     }
                     state.refreshInFlight = true;
                     try {
-                        const [overview, alerts, logs, setup, clusterInfo, policies, metricHistory] = await Promise.all([
+                        const [overview, alerts, logs, setup, clusterInfo, clusterNodes, policies, metricHistory] = await Promise.all([
                             apiGet('/api/v1/dashboard/overview'),
                             apiGet('/api/v1/alerts'),
                             apiGet('/api/v1/logs/recent'),
                             apiGet('/api/v1/setup/report'),
                             apiGet('/api/v1/cluster/info'),
+                            apiGet('/api/v1/cluster/nodes'),
                             apiGet('/api/v1/scaling/policies'),
                             apiGet('/api/v1/metrics/history')
                         ]);
@@ -459,8 +613,10 @@
                         renderLogs(logs);
                         renderSetup(setup);
                         renderCluster(clusterInfo);
+                        renderClusterNodes(clusterNodes);
                         renderPolicies(policies);
                         renderMetricsTrend(state.metricsHistory);
+                        renderMonitoringInsights(overview);
                     } finally {
                         state.refreshInFlight = false;
                         if (state.refreshQueued) {
@@ -470,9 +626,81 @@
                     }
                 }
 
+                async function loadConsoleScreens() {
+                    const payload = await apiGet('/api/v1/console/screens');
+                    const select = document.getElementById('consoleServerSelect');
+                    const screens = payload.screens || [];
+                    const previous = select.value;
+                    select.innerHTML = screens
+                        .filter(s => String(s).toLowerCase() !== 'main')
+                        .map(s => <option value=''></option>)
+                        .join('');
+                    if (previous && screens.includes(previous)) {
+                        select.value = previous;
+                    }
+                    if (!select.value && select.options.length > 0) {
+                        select.selectedIndex = 0;
+                    }
+                }
+
+                async function loadConsoleTail() {
+                    const select = document.getElementById('consoleServerSelect');
+                    const serverName = select.value;
+                    if (!serverName) {
+                        document.getElementById('consoleTailBox').textContent = 'No server screen selected.';
+                        return;
+                    }
+                    const payload = await apiGet('/api/v1/console/tail?serverName=' + encodeURIComponent(serverName) + '&limit=220');
+                    const lines = payload.lines || [];
+                    const box = document.getElementById('consoleTailBox');
+                    const atBottom = (box.scrollTop + box.clientHeight + 25) >= box.scrollHeight;
+                    box.textContent = lines.join('\n');
+                    document.getElementById('consoleMeta').textContent = ${serverName} |  lines;
+                    if (atBottom) {
+                        box.scrollTop = box.scrollHeight;
+                    }
+                }
+
+                async function sendConsoleCommand() {
+                    const serverName = document.getElementById('consoleServerSelect').value;
+                    const commandInput = document.getElementById('consoleCommandInput');
+                    const command = commandInput.value.trim();
+                    if (!serverName || !command) {
+                        showToast('warning', 'Missing values', 'Select a server and enter a command');
+                        return;
+                    }
+                    await apiPost('/api/v1/console/send', { serverName, command });
+                    commandInput.value = '';
+                    showToast('success', 'Command sent', serverName + ' -> ' + command);
+                    await loadConsoleTail();
+                }
+
+                function stopConsolePolling() {
+                    if (state.consolePollHandle) {
+                        clearInterval(state.consolePollHandle);
+                        state.consolePollHandle = null;
+                    }
+                }
+
+                function startConsolePolling() {
+                    if (state.consolePollHandle) {
+                        return;
+                    }
+                    const run = async () => {
+                        try {
+                            await loadConsoleScreens();
+                            await loadConsoleTail();
+                        } catch (e) {
+                            // Silent polling errors to avoid toast spam
+                        }
+                    };
+                    run();
+                    state.consolePollHandle = setInterval(run, 2000);
+                }
                 function scheduleAutoRefresh() {
                     const now = Date.now();
-                    if (now - state.lastAutoRefreshAt < 8000) {
+                    const refreshMs = Number(document.getElementById('refreshInterval')?.value || '12000');
+                    if (now - state.lastAutoRefreshAt < refreshMs) {
                         return;
                     }
                     state.lastAutoRefreshAt = now;
@@ -594,6 +822,21 @@
                         <div>Nodes: <span class='text-slate-100'>${info.clusterNodes || 0}</span></div>`;
                 }
 
+                function renderClusterNodes(payload) {
+                    const nodes = payload && payload.nodes ? payload.nodes : [];
+                    const lines = nodes.map(n => {
+                        const nodeId = n.nodeId || n.masterId || '-';
+                        const stateTxt = n.state || n.status || 'unknown';
+                        const host = n.hostname || n.host || '-';
+                        return `<div class='flex items-center justify-between rounded border border-slate-800 px-2 py-1'>
+                            <span>${nodeId}</span>
+                            <span class='text-slate-400'>${host}</span>
+                            <span>${stateTxt}</span>
+                        </div>`;
+                    }).join('');
+                    document.getElementById('clusterNodesBox').innerHTML = lines || "<p class='text-slate-400'>No cluster nodes</p>";
+                }
+
                 function renderPolicies(policies) {
                     const entries = Object.entries(policies || {});
                     const html = entries.map(([group, p]) => `
@@ -646,6 +889,21 @@
                     ctx.stroke();
                 }
 
+                function renderMonitoringInsights(overview) {
+                    const servers = (overview.servers || []).slice();
+                    const wrappers = (overview.wrappers || []).slice();
+                    const byCpu = servers.slice().sort((a, b) => Number(b.cpuUsage || 0) - Number(a.cpuUsage || 0)).slice(0, 5);
+                    const byMem = servers.slice().sort((a, b) => Number(b.memoryUsage || 0) - Number(a.memoryUsage || 0)).slice(0, 5);
+                    const cpuHtml = byCpu.map(s => `<div>${s.serverName}: <span class='text-cyan-300'>${Number(s.cpuUsage || 0).toFixed(1)}%</span></div>`).join('');
+                    const memHtml = byMem.map(s => `<div>${s.serverName}: <span class='text-violet-300'>${Number(s.memoryUsage || 0).toFixed(1)}%</span></div>`).join('');
+                    const wrapHtml = wrappers.map(w => {
+                        const used = w.maxMemory > 0 ? Math.round(((w.maxMemory - w.availableMemory) / w.maxMemory) * 100) : 0;
+                        return `<div>${w.wrapperId}: RAM ${used}% | CPU ${Number(w.cpuUsage || 0).toFixed(1)}%</div>`;
+                    }).join('');
+                    document.getElementById('topCpuBox').innerHTML = cpuHtml || '<p>No data</p>';
+                    document.getElementById('topMemBox').innerHTML = memHtml || '<p>No data</p>';
+                    document.getElementById('wrapperPressureBox').innerHTML = wrapHtml || '<p>No data</p>';
+                }
                 async function stopServer(serverName) {
                     try {
                         await apiPost('/api/v1/servers/stop', { serverName });
@@ -713,6 +971,113 @@
                     await refresh();
                 }
 
+                async function restartUnhealthyServers() {
+                    const servers = (state.overview && state.overview.servers) ? state.overview.servers : [];
+                    const targets = servers.filter(s => !['ONLINE', 'STARTING'].includes(String(s.status || '').toUpperCase()));
+                    if (!targets.length) {
+                        showToast('info', 'No unhealthy servers', 'Nothing to restart');
+                        return;
+                    }
+                    for (const server of targets) {
+                        await apiPost('/api/v1/servers/restart', { serverName: server.serverName });
+                    }
+                    showToast('success', 'Restarted unhealthy servers', String(targets.length));
+                    await refresh();
+                }
+
+                function downloadText(filename, content) {
+                    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    URL.revokeObjectURL(url);
+                }
+
+                function exportServersCsv() {
+                    const servers = (state.overview && state.overview.servers) ? state.overview.servers : [];
+                    if (!servers.length) {
+                        showToast('info', 'No server data');
+                        return;
+                    }
+                    const header = ['serverName', 'groupName', 'status', 'playerCount', 'maxPlayers', 'tps', 'cpuUsage', 'memoryUsage', 'wrapperId', 'port'];
+                    const rows = servers.map(s => header.map(k => JSON.stringify(s[k] ?? '')).join(','));
+                    downloadText('servers-export.csv', header.join(',') + '\n' + rows.join('\n'));
+                }
+
+                async function runTemplateDiff() {
+                    const group = document.getElementById('tplGroup').value.trim();
+                    if (!group) return;
+                    const res = await apiGet('/api/v1/templates/diff?group=' + encodeURIComponent(group));
+                    document.getElementById('templateOutputBox').textContent = JSON.stringify(res, null, 2);
+                }
+
+                async function runTemplateVersions() {
+                    const group = document.getElementById('tplGroup').value.trim();
+                    if (!group) return;
+                    const res = await apiGet('/api/v1/templates/versions?group=' + encodeURIComponent(group));
+                    document.getElementById('templateOutputBox').textContent = JSON.stringify(res, null, 2);
+                }
+
+                async function runTemplateRollback() {
+                    const group = document.getElementById('tplGroup').value.trim();
+                    const version = document.getElementById('tplVersion').value.trim();
+                    if (!group || !version) return;
+                    const res = await apiPost('/api/v1/templates/rollback', { groupName: group, version });
+                    document.getElementById('templateOutputBox').textContent = JSON.stringify(res, null, 2);
+                    await refresh();
+                }
+
+                async function runGroupCreate() {
+                    const groupName = document.getElementById('groupNameInput').value.trim();
+                    const parent = document.getElementById('groupParentInput').value.trim();
+                    if (!groupName) return;
+                    const res = await apiPost('/api/v1/groups/create', { groupName, parent });
+                    document.getElementById('advancedOutputBox').textContent = JSON.stringify(res, null, 2);
+                    await refresh();
+                }
+
+                async function runGroupDelete() {
+                    const groupName = document.getElementById('groupNameInput').value.trim();
+                    if (!groupName) return;
+                    const res = await apiPost('/api/v1/groups/delete', { groupName });
+                    document.getElementById('advancedOutputBox').textContent = JSON.stringify(res, null, 2);
+                    await refresh();
+                }
+
+                async function runGroupUpdate() {
+                    const groupName = document.getElementById('groupNameInput').value.trim();
+                    const key = document.getElementById('groupUpdateKey').value.trim();
+                    const value = document.getElementById('groupUpdateValue').value;
+                    if (!groupName || !key) return;
+                    const res = await apiPost('/api/v1/groups/update', { groupName, key, value });
+                    document.getElementById('advancedOutputBox').textContent = JSON.stringify(res, null, 2);
+                    await refresh();
+                }
+
+                async function runAuthDebug() {
+                    const path = document.getElementById('authDebugPath').value.trim() || '/api/v1/auth/me';
+                    const method = document.getElementById('authDebugMethod').value.trim() || 'GET';
+                    const res = await apiGet('/api/v1/auth/debug?path=' + encodeURIComponent(path) + '&method=' + encodeURIComponent(method));
+                    document.getElementById('advancedOutputBox').textContent = JSON.stringify(res, null, 2);
+                }
+
+                function exportOverviewJson() {
+                    if (!state.overview) {
+                        showToast('info', 'No overview data');
+                        return;
+                    }
+                    downloadText('overview-export.json', JSON.stringify(state.overview, null, 2));
+                }
+
+                function exportLogsTxt() {
+                    const lines = (state.logs && state.logs.lines) ? state.logs.lines : [];
+                    downloadText('logs-export.txt', lines.join('\n'));
+                }
+
                 async function getConfigValue() {
                     const key = document.getElementById('configKey').value.trim();
                     if (!key) return;
@@ -731,7 +1096,7 @@
 
                 function applyRoleState() {
                     const isAdmin = state.role === 'ADMIN';
-                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnConfigSet'].forEach(id => {
+                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnConfigSet', 'btnRestartUnhealthy', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnConsoleSend'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.disabled = !isAdmin;
                     });
@@ -771,14 +1136,31 @@
                 document.getElementById('btnClearAlerts').addEventListener('click', () => clearAlerts().catch(err => showToast('error', 'Clear alerts failed', err.message)));
                 document.getElementById('btnScaleEval').addEventListener('click', () => triggerScaleEval().catch(err => showToast('error', 'Scale eval failed', err.message)));
                 document.getElementById('btnStartServer').addEventListener('click', () => startServerManual().catch(err => showToast('error', 'Start failed', err.message)));
+                document.getElementById('btnRestartUnhealthy').addEventListener('click', () => restartUnhealthyServers().catch(err => showToast('error', 'Restart unhealthy failed', err.message)));
+                document.getElementById('btnExportServers').addEventListener('click', () => exportServersCsv());
                 document.getElementById('btnConfigGet').addEventListener('click', () => getConfigValue().catch(err => showToast('error', 'Config get failed', err.message)));
                 document.getElementById('btnConfigSet').addEventListener('click', () => setConfigValue().catch(err => showToast('error', 'Config set failed', err.message)));
+                document.getElementById('btnTplDiff').addEventListener('click', () => runTemplateDiff().catch(err => showToast('error', 'Template diff failed', err.message)));
+                document.getElementById('btnTplVersions').addEventListener('click', () => runTemplateVersions().catch(err => showToast('error', 'Template versions failed', err.message)));
+                document.getElementById('btnTplRollback').addEventListener('click', () => runTemplateRollback().catch(err => showToast('error', 'Template rollback failed', err.message)));
+                document.getElementById('btnGroupCreate').addEventListener('click', () => runGroupCreate().catch(err => showToast('error', 'Group create failed', err.message)));
+                document.getElementById('btnGroupDelete').addEventListener('click', () => runGroupDelete().catch(err => showToast('error', 'Group delete failed', err.message)));
+                document.getElementById('btnGroupUpdate').addEventListener('click', () => runGroupUpdate().catch(err => showToast('error', 'Group update failed', err.message)));
+                document.getElementById('btnAuthDebug').addEventListener('click', () => runAuthDebug().catch(err => showToast('error', 'Auth debug failed', err.message)));
+                document.getElementById('btnExportOverview').addEventListener('click', () => exportOverviewJson());
+                document.getElementById('btnExportLogs').addEventListener('click', () => exportLogsTxt());
+                document.getElementById('btnConsoleLoad').addEventListener('click', () => loadConsoleTail().catch(err => showToast('error', 'Console load failed', err.message)));
+                document.getElementById('btnConsoleSend').addEventListener('click', () => sendConsoleCommand().catch(err => showToast('error', 'Console send failed', err.message)));
+                document.getElementById('btnConsoleClear').addEventListener('click', () => { document.getElementById('consoleTailBox').textContent = ''; document.getElementById('consoleMeta').textContent = '-'; });
+                document.getElementById('consoleServerSelect').addEventListener('change', () => loadConsoleTail().catch(() => {}));
+                document.getElementById('consoleCommandInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); sendConsoleCommand().catch(err => showToast('error', 'Console send failed', err.message)); } });
                 document.getElementById('serverFilter').addEventListener('input', () => {
                     if (state.overview) renderOverview(state.overview);
                 });
                 document.getElementById('logFilter').addEventListener('input', () => {
                     renderLogs(state.logs);
                 });
+                document.getElementById('refreshInterval').addEventListener('change', () => showToast('success', 'Auto refresh updated'));
                 document.getElementById('themeToggle').addEventListener('click', () => toggleTheme());
                 document.getElementById('navToggle').addEventListener('click', () => {
                     const mobileNav = document.getElementById('mobileNav');
@@ -793,6 +1175,7 @@
                         document.getElementById('navToggle').setAttribute('aria-expanded', 'false');
                     });
                 });
+                window.addEventListener('beforeunload', () => stopConsolePolling());
                 window.addEventListener('resize', () => {
                     if (window.innerWidth >= 768) {
                         document.getElementById('mobileNav').classList.add('hidden');

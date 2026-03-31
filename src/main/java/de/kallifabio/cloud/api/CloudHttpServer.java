@@ -222,6 +222,9 @@ public class CloudHttpServer {
 
         // Operations
         server.createContext("/api/v1/logs/recent", this::handleRecentLogs);
+        server.createContext("/api/v1/console/screens", this::handleConsoleScreens);
+        server.createContext("/api/v1/console/tail", this::handleConsoleTail);
+        server.createContext("/api/v1/console/send", this::handleConsoleSend);
         server.createContext("/api/v1/setup/report", this::handleSetupReport);
         server.createContext("/api/v1/config/get", this::handleConfigGet);
         server.createContext("/api/v1/config/set", this::handleConfigSet);
@@ -1275,6 +1278,80 @@ public class CloudHttpServer {
         int size = lines.size();
         int from = Math.max(0, size - 300);
         sendResponse(exchange, 200, Map.of("lines", lines.subList(from, size)));
+    }
+
+    private void handleConsoleScreens(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        List<String> screens = new ArrayList<>(ConsoleScreenManager.getScreenNames());
+        screens.sort(String::compareToIgnoreCase);
+        sendResponse(exchange, 200, Map.of("screens", screens, "count", screens.size()));
+    }
+
+    private void handleConsoleTail(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        String serverName = query.get("serverName");
+        if (serverName == null || serverName.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "serverName query required"));
+            return;
+        }
+        int limit = 120;
+        if (query.containsKey("limit")) {
+            try {
+                limit = Math.max(10, Math.min(1000, Integer.parseInt(query.get("limit"))));
+            } catch (Exception ignored) {
+                limit = 120;
+            }
+        }
+        List<String> lines = ConsoleScreenManager.getScreenMessages(serverName, limit);
+        sendResponse(exchange, 200, Map.of(
+                "serverName", serverName,
+                "limit", limit,
+                "lines", lines,
+                "count", lines.size()
+        ));
+    }
+
+    private void handleConsoleSend(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        Map<String, Object> request = gson.fromJson(body, Map.class);
+        String serverName = request != null && request.get("serverName") != null ? request.get("serverName").toString() : null;
+        String command = request != null && request.get("command") != null ? request.get("command").toString() : null;
+        if (serverName == null || serverName.isBlank() || command == null || command.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "serverName and command required"));
+            return;
+        }
+        boolean sent = ConsoleScreenManager.sendCommandToServer(serverName, command);
+        if (!sent) {
+            sendResponse(exchange, 404, Map.of("error", "server not available or not running", "serverName", serverName));
+            return;
+        }
+        sendResponse(exchange, 200, Map.of("message", "command sent", "serverName", serverName, "command", command));
     }
 
     private void handleSetupReport(HttpExchange exchange) throws IOException {

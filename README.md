@@ -1,4 +1,4 @@
-# KalliCloud / CloudSystemTest
+# KalliCloud
 
 Ein modulares Minecraft-Cloudsystem mit:
 - Master + Wrapper Architektur
@@ -76,13 +76,79 @@ Ein modulares Minecraft-Cloudsystem mit:
 Start:
 
 ```bash
-java -jar target/CloudSystemTest.jar --combined
+java -jar target/*.jar --combined
 ```
 
 Modi:
 - `--master`
 - `--wrapper`
 - `--combined`
+
+---
+
+## Quick Start Single-Host
+
+Ziel: Master, Wrapper, Proxy und Lobby laufen auf **einem** Server.
+
+1. Build + Start:
+```bash
+./mvnw -DskipTests package
+java -jar target/*.jar --combined
+```
+2. In `config/CloudSystem_Config.yml`:
+```yml
+CloudMaster:
+  Network:
+    GameHost: 127.0.0.1
+    EnforceBackendBind: true
+    BackendBindAddress: 127.0.0.1
+```
+3. In der Cloud-Konsole:
+```text
+reloadconfig
+networkdoctor --fix
+restartserver Proxy-1
+restartserver Lobby-1
+```
+4. Minecraft-Join:
+```text
+<deine-server-ip>:25577
+```
+
+---
+
+## Quick Start Multi-Host
+
+Ziel: Server 1 = Master/Proxy, Server 2 = zusätzliche Game-Backends.
+
+1. Server 1 starten:
+```bash
+java -jar target/*.jar --master
+java -jar target/*.jar --wrapper
+```
+2. Server 2 starten:
+```bash
+java -jar target/*.jar --wrapper
+```
+3. `CloudMaster.Network.ConnectHost` auf beiden Wrappern auf die Master-IP setzen.
+4. Pro Wrapper den erreichbaren Route-Host setzen:
+- Wrapper auf Server 1: `GameHost: <private-ip-server1>`
+- Wrapper auf Server 2: `GameHost: <private-ip-server2>`
+5. Backend-Bind für Multi-Host:
+```yml
+CloudMaster:
+  Network:
+    EnforceBackendBind: true
+    BackendBindAddress: 0.0.0.0
+```
+6. Firewall:
+- Proxy-Port (z. B. `25577`) öffentlich
+- Backend-Ports nur intern/zwischen den Host-IP-Adressen erlauben
+7. Danach:
+```text
+reloadconfig
+networkdoctor --fix
+```
 
 ---
 
@@ -230,6 +296,13 @@ Aktueller Status:
 - `GET /api/v1/setup/report`
 - `POST /api/v1/wrappers/drain`
 - `GET /api/v1/logs/recent`
+
+---
+
+## API Dokumentation
+
+- Vollständige API-Doku für GitHub:
+  - [docs/CLOUD_API.md](docs/CLOUD_API.md)
 
 ---
 
