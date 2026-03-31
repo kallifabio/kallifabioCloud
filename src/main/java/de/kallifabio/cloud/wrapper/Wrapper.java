@@ -185,7 +185,7 @@ public class Wrapper {
         kryo.register(Message.APIRequest.class);
         kryo.register(Message.APIResponse.class);
 
-        // Arrays für byte[]
+        // Arrays fÃ¼r byte[]
         kryo.register(byte[].class);
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -224,9 +224,10 @@ public class Wrapper {
         int udpPort;
         ConfigManager cfg = new ConfigManager();
 
-        // Combined-Mode: immer auf lokale Master-Instanz verbinden.
+        // Combined-Mode: bevorzuge konfigurierten ConnectHost statt hartem Localhost.
         if (Master.getInstance() != null) {
-            masterHost = "127.0.0.1";
+            String configured = Master.getInstance().getConfigManager().getMasterConnectHost();
+            masterHost = (configured == null || configured.isBlank()) ? "127.0.0.1" : configured.trim();
             tcpPort = Master.getInstance().getMasterPort();
             udpPort = Master.getInstance().getMasterUdpPort();
         } else {
@@ -244,7 +245,7 @@ public class Wrapper {
         } catch (IOException e) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Verbindung zu Master fehlgeschlagen: " + e.getMessage());
-            e.printStackTrace(); // Zeige vollstaendigen Stacktrace für Debugging
+            e.printStackTrace(); // Zeige vollstaendigen Stacktrace fÃ¼r Debugging
 
             // Schedule reconnect
             scheduleReconnect();
@@ -295,7 +296,7 @@ public class Wrapper {
         register.routeHost = routeHost;
         register.maxMemory = maxMemory;
         register.availableMemory = calculateAvailableMemory();
-        register.version = "1.0.1";
+        register.version = "1.0.2";
 
         client.sendTCP(register);
 
@@ -330,7 +331,7 @@ public class Wrapper {
     private void handleRegisterAck(Message.WrapperRegisterAck ack) {
         if (ack.success) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " [OK] Registrierung bestätigt von Master: " + ack.masterId);
+                    ConsoleColors.getCurrentTime() + " [OK] Registrierung bestÃ¤tigt von Master: " + ack.masterId);
         } else {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Registrierung abgelehnt");
@@ -409,7 +410,7 @@ public class Wrapper {
         }
         if (managedServers.containsKey(serverName)) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Server " + serverName + " läuft bereits");
+                    ConsoleColors.getCurrentTime() + " Server " + serverName + " lÃ¤uft bereits");
             return;
         }
         if (!startInProgress.add(serverName)) {
@@ -529,7 +530,7 @@ public class Wrapper {
     }
 
     private void scheduleReconnect() {
-        if (reconnecting || shuttingDown) return; // NEU: Prüfe shutdown-Flag
+        if (reconnecting || shuttingDown) return; // NEU: PrÃ¼fe shutdown-Flag
 
         reconnecting = true;
         reconnectAttempts++;
@@ -546,7 +547,7 @@ public class Wrapper {
                 "/" + MAX_RECONNECT_ATTEMPTS + ")");
 
         scheduler.schedule(() -> {
-            if (shuttingDown) return; // NEU: Abbrechen wenn Shutdown läuft
+            if (shuttingDown) return; // NEU: Abbrechen wenn Shutdown lÃ¤uft
 
             reconnecting = false;
 
@@ -869,4 +870,5 @@ public class Wrapper {
         return new HashMap<>(restartRetryCounts);
     }
 }
+
 

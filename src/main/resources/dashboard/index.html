@@ -1,4 +1,4 @@
-
+﻿
         <!DOCTYPE html>
         <html lang='en'>
         <head>
@@ -8,173 +8,571 @@
             <link rel='icon' type='image/svg+xml' href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f172a'/%3E%3Cpath d='M14 40l10-12 8 9 10-14 8 17' stroke='%2322d3ee' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
             <script src='https://cdn.tailwindcss.com'></script>
             <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css'>
+            <link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap'>
             <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-            <style>
+                        <style>
+                :root {
+                    --bg: #020817;
+                    --bg-soft: #0b1328;
+                    --card: rgba(15, 23, 42, 0.72);
+                    --card-strong: rgba(15, 23, 42, 0.9);
+                    --line: rgba(71, 85, 105, 0.42);
+                    --line-strong: rgba(125, 211, 252, 0.45);
+                    --text: #e2e8f0;
+                    --muted: #94a3b8;
+                    --accent: #22d3ee;
+                    --accent-2: #38bdf8;
+                    --good: #34d399;
+                    --warn: #f59e0b;
+                    --bad: #fb7185;
+                }
+                html, body { height: 100%; }
                 body {
-                    background-image:
-                        radial-gradient(circle at 15% 0%, rgba(34, 211, 238, 0.12), transparent 34%),
-                        radial-gradient(circle at 85% 100%, rgba(59, 130, 246, 0.11), transparent 30%);
+                    font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+                    color: var(--text);
+                    background:
+                        radial-gradient(1200px 600px at -10% -5%, rgba(34, 211, 238, 0.18), transparent 55%),
+                        radial-gradient(900px 500px at 110% 110%, rgba(56, 189, 248, 0.12), transparent 55%),
+                        linear-gradient(180deg, #030712 0%, #020617 45%, #020817 100%);
                 }
                 .theme-light body {
-                    background: linear-gradient(180deg, #f8fbff 0%, #edf4ff 42%, #f7fbff 100%) !important;
-                    color: #0f172a !important;
+                    --bg: #edf5ff;
+                    --bg-soft: #e4efff;
+                    --card: rgba(255, 255, 255, 0.95);
+                    --card-strong: rgba(255, 255, 255, 0.99);
+                    --line: rgba(148, 163, 184, 0.4);
+                    --line-strong: rgba(14, 165, 233, 0.42);
+                    --text: #0b1c34;
+                    --muted: #41556f;
+                    --accent: #0369a1;
+                    --accent-2: #0ea5e9;
+                    background:
+                        radial-gradient(980px 460px at -8% -8%, rgba(14, 165, 233, 0.2), transparent 56%),
+                        radial-gradient(980px 460px at 108% 108%, rgba(37, 99, 235, 0.16), transparent 56%),
+                        linear-gradient(180deg, #fbfdff 0%, #f2f7ff 46%, #eaf2ff 100%) !important;
                 }
-                .theme-light .bg-slate-950 { background-color: #eef4ff !important; }
-                .theme-light .bg-slate-950\/90 { background-color: rgba(238, 244, 255, 0.93) !important; }
-                .theme-light .bg-slate-900\/60, .theme-light .bg-slate-900\/40, .theme-light .bg-slate-900 { background-color: #ffffff !important; }
-                .theme-light .bg-slate-950\/70, .theme-light .bg-slate-950\/60, .theme-light .bg-slate-950\/40 { background-color: #f5f9ff !important; }
-                .theme-light .text-slate-100, .theme-light .text-slate-300, .theme-light .text-slate-400 { color: #1e293b !important; }
-                .theme-light .border-slate-800, .theme-light .border-slate-700, .theme-light .border-slate-800\/80 { border-color: #c9d8ef !important; }
-                .theme-light .from-slate-900, .theme-light .via-cyan-950, .theme-light .to-slate-900 {
-                    background-image: linear-gradient(110deg, #ffffff, #ebf6ff 55%, #f6fbff) !important;
+
+                nav {
+                    border-color: var(--line) !important;
+                    background: color-mix(in oklab, var(--bg) 88%, #0f172a 12%) !important;
+                    box-shadow: 0 10px 28px rgba(2, 6, 23, 0.28);
                 }
-                .hero-icon {
-                    width: 0.95rem;
-                    height: 0.95rem;
-                    stroke: currentColor;
-                    stroke-width: 1.8;
-                    fill: none;
+                .theme-light nav {
+                    box-shadow: 0 10px 26px rgba(148, 163, 184, 0.2);
                 }
+
+                .hero-icon { width: 0.95rem; height: 0.95rem; stroke: currentColor; stroke-width: 1.8; fill: none; }
+
                 .nav-link {
                     display: inline-flex;
                     align-items: center;
-                    gap: 0.45rem;
+                    gap: 0.48rem;
                     border-radius: 999px;
-                    border: 1px solid rgb(51 65 85 / 0.9);
-                    padding: 0.44rem 0.82rem;
-                    font-size: 0.72rem;
+                    border: 1px solid var(--line);
+                    padding: 0.46rem 0.9rem;
+                    font-size: 0.74rem;
                     letter-spacing: .02em;
-                    color: rgb(203 213 225);
-                    transition: all .16s ease;
+                    color: color-mix(in oklab, var(--text) 78%, var(--muted) 22%);
+                    background: linear-gradient(145deg, rgba(15, 23, 42, 0.64), rgba(15, 23, 42, 0.24));
+                    transition: all .18s ease;
                 }
                 .nav-link:hover {
-                    border-color: rgb(34 211 238 / 0.9);
-                    color: white;
-                    background: linear-gradient(135deg, rgb(8 47 73 / 0.55), rgb(30 41 59 / 0.7));
+                    transform: translateY(-1px);
+                    border-color: var(--line-strong);
+                    color: var(--text);
+                    box-shadow: 0 8px 20px rgba(34, 211, 238, 0.16);
                 }
                 .nav-link-active {
-                    border-color: rgb(34 211 238 / 0.95) !important;
-                    color: rgb(8 47 73) !important;
-                    background: linear-gradient(135deg, rgb(165 243 252), rgb(186 230 253)) !important;
+                    border-color: color-mix(in oklab, var(--accent) 70%, white 30%) !important;
+                    color: #082f49 !important;
+                    background: linear-gradient(135deg, #a5f3fc, #dbeafe) !important;
                     font-weight: 700;
+                    box-shadow: 0 8px 20px rgba(14, 165, 233, 0.24);
                 }
                 .theme-light .nav-link {
-                    color: #1e293b;
-                    border-color: #c9d8ef;
-                    background: #ffffff;
+                    background: linear-gradient(140deg, rgba(255,255,255,.96), rgba(248,252,255,.84));
                 }
-                .theme-light .nav-link:hover {
-                    border-color: #0ea5e9;
-                    color: #0f172a;
-                    background: linear-gradient(135deg, #eef7ff, #ffffff);
+
+                .mobile-nav-overlay {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 55;
+                    background: rgba(2, 6, 23, 0.54);
+                    backdrop-filter: blur(2px);
                 }
-                .theme-light .nav-link-active {
-                    border-color: #0ea5e9 !important;
-                    color: #0f172a !important;
-                    background: linear-gradient(135deg, #d9f4ff, #e4eeff) !important;
-                }
+                .theme-light .mobile-nav-overlay { background: rgba(148, 163, 184, 0.3); }
                 .mobile-nav-panel {
-                    border-top: 1px solid rgb(30 41 59 / 0.85);
-                    background: linear-gradient(180deg, rgb(2 6 23 / 0.95), rgb(15 23 42 / 0.96));
+                    position: fixed;
+                    top: 64px;
+                    left: 0;
+                    right: 0;
+                    z-index: 60;
+                    max-height: calc(100vh - 64px);
+                    overflow-y: auto;
+                    border-top: 1px solid var(--line);
+                    border-bottom: 1px solid var(--line);
+                    background: linear-gradient(180deg, rgba(2, 6, 23, 0.97), rgba(15, 23, 42, 0.98));
+                    box-shadow: 0 14px 36px rgba(2, 6, 23, 0.48);
                 }
                 .theme-light .mobile-nav-panel {
-                    border-top: 1px solid #c9d8ef;
-                    background: linear-gradient(180deg, #f8fbff, #eef5ff);
+                    background: linear-gradient(180deg, rgba(249, 252, 255, 0.98), rgba(238, 246, 255, 0.98));
                 }
-                .mobile-nav-link {
-                    width: 100%;
-                    justify-content: flex-start;
-                    padding: 0.62rem 0.78rem;
-                    font-size: 0.8rem;
+                .mobile-nav-quick {
+                    display: flex;
+                    gap: 0.45rem;
+                    overflow-x: auto;
+                    padding: 0.55rem 0.95rem 0.7rem;
+                    scroll-snap-type: x mandatory;
+                    -webkit-overflow-scrolling: touch;
+                    border-top: 1px solid var(--line);
+                    border-bottom: 1px solid var(--line);
+                    background: color-mix(in oklab, var(--bg) 92%, transparent 8%);
+                }
+                .mobile-nav-quick::-webkit-scrollbar { height: 0; width: 0; }
+                .mobile-quick-link {
+                    flex: 0 0 auto;
+                    min-height: 2.1rem;
+                    scroll-snap-align: start;
+                    padding: 0.46rem 0.72rem;
+                    font-size: 0.72rem;
+                    line-height: 1;
+                }
+                .mobile-nav-open {
+                    overflow: hidden;
+                    touch-action: none;
+                }
+
+                header.rounded-2xl {
+                    border-color: color-mix(in oklab, var(--accent) 30%, var(--line) 70%) !important;
+                    background:
+                        radial-gradient(120% 100% at 0% 0%, rgba(34, 211, 238, 0.2), transparent 48%),
+                        linear-gradient(120deg, rgba(15, 23, 42, 0.95), rgba(6, 18, 38, 0.92), rgba(15, 23, 42, 0.94)) !important;
+                    box-shadow: 0 22px 45px rgba(2, 6, 23, 0.45);
+                }
+                .theme-light header.rounded-2xl {
+                    background:
+                        radial-gradient(120% 100% at 0% 0%, rgba(56, 189, 248, 0.16), transparent 50%),
+                        linear-gradient(120deg, #ffffff, #f2f8ff, #f8fbff) !important;
+                    box-shadow: 0 18px 38px rgba(148, 163, 184, 0.25);
+                }
+
+                .dashboard-page > article,
+                .dashboard-page > div,
+                .dashboard-page > section,
+                .dashboard-page .rounded-2xl,
+                .dashboard-page .rounded-xl {
+                    border-color: var(--line) !important;
+                    background: var(--card) !important;
+                    backdrop-filter: blur(8px);
+                    box-shadow: 0 10px 28px rgba(2, 6, 23, 0.2);
+                }
+                .theme-light .dashboard-page > article,
+                .theme-light .dashboard-page > div,
+                .theme-light .dashboard-page > section,
+                .theme-light .dashboard-page .rounded-2xl,
+                .theme-light .dashboard-page .rounded-xl {
+                    box-shadow: 0 10px 24px rgba(148, 163, 184, 0.16);
+                }
+                .dashboard-page {
+                    transition: opacity .22s ease, transform .22s ease, filter .22s ease;
+                }
+                .dashboard-page.page-loading {
+                    opacity: .82;
+                    filter: saturate(.85);
+                }
+                .dashboard-page.page-loading .loading-dim {
+                    opacity: .62;
+                    transition: opacity .18s ease;
+                }
+                .dashboard-page.page-loaded {
+                    animation: pageReveal .26s ease;
+                }
+                @keyframes pageReveal {
+                    from { opacity: .86; transform: translateY(3px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes shimmer {
+                    0% { background-position: 200% 0; }
+                    100% { background-position: -200% 0; }
+                }
+                .skeleton-line {
+                    height: 11px;
+                    border-radius: 999px;
+                    background: linear-gradient(90deg, rgba(148,163,184,.16) 20%, rgba(148,163,184,.32) 40%, rgba(148,163,184,.16) 60%);
+                    background-size: 220% 100%;
+                    animation: shimmer 1.15s linear infinite;
+                }
+                .skeleton-block {
+                    border: 1px solid var(--line);
+                    border-radius: 0.75rem;
+                    padding: 0.7rem;
+                    background: color-mix(in oklab, var(--bg-soft) 78%, transparent 22%);
+                }
+                .skeleton-stack { display: grid; gap: .48rem; }
+                .skeleton-kpi {
+                    min-height: 64px;
+                    display: grid;
+                    align-content: center;
+                    gap: .45rem;
+                }
+                #serversBody tr,
+                #queueBox > div,
+                #wrappersBox > div,
+                #alertsBox > div,
+                #topCpuBox > div,
+                #topMemBox > div,
+                #wrapperPressureBox > div {
+                    animation: itemLiftIn .22s ease;
+                }
+                @keyframes itemLiftIn {
+                    from { opacity: .7; transform: translateY(4px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+
+                #overviewSection article { position: relative; overflow: hidden; }
+                #overviewSection article::after {
+                    content: '';
+                    position: absolute;
+                    inset: auto -25% -60% -25%;
+                    height: 90%;
+                    background: radial-gradient(closest-side, rgba(34, 211, 238, 0.18), transparent 72%);
+                    pointer-events: none;
+                }
+
+                button,
+                input,
+                select,
+                textarea {
+                    font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+                    transition: border-color .16s ease, box-shadow .16s ease, transform .12s ease, background .16s ease;
+                }
+                button {
+                    border-color: var(--line) !important;
+                    background: linear-gradient(145deg, rgba(15, 23, 42, 0.55), rgba(15, 23, 42, 0.24));
+                    color: var(--text);
+                }
+                button:hover:not(:disabled) {
+                    transform: translateY(-1px);
+                    border-color: var(--line-strong) !important;
+                    box-shadow: 0 8px 20px rgba(34, 211, 238, 0.14);
+                }
+                button:disabled { opacity: .45; cursor: not-allowed; }
+                .theme-light button {
+                    background: linear-gradient(145deg, rgba(255,255,255,.96), rgba(244,249,255,.88));
+                }
+                #connectBtn {
+                    background: linear-gradient(135deg, var(--accent), var(--accent-2)) !important;
+                    color: #05263f !important;
+                    font-weight: 700;
+                    border: 1px solid rgba(125, 211, 252, 0.45) !important;
+                }
+                #connectBtn:hover { box-shadow: 0 12px 24px rgba(14, 165, 233, 0.35) !important; }
+
+                input,
+                select,
+                textarea {
+                    border-color: var(--line) !important;
+                    background: var(--card-strong) !important;
+                    color: var(--text) !important;
+                }
+                input::placeholder, textarea::placeholder { color: color-mix(in oklab, var(--muted) 84%, transparent 16%); }
+                input:focus,
+                select:focus,
+                textarea:focus {
+                    border-color: color-mix(in oklab, var(--accent) 70%, white 30%) !important;
+                    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
+                    outline: none;
+                }
+
+                table thead th { color: color-mix(in oklab, var(--muted) 86%, white 14%) !important; font-weight: 600; }
+                table tbody tr { border-color: var(--line) !important; }
+                table tbody tr:hover { background: rgba(56, 189, 248, 0.08); }
+
+                pre {
+                    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                    border-color: var(--line) !important;
+                    background: color-mix(in oklab, var(--bg-soft) 88%, black 12%) !important;
+                }
+
+                #authState, #roleState, #wsState, #lastUpdate {
+                    border-color: var(--line) !important;
+                    background: color-mix(in oklab, var(--card-strong) 80%, transparent 20%);
+                    color: var(--text) !important;
+                }
+
+                .layout-shell { display: grid; gap: 1.55rem; }
+                .overview-kpi-grid {
+                    display: grid;
+                    gap: 1rem;
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                }
+                .overview-info-grid {
+                    display: grid;
+                    gap: 1rem;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+                .servers-shell {
+                    gap: 1.2rem;
+                    grid-template-columns: minmax(0, 1.7fr) minmax(360px, 1fr);
+                }
+                .servers-side-stack {
+                    display: grid;
+                    gap: 1rem;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                    align-content: start;
+                }
+                .servers-side-stack > div:first-child,
+                .servers-side-stack > div:nth-child(2) { grid-column: span 2; }
+                .monitoring-grid {
+                    gap: 1rem;
+                    grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+                }
+                .theme-light .dashboard-page > article,
+                .theme-light .dashboard-page > div,
+                .theme-light .dashboard-page > section,
+                .theme-light .dashboard-page .rounded-2xl,
+                .theme-light .dashboard-page .rounded-xl {
+                    border-color: rgba(148, 163, 184, 0.34) !important;
+                    box-shadow: 0 12px 28px rgba(148, 163, 184, 0.2);
+                }
+                .theme-light .nav-link-active {
+                    color: #082f49 !important;
+                    border-color: rgba(14, 165, 233, 0.45) !important;
+                    background: linear-gradient(135deg, #d6f0ff, #e6efff) !important;
+                }
+                .theme-light nav.sticky {
+                    background: rgba(255, 255, 255, 0.9) !important;
+                    border-color: rgba(148, 163, 184, 0.35) !important;
+                    box-shadow: 0 10px 24px rgba(148, 163, 184, 0.18);
+                }
+                .theme-light header {
+                    border-color: rgba(14, 165, 233, 0.25) !important;
+                    background: linear-gradient(130deg, rgba(236, 253, 255, 0.96), rgba(239, 246, 255, 0.95), rgba(224, 242, 254, 0.95)) !important;
+                    box-shadow: 0 20px 38px rgba(148, 163, 184, 0.22) !important;
+                }
+                .theme-light .overview-kpi-card {
+                    background: linear-gradient(145deg, rgba(255,255,255,0.96), rgba(240,249,255,0.9)) !important;
+                }
+                .server-drawer-backdrop {
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(2, 6, 23, 0.62);
+                    z-index: 70;
+                    backdrop-filter: blur(2px);
+                }
+                .server-drawer {
+                    position: fixed;
+                    top: 0;
+                    right: 0;
+                    height: 100vh;
+                    width: min(540px, 100vw);
+                    z-index: 80;
+                    border-left: 1px solid var(--line);
+                    background: color-mix(in oklab, var(--bg) 92%, #0f172a 8%);
+                    box-shadow: -16px 0 42px rgba(2, 6, 23, 0.5);
+                    display: flex;
+                    flex-direction: column;
+                }
+                .server-drawer-body {
+                    overflow: auto;
+                    padding: 0.9rem;
+                    display: grid;
+                    gap: 0.85rem;
+                }
+                .server-row-clickable { cursor: pointer; }
+                .server-row-clickable:hover { background: rgba(56, 189, 248, 0.08); }
+                @media (max-width: 768px) {
+                    .server-drawer { width: 100vw; border-left: 0; }
+                }
+                @media (min-width: 768px) {
+                    .mobile-nav-overlay, .mobile-nav-panel, .mobile-nav-quick { display: none !important; }
                 }
                 @media (max-width: 1024px) {
-                    .nav-link {
-                        font-size: 0.69rem;
-                        padding: 0.38rem 0.72rem;
-                    }
+                    .nav-link { font-size: 0.7rem; padding: 0.4rem 0.74rem; }
+                    .overview-info-grid { grid-template-columns: 1fr; }
+                    .servers-shell { grid-template-columns: 1fr; }
+                    .monitoring-grid { grid-template-columns: 1fr; }
+                }
+                @media (max-width: 1280px) {
+                    .overview-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                    .servers-side-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                    .servers-side-stack > div:first-child,
+                    .servers-side-stack > div:nth-child(2) { grid-column: span 2; }
                 }
                 @media (max-width: 768px) {
-                    body {
-                        background-image:
-                            radial-gradient(circle at 5% 0%, rgba(14, 165, 233, 0.14), transparent 40%),
-                            radial-gradient(circle at 95% 100%, rgba(59, 130, 246, 0.14), transparent 40%);
-                    }
-                    #mobileNav .nav-link {
-                        justify-content: flex-start;
-                    }
-                    #overviewSection {
-                        grid-template-columns: repeat(2, minmax(0, 1fr));
-                    }
-                }
-                @media (max-width: 520px) {
-                    #overviewSection {
-                        grid-template-columns: repeat(1, minmax(0, 1fr));
-                    }
-                    header .w-full {
-                        flex-direction: column;
-                    }
-                    #apiKey {
-                        width: 100%;
-                    }
-                    #connectBtn {
-                        width: 100%;
-                    }
-                    .mobile-nav-link {
-                        font-size: 0.78rem;
-                    }
+                    #overviewSection { grid-template-columns: repeat(2, minmax(0, 1fr)); }
                 }
                 @media (max-width: 640px) {
-                    .mx-auto.max-w-7xl.p-4, .mx-auto.max-w-7xl.p-4.md\:p-6 {
-                        padding-left: 0.7rem;
-                        padding-right: 0.7rem;
-                    }
-                    .dashboard-page {
-                        gap: 0.85rem !important;
-                    }
-                    .dashboard-page .rounded-2xl,
-                    .dashboard-page .rounded-xl {
-                        border-radius: 0.85rem;
-                    }
-                    .dashboard-page table {
-                        font-size: 0.74rem;
-                    }
-                    .dashboard-page th,
-                    .dashboard-page td {
-                        padding: 0.38rem 0.32rem !important;
-                        white-space: nowrap;
-                    }
-                    .dashboard-page pre {
-                        font-size: 0.68rem;
-                        line-height: 1.3;
-                    }
-                    #consoleTailBox {
-                        height: 55vh !important;
-                    }
+                    .mx-auto.max-w-7xl.p-4, .mx-auto.max-w-7xl.p-4.md\:p-6 { padding-left: 1.15rem; padding-right: 1.15rem; }
+                    .servers-side-stack { grid-template-columns: 1fr; }
+                    .servers-side-stack > div:first-child,
+                    .servers-side-stack > div:nth-child(2) { grid-column: auto; }
+                    .dashboard-page { gap: 0.9rem !important; }
+                    .dashboard-page table { font-size: 0.75rem; }
+                    .dashboard-page th, .dashboard-page td { padding: 0.42rem 0.34rem !important; white-space: nowrap; }
+                    .dashboard-page pre { font-size: 0.69rem; line-height: 1.35; }
+                    #serversSection .mb-3.flex, #opsSection .mb-3.flex, #advancedSection .mb-3.flex { flex-direction: column; align-items: stretch; }
+                    #serversSection .mb-3.flex > .flex, #advancedSection .mb-3.flex > .flex { width: 100%; }
+                    #serversSection .mb-3.flex input, #advancedSection .mb-3.flex input { flex: 1; min-width: 0; }
+                    #consoleTailBox { height: 56vh !important; }
+                }
+                @media (max-width: 520px) {
+                    #overviewSection { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+                    header .w-full { flex-direction: column; }
+                    #apiKey, #connectBtn { width: 100%; }
+                    .mobile-nav-link { font-size: 0.8rem; }
+                    .mobile-nav-quick { padding-left: 0.7rem; padding-right: 0.7rem; gap: 0.38rem; }
+                    .mobile-quick-link { padding: 0.44rem 0.62rem; font-size: 0.69rem; }
                 }
                 @media (max-width: 420px) {
-                    .nav-link {
-                        padding: 0.38rem 0.58rem;
-                        gap: 0.35rem;
-                        font-size: 0.68rem;
+                    .nav-link { padding: 0.38rem 0.6rem; gap: 0.35rem; font-size: 0.69rem; }
+                    h1.text-2xl.md\:text-3xl { font-size: 1.24rem !important; line-height: 1.25; }
+                    .dashboard-page button, .dashboard-page input, .dashboard-page select { min-height: 2.2rem; }
+                    #serversBody button { padding-left: 0.44rem !important; padding-right: 0.44rem !important; }
+                    nav > .mx-auto.max-w-7xl {
+                        padding-left: 0.85rem !important;
+                        padding-right: 0.85rem !important;
+                        gap: 0.45rem;
                     }
-                    h1.text-2xl.md\:text-3xl {
-                        font-size: 1.25rem !important;
-                        line-height: 1.25;
+                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 {
+                        min-width: 0;
+                        gap: 0.5rem;
                     }
-                    .dashboard-page button,
-                    .dashboard-page input,
-                    .dashboard-page select {
-                        min-height: 2.15rem;
+                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child {
+                        min-width: 0;
                     }
-                    #serversBody button {
+                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child > div:first-child {
+                        font-size: 0.78rem;
+                        line-height: 1.1;
+                    }
+                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child > div:last-child {
+                        font-size: 0.56rem;
+                        line-height: 1.2;
+                    }
+                    #themeToggle, #navToggle {
+                        min-height: 2.3rem;
+                        min-width: 2.3rem;
+                        padding-left: 0.55rem !important;
+                        padding-right: 0.55rem !important;
+                        border-radius: 0.72rem;
+                    }
+                    #themeToggle span,
+                    #navToggle span {
+                        font-size: 0.67rem;
+                    }
+                    #mobileNavQuick {
+                        padding-left: 0.58rem !important;
+                        padding-right: 0.58rem !important;
+                        padding-top: 0.5rem;
+                        padding-bottom: 0.58rem;
+                        gap: 0.32rem !important;
+                    }
+                    .mobile-quick-link {
+                        min-height: 2.18rem;
+                        padding: 0.45rem 0.56rem !important;
+                        border-radius: 0.72rem;
+                        font-size: 0.66rem !important;
+                        background: color-mix(in oklab, var(--card) 85%, transparent 15%);
+                        border: 1px solid var(--line) !important;
+                    }
+                    #mobileNavQuick .mobile-quick-link i {
+                        font-size: 0.66rem !important;
+                    }
+                    #mobileNavQuick .mobile-quick-link span {
+                        font-size: 0.64rem;
+                        white-space: nowrap;
+                    }
+                    .theme-light .mobile-quick-link {
+                        background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(239,246,255,0.92));
+                        border-color: rgba(148, 163, 184, 0.36) !important;
+                    }
+                    #mobileNav .mobile-nav-link {
+                        min-height: 2.35rem;
+                        border-radius: 0.75rem;
+                    }
+                }
+                @media (max-width: 360px) {
+                    nav > .mx-auto.max-w-7xl {
+                        padding-left: 0.62rem !important;
+                        padding-right: 0.62rem !important;
+                        padding-top: 0.52rem !important;
+                        padding-bottom: 0.52rem !important;
+                    }
+                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child > div:first-child {
+                        font-size: 0.72rem;
+                    }
+                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child > div:last-child {
+                        font-size: 0.52rem;
+                    }
+                    #themeToggle,
+                    #navToggle {
+                        min-height: 2.1rem;
+                        min-width: 2.1rem;
+                        padding-left: 0.45rem !important;
+                        padding-right: 0.45rem !important;
+                    }
+                    #themeToggle span,
+                    #navToggle span {
+                        font-size: 0.61rem;
+                    }
+                    #mobileNavQuick {
                         padding-left: 0.42rem !important;
                         padding-right: 0.42rem !important;
+                        gap: 0.26rem !important;
+                    }
+                    .mobile-quick-link {
+                        min-height: 2.05rem;
+                        padding: 0.4rem 0.46rem !important;
+                        font-size: 0.62rem !important;
+                    }
+                    #mobileNavQuick .mobile-quick-link span {
+                        font-size: 0.6rem;
+                    }
+                    #mobileNav .mx-auto.max-w-7xl.px-4.pb-3 {
+                        padding-left: 0.62rem !important;
+                        padding-right: 0.62rem !important;
+                    }
+                    #mobileNav .mobile-nav-link {
+                        min-height: 2.2rem;
+                        padding-top: 0.42rem !important;
+                        padding-bottom: 0.42rem !important;
+                        font-size: 0.73rem;
+                    }
+                    header.rounded-2xl {
+                        padding: 0.78rem !important;
+                    }
+                    #authState,
+                    #roleState,
+                    #wsState,
+                    #lastUpdate {
+                        padding-left: 0.5rem !important;
+                        padding-right: 0.5rem !important;
+                        font-size: 0.63rem !important;
+                    }
+                    .layout-shell.mx-auto.max-w-7xl.p-4.md\:p-6 {
+                        padding-left: 0.72rem !important;
+                        padding-right: 0.72rem !important;
+                    }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .dashboard-page,
+                    button,
+                    .skeleton-line,
+                    #serversBody tr,
+                    #queueBox > div,
+                    #wrappersBox > div,
+                    #alertsBox > div,
+                    #topCpuBox > div,
+                    #topMemBox > div,
+                    #wrapperPressureBox > div {
+                        animation: none !important;
+                        transition: none !important;
                     }
                 }
             </style>
         </head>
         <body class='min-h-screen bg-slate-950 text-slate-100'>
-            <nav class='sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur'>
+            <nav class='sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur'>
                 <div class='mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-6'>
                     <div class='flex items-center gap-3'>
                         <div class='h-8 w-8 rounded-lg bg-gradient-to-br from-cyan-300 to-blue-500 p-[2px]'>
@@ -210,8 +608,19 @@
                         <a href='/dashboard/console' data-page-link='console' class='nav-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
                     </div>
                 </div>
-                <div id='mobileNav' class='mobile-nav-panel mx-auto hidden max-w-7xl gap-2 px-4 pb-3 md:hidden'>
-                    <div class='grid grid-cols-1 gap-2 py-2'>
+                <div id='mobileNavQuick' class='mobile-nav-quick md:hidden'>
+                    <a href='/dashboard/overview' data-page-link='overview' class='nav-link mobile-quick-link'><i class='fa-solid fa-gauge-high text-[11px]'></i><span>Overview</span></a>
+                    <a href='/dashboard/servers' data-page-link='servers' class='nav-link mobile-quick-link'><i class='fa-solid fa-server text-[11px]'></i><span>Servers</span></a>
+                    <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link mobile-quick-link'><i class='fa-solid fa-heart-pulse text-[11px]'></i><span>Monitoring</span></a>
+                    <a href='/dashboard/operations' data-page-link='operations' class='nav-link mobile-quick-link'><i class='fa-solid fa-gears text-[11px]'></i><span>Operations</span></a>
+                    <a href='/dashboard/setup' data-page-link='setup' class='nav-link mobile-quick-link'><i class='fa-solid fa-screwdriver-wrench text-[11px]'></i><span>Setup</span></a>
+                    <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link mobile-quick-link'><i class='fa-solid fa-flask-vial text-[11px]'></i><span>Advanced</span></a>
+                    <a href='/dashboard/console' data-page-link='console' class='nav-link mobile-quick-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
+                </div>
+                <div id='mobileNavBackdrop' class='mobile-nav-overlay hidden md:hidden'></div>
+                <div id='mobileNav' class='mobile-nav-panel hidden md:hidden'>
+                    <div class='mx-auto max-w-7xl px-4 pb-3'>
+                        <div class='grid grid-cols-1 gap-2 py-2'>
                         <a href='/dashboard/overview' data-page-link='overview' class='nav-link mobile-nav-link'><i class='fa-solid fa-gauge-high text-[12px]'></i><span>Overview</span></a>
                         <a href='/dashboard/servers' data-page-link='servers' class='nav-link mobile-nav-link'><i class='fa-solid fa-server text-[12px]'></i><span>Servers</span></a>
                         <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link mobile-nav-link'><i class='fa-solid fa-heart-pulse text-[12px]'></i><span>Monitoring</span></a>
@@ -219,10 +628,11 @@
                         <a href='/dashboard/setup' data-page-link='setup' class='nav-link mobile-nav-link'><i class='fa-solid fa-screwdriver-wrench text-[12px]'></i><span>Setup</span></a>
                         <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link mobile-nav-link'><i class='fa-solid fa-flask-vial text-[12px]'></i><span>Advanced</span></a>
                         <a href='/dashboard/console' data-page-link='console' class='nav-link mobile-nav-link'><i class='fa-solid fa-terminal text-[12px]'></i><span>Console</span></a>
+                        </div>
                     </div>
                 </div>
             </nav>
-            <div class='mx-auto max-w-7xl p-4 md:p-6 space-y-6'>
+            <div class='layout-shell mx-auto max-w-7xl p-4 md:p-6 space-y-6'>
                 <header class='rounded-2xl border border-cyan-900/60 bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 p-6 shadow-lg shadow-cyan-900/20'>
                     <div class='flex flex-col gap-4 md:flex-row md:items-end md:justify-between'>
                         <div>
@@ -248,41 +658,81 @@
                                 <option value='30000'>30s</option>
                             </select>
                         </label>
+                        <button id='btnToggleAutoRefresh' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:border-amber-400'>Pause Auto</button>
+                        <span id='autoRefreshCountdown' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Next refresh: -</span>
                     </div>
                 </header>
-
-                <section id='overviewSection' data-page='overview' class='dashboard-page grid grid-cols-2 gap-3 md:grid-cols-4'>
-                    <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
-                        <p class='text-xs text-slate-400'>Running Servers</p>
-                        <p id='runningServers' class='mt-1 text-2xl font-bold text-cyan-300'>0</p>
-                    </article>
-                    <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
-                        <p class='text-xs text-slate-400'>Connected Wrappers</p>
-                        <p id='connectedWrappers' class='mt-1 text-2xl font-bold text-emerald-300'>0</p>
-                    </article>
-                    <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
-                        <p class='text-xs text-slate-400'>Queue Total</p>
-                        <p id='queueTotal' class='mt-1 text-2xl font-bold text-violet-300'>0</p>
-                    </article>
-                    <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
-                        <p class='text-xs text-slate-400'>Active Alerts</p>
-                        <p id='activeAlerts' class='mt-1 text-2xl font-bold text-rose-300'>0</p>
-                    </article>
+                <section id='overviewSection' data-page='overview' class='dashboard-page overview-shell space-y-4'>
+                    <div class='overview-kpi-grid'>
+                        <article class='overview-kpi-card rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <div class='overview-kpi-label'><i class='fa-solid fa-server'></i><span>Running Servers</span></div>
+                            <p id='runningServers' class='overview-kpi-value text-cyan-300'>0</p>
+                        </article>
+                        <article class='overview-kpi-card rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <div class='overview-kpi-label'><i class='fa-solid fa-microchip'></i><span>Connected Wrappers</span></div>
+                            <p id='connectedWrappers' class='overview-kpi-value text-emerald-300'>0</p>
+                        </article>
+                        <article class='overview-kpi-card rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <div class='overview-kpi-label'><i class='fa-solid fa-list-ol'></i><span>Queue Total</span></div>
+                            <p id='queueTotal' class='overview-kpi-value text-violet-300'>0</p>
+                        </article>
+                        <article class='overview-kpi-card rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <div class='overview-kpi-label'><i class='fa-solid fa-triangle-exclamation'></i><span>Active Alerts</span></div>
+                            <p id='activeAlerts' class='overview-kpi-value text-rose-300'>0</p>
+                        </article>
+                    </div>
+                    <div class='overview-info-grid'>
+                        <article class='overview-story-card rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h3 class='text-sm font-semibold'>Current Focus</h3>
+                            <p class='mt-2 text-xs text-slate-300'>Use the servers page for live operations and monitoring for performance deep-dive. This overview is tuned for fast orientation first.</p>
+                            <div class='mt-3 flex flex-wrap gap-2 text-[11px] text-slate-300'>
+                                <span class='rounded-full border border-slate-700 px-2 py-1'>Realtime signals</span>
+                                <span class='rounded-full border border-slate-700 px-2 py-1'>Operational readiness</span>
+                                <span class='rounded-full border border-slate-700 px-2 py-1'>Low-noise summary</span>
+                            </div>
+                        </article>
+                        <article class='overview-story-card rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h3 class='text-sm font-semibold'>Workflow</h3>
+                            <ol class='mt-2 space-y-2 text-xs text-slate-300'>
+                                <li>1. Check KPIs for global health.</li>
+                                <li>2. Open Servers for action (restart/scale).</li>
+                                <li>3. Validate in Monitoring trend panels.</li>
+                            </ol>
+                        </article>
+                    </div>
                 </section>
-
-                <section id='serversSection' data-page='servers' class='dashboard-page grid gap-6 lg:grid-cols-3'>
-                    <div class='lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
-                        <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
-                            <h2 class='font-semibold'>Servers</h2>
+                <section id='serversSection' data-page='servers' class='dashboard-page servers-shell grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]'>
+                    <div class='servers-main-panel rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='servers-main-head mb-3 flex flex-wrap items-center justify-between gap-2'>
+                            <div>
+                                <h2 class='font-semibold'>Server Operations</h2>
+                                <p class='text-[11px] text-slate-400'>Live inventory with direct action controls.</p>
+                            </div>
                             <div class='flex gap-2'>
                                 <input id='serverFilter' type='text' placeholder='Filter server/group' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1 text-xs outline-none focus:border-cyan-400'>
                                 <button id='refreshBtn' class='rounded-lg border border-slate-700 px-3 py-1 text-xs hover:border-cyan-400'>Refresh</button>
                             </div>
                         </div>
-                        <div class='overflow-auto'>
+                        <div class='mb-3 flex flex-wrap items-center gap-2 text-xs'>
+                            <select id='serverStatusFilter' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1 outline-none focus:border-cyan-400'>
+                                <option value='all'>Status: all</option>
+                                <option value='online'>Status: online</option>
+                                <option value='starting'>Status: starting</option>
+                                <option value='offline'>Status: offline</option>
+                            </select>
+                            <select id='serverWrapperFilter' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1 outline-none focus:border-cyan-400'>
+                                <option value='all'>Wrapper: all</option>
+                            </select>
+                            <span id='selectedServersCount' class='rounded-full border border-slate-700 px-2 py-1 text-slate-300'>Selected: 0</span>
+                            <button id='btnBulkRestart' class='rounded-lg border border-slate-700 px-2 py-1 hover:border-cyan-400 disabled:opacity-30'>Bulk restart</button>
+                            <button id='btnBulkStop' class='rounded-lg border border-slate-700 px-2 py-1 hover:border-rose-400 disabled:opacity-30'>Bulk stop</button>
+                            <button id='btnClearSelection' class='rounded-lg border border-slate-700 px-2 py-1 hover:border-slate-400'>Clear selection</button>
+                        </div>
+                        <div class='servers-table-wrap overflow-auto rounded-xl border border-slate-800'>
                             <table class='min-w-full text-sm'>
                                 <thead class='text-left text-xs text-slate-400'>
                                     <tr>
+                                        <th class='px-2 py-2'><input id='serverSelectAll' type='checkbox' class='h-3.5 w-3.5'></th>
                                         <th class='px-2 py-2'>Server</th>
                                         <th class='px-2 py-2'>Group</th>
                                         <th class='px-2 py-2'>Status</th>
@@ -297,29 +747,37 @@
                         </div>
                     </div>
 
-                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
-                        <h2 class='mb-3 font-semibold'>Quick Actions</h2>
-                        <div class='grid grid-cols-2 gap-2 text-xs'>
-                            <button id='btnWebhookTest' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400 disabled:opacity-30'>Webhook test</button>
-                            <button id='btnClearAlerts' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400 disabled:opacity-30'>Clear alerts</button>
-                            <button id='btnScaleEval' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-violet-400 disabled:opacity-30'>Scale eval</button>
-                            <button id='btnReloadView' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Reload view</button>
-                            <button id='btnRestartUnhealthy' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-amber-400 disabled:opacity-30'>Restart unhealthy</button>
-                            <button id='btnExportServers' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-sky-400'>Export servers</button>
+                    <div class='servers-side-stack space-y-4'>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h2 class='mb-3 font-semibold'>Quick Actions</h2>
+                            <div class='grid grid-cols-2 gap-2 text-xs'>
+                                <button id='btnWebhookTest' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400 disabled:opacity-30'>Webhook test</button>
+                                <button id='btnClearAlerts' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400 disabled:opacity-30'>Clear alerts</button>
+                                <button id='btnScaleEval' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-violet-400 disabled:opacity-30'>Scale eval</button>
+                                <button id='btnReloadView' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Reload view</button>
+                                <button id='btnRestartUnhealthy' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-amber-400 disabled:opacity-30'>Restart unhealthy</button>
+                                <button id='btnExportServers' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-sky-400'>Export servers</button>
+                            </div>
                         </div>
 
-                        <h2 class='mb-3 mt-6 font-semibold'>Start Server</h2>
-                        <div class='space-y-2 text-xs'>
-                            <input id='startServerName' type='text' placeholder='Server name (e.g. Lobby-2)' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
-                            <input id='startGroupName' type='text' placeholder='Group name (e.g. Lobby)' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
-                            <button id='btnStartServer' class='w-full rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400 disabled:opacity-30'>Start server</button>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h2 class='mb-3 font-semibold'>Start Server</h2>
+                            <div class='space-y-2 text-xs'>
+                                <input id='startServerName' type='text' placeholder='Server name (e.g. Lobby-2)' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                <input id='startGroupName' type='text' placeholder='Group name (e.g. Lobby)' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                <button id='btnStartServer' class='w-full rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400 disabled:opacity-30'>Start server</button>
+                            </div>
                         </div>
 
-                        <h2 class='mb-3 font-semibold'>Queue by Group</h2>
-                        <div id='queueBox' class='space-y-2 text-sm'></div>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h2 class='mb-3 font-semibold'>Queue by Group</h2>
+                            <div id='queueBox' class='space-y-2 text-sm'></div>
+                        </div>
 
-                        <h2 class='mb-3 mt-6 font-semibold'>Wrappers</h2>
-                        <div id='wrappersBox' class='space-y-2 text-sm'></div>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h2 class='mb-3 font-semibold'>Wrappers</h2>
+                            <div id='wrappersBox' class='space-y-2 text-sm'></div>
+                        </div>
                     </div>
                 </section>
 
@@ -353,7 +811,16 @@
                     <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-2'>
                         <div class='mb-3 flex items-center justify-between'>
                             <h2 class='font-semibold'>Recent Logs</h2>
-                            <input id='logFilter' type='text' placeholder='Filter logs' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1 text-xs outline-none focus:border-cyan-400'>
+                            <div class='flex items-center gap-2'>
+                                <select id='logLevelFilter' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1 text-xs outline-none focus:border-cyan-400'>
+                                    <option value='all'>ALL</option>
+                                    <option value='INFO'>INFO</option>
+                                    <option value='WARN'>WARN</option>
+                                    <option value='ERROR'>ERROR</option>
+                                    <option value='DEBUG'>DEBUG</option>
+                                </select>
+                                <input id='logFilter' type='text' placeholder='Filter logs' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-1 text-xs outline-none focus:border-cyan-400'>
+                            </div>
                         </div>
                         <pre id='logsBox' class='h-72 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
                     </div>
@@ -362,25 +829,34 @@
                         <div id='alertsBox' class='space-y-2 text-xs'></div>
                     </div>
                 </section>
-
-                <section id='monitoringSection' data-page='monitoring' class='dashboard-page rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
-                    <div class='mb-3 flex items-center justify-between'>
-                        <h2 class='font-semibold'>Metrics Trend</h2>
-                        <span class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>last 180 points</span>
+                <section id='monitoringSection' data-page='monitoring' class='dashboard-page monitoring-shell space-y-4'>
+                    <div class='monitoring-head rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='flex flex-wrap items-center justify-between gap-2'>
+                            <div>
+                                <h2 class='font-semibold'>Performance Observatory</h2>
+                                <p class='text-[11px] text-slate-400'>Trend-first view for CPU, RAM and wrapper pressure.</p>
+                            </div>
+                            <span class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>last 180 points</span>
+                        </div>
                     </div>
-                    <canvas id='metricsCanvas' class='h-44 w-full rounded-xl border border-slate-800 bg-slate-950/70'></canvas>
-                    <div class='mt-4 grid gap-3 md:grid-cols-3'>
-                        <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
-                            <div class='mb-2 font-semibold'>Top CPU Servers</div>
-                            <div id='topCpuBox' class='space-y-1 text-slate-300'></div>
+                    <div class='monitoring-grid grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(280px,1fr)]'>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h3 class='mb-2 text-sm font-semibold'>Metrics Trend</h3>
+                            <canvas id='metricsCanvas' class='h-52 w-full rounded-xl border border-slate-800 bg-slate-950/70'></canvas>
                         </div>
-                        <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
-                            <div class='mb-2 font-semibold'>Top RAM Servers</div>
-                            <div id='topMemBox' class='space-y-1 text-slate-300'></div>
-                        </div>
-                        <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
-                            <div class='mb-2 font-semibold'>Wrapper Pressure</div>
-                            <div id='wrapperPressureBox' class='space-y-1 text-slate-300'></div>
+                        <div class='grid gap-4'>
+                            <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                                <div class='mb-2 font-semibold'>Top CPU Servers</div>
+                                <div id='topCpuBox' class='space-y-1 text-slate-300'></div>
+                            </div>
+                            <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                                <div class='mb-2 font-semibold'>Top RAM Servers</div>
+                                <div id='topMemBox' class='space-y-1 text-slate-300'></div>
+                            </div>
+                            <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs'>
+                                <div class='mb-2 font-semibold'>Wrapper Pressure</div>
+                                <div id='wrapperPressureBox' class='space-y-1 text-slate-300'></div>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -460,6 +936,40 @@
                 </section>
             </div>
 
+            <div id='serverDrawerBackdrop' class='server-drawer-backdrop hidden'></div>
+            <aside id='serverDrawer' class='server-drawer hidden' aria-hidden='true'>
+                <div class='flex items-center justify-between border-b border-slate-800 px-4 py-3'>
+                    <div>
+                        <div class='text-xs text-slate-400'>Server Details</div>
+                        <div id='serverDrawerTitle' class='font-semibold'>-</div>
+                    </div>
+                    <button id='btnServerDrawerClose' class='rounded-lg border border-slate-700 px-3 py-1 text-xs hover:border-rose-400'>Close</button>
+                </div>
+                <div class='server-drawer-body'>
+                    <div class='grid grid-cols-2 gap-2 text-xs'>
+                        <div class='rounded-lg border border-slate-800 bg-slate-950/70 p-2'>Status: <span id='drawerStatus' class='text-slate-200'>-</span></div>
+                        <div class='rounded-lg border border-slate-800 bg-slate-950/70 p-2'>Wrapper: <span id='drawerWrapper' class='text-slate-200'>-</span></div>
+                        <div class='rounded-lg border border-slate-800 bg-slate-950/70 p-2'>Port: <span id='drawerPort' class='text-slate-200'>-</span></div>
+                        <div class='rounded-lg border border-slate-800 bg-slate-950/70 p-2'>Players: <span id='drawerPlayers' class='text-slate-200'>-</span></div>
+                        <div class='rounded-lg border border-slate-800 bg-slate-950/70 p-2'>TPS: <span id='drawerTps' class='text-slate-200'>-</span></div>
+                        <div class='rounded-lg border border-slate-800 bg-slate-950/70 p-2'>CPU: <span id='drawerCpu' class='text-slate-200'>-</span></div>
+                        <div class='rounded-lg border border-slate-800 bg-slate-950/70 p-2 col-span-2'>RAM: <span id='drawerRam' class='text-slate-200'>-</span></div>
+                    </div>
+                    <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3'>
+                        <div class='mb-2 text-xs font-semibold'>Quick Actions</div>
+                        <div class='flex flex-wrap gap-2 text-xs'>
+                            <button id='btnDrawerRestart' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-cyan-400'>Restart</button>
+                            <button id='btnDrawerStop' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-rose-400'>Stop</button>
+                            <button id='btnDrawerStartLike' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-emerald-400'>Start like</button>
+                        </div>
+                    </div>
+                    <div class='rounded-xl border border-slate-800 bg-slate-950/70 p-3'>
+                        <div class='mb-2 text-xs font-semibold'>Recent Server Logs</div>
+                        <pre id='serverDrawerLogs' class='h-64 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-2 text-[11px] text-slate-300'></pre>
+                    </div>
+                </div>
+            </aside>
+
             <script>
                 const state = {
                     apiKey: sessionStorage.getItem('cloud_api_key') || '',
@@ -473,12 +983,19 @@
                     refreshInFlight: false,
                     refreshQueued: false,
                     lastAutoRefreshAt: 0,
-                    consolePollHandle: null
+                    consolePollHandle: null,
+                    autoRefreshPaused: false,
+                    selectedServers: new Set(),
+                    autoRefreshTickHandle: null,
+                    drawerServerName: null
                 };
                 const apiKeyInput = document.getElementById('apiKey');
                 apiKeyInput.value = state.apiKey;
                 initTheme();
+                loadUiPreferences();
                 applyDashboardPage();
+                setAutoRefreshPaused(state.autoRefreshPaused);
+                startAutoRefreshTicker();
 
                 function showToast(icon, title, text = '') {
                     Swal.fire({
@@ -547,6 +1064,265 @@
                     }
                 }
 
+
+                function loadUiPreferences() {
+                    const refresh = localStorage.getItem('cloud_ui_refresh_interval');
+                    const serverFilter = localStorage.getItem('cloud_ui_server_filter');
+                    const serverStatusFilter = localStorage.getItem('cloud_ui_server_status_filter');
+                    const serverWrapperFilter = localStorage.getItem('cloud_ui_server_wrapper_filter');
+                    const logFilter = localStorage.getItem('cloud_ui_log_filter');
+                    const logLevelFilter = localStorage.getItem('cloud_ui_log_level_filter');
+                    const autoPaused = localStorage.getItem('cloud_ui_auto_paused');
+
+                    if (refresh && document.getElementById('refreshInterval')) document.getElementById('refreshInterval').value = refresh;
+                    if (serverFilter && document.getElementById('serverFilter')) document.getElementById('serverFilter').value = serverFilter;
+                    if (serverStatusFilter && document.getElementById('serverStatusFilter')) document.getElementById('serverStatusFilter').value = serverStatusFilter;
+                    if (logFilter && document.getElementById('logFilter')) document.getElementById('logFilter').value = logFilter;
+                    if (logLevelFilter && document.getElementById('logLevelFilter')) document.getElementById('logLevelFilter').value = logLevelFilter;
+                    if (autoPaused === '1') {
+                        state.autoRefreshPaused = true;
+                    }
+                    // wrapper filter is restored after options are rendered
+                    if (serverWrapperFilter) {
+                        document.documentElement.setAttribute('data-server-wrapper-filter', serverWrapperFilter);
+                    }
+                }
+
+                function persistUiPreference(key, value) {
+                    localStorage.setItem(key, value);
+                }
+
+                function setAutoRefreshPaused(paused) {
+                    state.autoRefreshPaused = paused;
+                    const btn = document.getElementById('btnToggleAutoRefresh');
+                    if (btn) btn.textContent = paused ? 'Resume Auto' : 'Pause Auto';
+                    persistUiPreference('cloud_ui_auto_paused', paused ? '1' : '0');
+                    updateAutoRefreshCountdown();
+                }
+
+                function updateAutoRefreshCountdown() {
+                    const label = document.getElementById('autoRefreshCountdown');
+                    if (!label) return;
+                    if (state.autoRefreshPaused) {
+                        label.textContent = 'Next refresh: paused';
+                        return;
+                    }
+                    const refreshMs = Number(document.getElementById('refreshInterval')?.value || '12000');
+                    const elapsed = Date.now() - (state.lastAutoRefreshAt || 0);
+                    const remainingMs = Math.max(0, refreshMs - elapsed);
+                    label.textContent = 'Next refresh: ' + Math.ceil(remainingMs / 1000) + 's';
+                }
+
+                function startAutoRefreshTicker() {
+                    if (state.autoRefreshTickHandle) return;
+                    state.autoRefreshTickHandle = setInterval(updateAutoRefreshCountdown, 1000);
+                    updateAutoRefreshCountdown();
+                }
+
+                function getVisibleServersFromOverview() {
+                    const overview = state.overview || { servers: [] };
+                    const filterText = (document.getElementById('serverFilter')?.value || '').trim().toLowerCase();
+                    const statusFilter = (document.getElementById('serverStatusFilter')?.value || 'all').toLowerCase();
+                    const wrapperFilter = (document.getElementById('serverWrapperFilter')?.value || 'all').toLowerCase();
+                    return (overview.servers || []).filter(server => {
+                        const byText = !filterText || (server.serverName || '').toLowerCase().includes(filterText) || (server.groupName || '').toLowerCase().includes(filterText);
+                        const status = String(server.status || '').toLowerCase();
+                        const byStatus = statusFilter === 'all' || status === statusFilter;
+                        const byWrapper = wrapperFilter === 'all' || String(server.wrapperId || '').toLowerCase() === wrapperFilter;
+                        return byText && byStatus && byWrapper;
+                    });
+                }
+
+                function updateSelectionSummary() {
+                    const count = state.selectedServers.size;
+                    const label = document.getElementById('selectedServersCount');
+                    if (label) label.textContent = 'Selected: ' + count;
+                    const canRun = count > 0 && state.role === 'ADMIN';
+                    const restartBtn = document.getElementById('btnBulkRestart');
+                    const stopBtn = document.getElementById('btnBulkStop');
+                    if (restartBtn) restartBtn.disabled = !canRun;
+                    if (stopBtn) stopBtn.disabled = !canRun;
+                    const selectAll = document.getElementById('serverSelectAll');
+                    if (selectAll) {
+                        const visible = getVisibleServersFromOverview().map(s => String(s.serverName || ''));
+                        const selectedVisible = visible.filter(name => state.selectedServers.has(name));
+                        selectAll.checked = visible.length > 0 && selectedVisible.length === visible.length;
+                        selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visible.length;
+                    }
+                }
+
+                function updateWrapperFilterOptions() {
+                    const select = document.getElementById('serverWrapperFilter');
+                    if (!select || !state.overview) return;
+                    const previous = select.value || document.documentElement.getAttribute('data-server-wrapper-filter') || 'all';
+                    const wrappers = [...new Set((state.overview.servers || []).map(s => String(s.wrapperId || '').trim()).filter(Boolean))].sort();
+                    select.innerHTML = `<option value='all'>Wrapper: all</option>` + wrappers.map(w => `<option value='${escapeHtml(w.toLowerCase())}'>Wrapper: ${escapeHtml(w)}</option>`).join('');
+                    select.value = wrappers.map(w => w.toLowerCase()).includes(String(previous).toLowerCase()) ? String(previous).toLowerCase() : 'all';
+                    document.documentElement.removeAttribute('data-server-wrapper-filter');
+                }
+
+                async function runBulkServerAction(action) {
+                    const targets = [...state.selectedServers];
+                    if (!targets.length) {
+                        showToast('info', 'No selection', 'Select at least one server');
+                        return;
+                    }
+                    for (const serverName of targets) {
+                        if (action === 'restart') {
+                            await apiPost('/api/v1/servers/restart', { serverName });
+                        } else if (action === 'stop') {
+                            await apiPost('/api/v1/servers/stop', { serverName });
+                        }
+                    }
+                    showToast('success', 'Bulk action done', action + ' x' + targets.length);
+                    await refresh();
+                }
+
+                function getServerByName(serverName) {
+                    if (!state.overview || !serverName) return null;
+                    return (state.overview.servers || []).find(s => String(s.serverName || '') === String(serverName)) || null;
+                }
+
+                function getServerRelatedLogs(serverName) {
+                    const lines = (state.logs && state.logs.lines) ? state.logs.lines : [];
+                    const needle = String(serverName || '').toLowerCase();
+                    if (!needle) return [];
+                    return lines.filter(line => String(line || '').toLowerCase().includes(needle)).slice(-140);
+                }
+
+                function renderServerDrawer() {
+                    if (!state.drawerServerName) return;
+                    const server = getServerByName(state.drawerServerName);
+                    if (!server) {
+                        closeServerDrawer();
+                        return;
+                    }
+                    document.getElementById('serverDrawerTitle').textContent = String(server.serverName || '-');
+                    document.getElementById('drawerStatus').textContent = String(server.status || '-');
+                    document.getElementById('drawerWrapper').textContent = String(server.wrapperId || '-');
+                    document.getElementById('drawerPort').textContent = String(server.port || '-');
+                    document.getElementById('drawerPlayers').textContent = `${server.playerCount || 0}/${server.maxPlayers || 0}`;
+                    document.getElementById('drawerTps').textContent = Number(server.tps || 0).toFixed(2);
+                    document.getElementById('drawerCpu').textContent = Number(server.cpuUsage || 0).toFixed(1) + '%';
+                    document.getElementById('drawerRam').textContent = Number(server.memoryUsage || 0).toFixed(1) + '%';
+                    const lines = getServerRelatedLogs(server.serverName);
+                    document.getElementById('serverDrawerLogs').textContent = lines.length ? lines.join('\n') : 'No server-specific logs yet.';
+
+                    const isAdmin = state.role === 'ADMIN';
+                    document.getElementById('btnDrawerRestart').disabled = !isAdmin;
+                    document.getElementById('btnDrawerStop').disabled = !isAdmin;
+                    document.getElementById('btnDrawerStartLike').disabled = false;
+                    document.getElementById('btnDrawerStartLike').setAttribute('data-group', String(server.groupName || ''));
+                }
+
+                function openServerDrawer(serverName) {
+                    state.drawerServerName = String(serverName || '');
+                    renderServerDrawer();
+                    document.getElementById('serverDrawer').classList.remove('hidden');
+                    document.getElementById('serverDrawerBackdrop').classList.remove('hidden');
+                    document.getElementById('serverDrawer').setAttribute('aria-hidden', 'false');
+                    document.body.classList.add('mobile-nav-open');
+                }
+
+                function closeServerDrawer() {
+                    state.drawerServerName = null;
+                    document.getElementById('serverDrawer').classList.add('hidden');
+                    document.getElementById('serverDrawerBackdrop').classList.add('hidden');
+                    document.getElementById('serverDrawer').setAttribute('aria-hidden', 'true');
+                    document.body.classList.remove('mobile-nav-open');
+                }
+                function drawMetricsPlaceholder(message) {
+                    const canvas = document.getElementById('metricsCanvas');
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d');
+                    const parentWidth = canvas.parentElement.clientWidth;
+                    canvas.width = Math.max(400, parentWidth - 16);
+                    canvas.height = 176;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = 'rgba(148, 163, 184, 0.28)';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = '#cbd5e1';
+                    ctx.font = "12px 'Sora', sans-serif";
+                    ctx.fillText(message, 14, 22);
+                }
+
+                function createSkeletonLines(widths) {
+                    return widths.map(width => `<div class='skeleton-line' style='width:${width}'></div>`).join('');
+                }
+
+                function getSkeletonDensity() {
+                    if (window.matchMedia('(max-width: 640px)').matches) return 'mobile';
+                    if (window.matchMedia('(max-width: 1024px)').matches) return 'tablet';
+                    return 'desktop';
+                }
+
+                function pickSkeletonWidths(mapByDensity) {
+                    const density = getSkeletonDensity();
+                    return mapByDensity[density] || mapByDensity.desktop || [];
+                }
+
+                function setPageLoadingState(loading) {
+                    ['overviewSection', 'serversSection', 'monitoringSection'].forEach(id => {
+                        const section = document.getElementById(id);
+                        if (!section) return;
+                        section.classList.toggle('page-loading', loading);
+                        section.classList.toggle('page-loaded', !loading);
+                        section.setAttribute('aria-busy', loading ? 'true' : 'false');
+                    });
+                }
+
+                function primeOverviewSkeleton() {
+                    document.getElementById('runningServers').textContent = '...';
+                    document.getElementById('connectedWrappers').textContent = '...';
+                    document.getElementById('queueTotal').textContent = '...';
+                    document.getElementById('activeAlerts').textContent = '...';
+                    const serverLines = pickSkeletonWidths({
+                        mobile: ['94%', '82%'],
+                        tablet: ['96%', '90%', '84%'],
+                        desktop: ['96%', '93%', '89%', '82%']
+                    });
+                    const queueLines = pickSkeletonWidths({
+                        mobile: ['80%', '58%'],
+                        tablet: ['82%', '66%', '74%'],
+                        desktop: ['84%', '70%', '76%', '62%']
+                    });
+                    const wrapperLines = pickSkeletonWidths({
+                        mobile: ['76%', '54%', '70%'],
+                        tablet: ['78%', '57%', '88%', '54%'],
+                        desktop: ['80%', '62%', '90%', '66%', '52%']
+                    });
+                    document.getElementById('serversBody').innerHTML = `
+                        <tr><td colspan='8' class='px-2 py-3'>
+                            <div class='skeleton-stack'>${createSkeletonLines(serverLines)}</div>
+                        </td></tr>`;
+                    document.getElementById('queueBox').innerHTML = `
+                        <div class='skeleton-block skeleton-stack loading-dim'>${createSkeletonLines(queueLines)}</div>`;
+                    document.getElementById('wrappersBox').innerHTML = `
+                        <div class='skeleton-block skeleton-stack loading-dim'>${createSkeletonLines(wrapperLines)}</div>`;
+                }
+
+                function primeMonitoringSkeleton() {
+                    drawMetricsPlaceholder('Loading metrics...');
+                    const topCpuLines = pickSkeletonWidths({
+                        mobile: ['72%', '56%'],
+                        tablet: ['74%', '60%', '68%', '56%'],
+                        desktop: ['78%', '64%', '70%', '58%', '52%']
+                    });
+                    const topMemLines = pickSkeletonWidths({
+                        mobile: ['70%', '54%'],
+                        tablet: ['72%', '58%', '65%', '52%'],
+                        desktop: ['76%', '62%', '68%', '56%', '50%']
+                    });
+                    const wrapperPressureLines = pickSkeletonWidths({
+                        mobile: ['74%', '58%'],
+                        tablet: ['76%', '62%', '70%'],
+                        desktop: ['78%', '64%', '72%', '56%']
+                    });
+                    document.getElementById('topCpuBox').innerHTML = `<div class='skeleton-stack loading-dim'>${createSkeletonLines(topCpuLines)}</div>`;
+                    document.getElementById('topMemBox').innerHTML = `<div class='skeleton-stack loading-dim'>${createSkeletonLines(topMemLines)}</div>`;
+                    document.getElementById('wrapperPressureBox').innerHTML = `<div class='skeleton-stack loading-dim'>${createSkeletonLines(wrapperPressureLines)}</div>`;
+                }
+
                 function headers() {
                     return { 'X-API-Key': state.apiKey };
                 }
@@ -573,6 +1349,21 @@
                     return 'bg-rose-500/20 text-rose-300 border border-rose-500/40';
                 }
 
+                function escapeHtml(value) {
+                    return String(value ?? '')
+                        .replaceAll('&', '&amp;')
+                        .replaceAll('<', '&lt;')
+                        .replaceAll('>', '&gt;')
+                        .replaceAll('"', '&quot;')
+                        .replaceAll("'", '&#39;');
+                }
+
+                function escapeJsString(value) {
+                    return String(value ?? '')
+                        .replaceAll('\\', '\\\\')
+                        .replaceAll("'", "\\'");
+                }
+
                 async function authenticate() {
                     state.apiKey = apiKeyInput.value.trim();
                     sessionStorage.setItem('cloud_api_key', state.apiKey);
@@ -595,6 +1386,12 @@
                     }
                     state.refreshInFlight = true;
                     try {
+                        const isFirstLoad = !state.overview;
+                        if (isFirstLoad) {
+                            primeOverviewSkeleton();
+                            primeMonitoringSkeleton();
+                        }
+                        setPageLoadingState(true);
                         const [overview, alerts, logs, setup, clusterInfo, clusterNodes, policies, metricHistory] = await Promise.all([
                             apiGet('/api/v1/dashboard/overview'),
                             apiGet('/api/v1/alerts'),
@@ -617,7 +1414,11 @@
                         renderPolicies(policies);
                         renderMetricsTrend(state.metricsHistory);
                         renderMonitoringInsights(overview);
+                        if (state.drawerServerName) renderServerDrawer();
+                        state.lastAutoRefreshAt = Date.now();
+                        updateAutoRefreshCountdown();
                     } finally {
+                        setPageLoadingState(false);
                         state.refreshInFlight = false;
                         if (state.refreshQueued) {
                             state.refreshQueued = false;
@@ -633,7 +1434,7 @@
                     const previous = select.value;
                     select.innerHTML = screens
                         .filter(s => String(s).toLowerCase() !== 'main')
-                        .map(s => <option value=''></option>)
+                        .map(s => `<option value='${escapeHtml(s)}'>${escapeHtml(s)}</option>`)
                         .join('');
                     if (previous && screens.includes(previous)) {
                         select.value = previous;
@@ -655,7 +1456,7 @@
                     const box = document.getElementById('consoleTailBox');
                     const atBottom = (box.scrollTop + box.clientHeight + 25) >= box.scrollHeight;
                     box.textContent = lines.join('\n');
-                    document.getElementById('consoleMeta').textContent = ${serverName} |  lines;
+                    document.getElementById('consoleMeta').textContent = `${serverName} | ${lines.length} lines`;
                     if (atBottom) {
                         box.scrollTop = box.scrollHeight;
                     }
@@ -698,15 +1499,17 @@
                     state.consolePollHandle = setInterval(run, 2000);
                 }
                 function scheduleAutoRefresh() {
+                    if (state.autoRefreshPaused) return;
                     const now = Date.now();
                     const refreshMs = Number(document.getElementById('refreshInterval')?.value || '12000');
                     if (now - state.lastAutoRefreshAt < refreshMs) {
+                        updateAutoRefreshCountdown();
                         return;
                     }
                     state.lastAutoRefreshAt = now;
+                    updateAutoRefreshCountdown();
                     refresh().catch(() => {});
                 }
-
                 function renderOverview(data) {
                     document.getElementById('runningServers').textContent = data.runningServers || 0;
                     document.getElementById('connectedWrappers').textContent = data.connectedWrappers || 0;
@@ -714,37 +1517,35 @@
                     document.getElementById('activeAlerts').textContent = (data.monitoring && data.monitoring.activeAlerts) || 0;
                     document.getElementById('lastUpdate').textContent = 'Last update: ' + new Date().toLocaleTimeString();
 
-                    const filterText = (document.getElementById('serverFilter').value || '').trim().toLowerCase();
-                    const filteredServers = (data.servers || []).filter(server => {
-                        if (!filterText) return true;
-                        return (server.serverName || '').toLowerCase().includes(filterText)
-                            || (server.groupName || '').toLowerCase().includes(filterText);
-                    });
+                    const filteredServers = getVisibleServersFromOverview();
 
                     const serverRows = filteredServers.map(server => {
                         const canMutate = state.role === 'ADMIN';
                         const disabled = canMutate ? '' : 'disabled';
                         return `
                             <tr>
-                                <td class='px-2 py-2 font-medium'>${server.serverName}</td>
-                                <td class='px-2 py-2 text-slate-300'>${server.groupName}</td>
-                                <td class='px-2 py-2'><span class='rounded-full px-2 py-1 text-xs ${statusClass(server.status)}'>${server.status}</span></td>
+                                <td class='px-2 py-2'><input type='checkbox' data-server-select='${escapeHtml(server.serverName)}' ${state.selectedServers.has(String(server.serverName || '')) ? 'checked' : ''} class='h-3.5 w-3.5'></td>
+                                <td class='px-2 py-2 font-medium'>${escapeHtml(server.serverName)}</td>
+                                <td class='px-2 py-2 text-slate-300'>${escapeHtml(server.groupName)}</td>
+                                <td class='px-2 py-2'><span class='rounded-full px-2 py-1 text-xs ${statusClass(server.status)}'>${escapeHtml(server.status)}</span></td>
                                 <td class='px-2 py-2'>${server.playerCount}/${server.maxPlayers}</td>
                                 <td class='px-2 py-2'>${Number(server.tps || 0).toFixed(1)}</td>
-                                <td class='px-2 py-2 text-slate-400'>${server.wrapperId}</td>
+                                <td class='px-2 py-2 text-slate-400'>${escapeHtml(server.wrapperId)}</td>
                                 <td class='px-2 py-2'>
                                     <div class='flex gap-1'>
-                                        <button ${disabled} onclick="startLike('${server.groupName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-emerald-400 disabled:opacity-30'>start like</button>
-                                        <button ${disabled} onclick="restartServer('${server.serverName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-cyan-400 disabled:opacity-30'>restart</button>
-                                        <button ${disabled} onclick="stopServer('${server.serverName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-rose-400 disabled:opacity-30'>stop</button>
+                                        <button ${disabled} data-action='start-like' data-group='${escapeHtml(server.groupName)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-emerald-400 disabled:opacity-30'>start like</button>
+                                        <button ${disabled} data-action='restart-server' data-server='${escapeHtml(server.serverName)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-cyan-400 disabled:opacity-30'>restart</button>
+                                        <button ${disabled} data-action='stop-server' data-server='${escapeHtml(server.serverName)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-rose-400 disabled:opacity-30'>stop</button>
                                     </div>
                                 </td>
                             </tr>`;
                     }).join('');
-                    document.getElementById('serversBody').innerHTML = serverRows || '<tr><td colspan="7" class="px-2 py-3 text-slate-400">No servers</td></tr>';
+                    document.getElementById('serversBody').innerHTML = serverRows || '<tr><td colspan="8" class="px-2 py-3 text-slate-400">No servers</td></tr>';
+                    updateWrapperFilterOptions();
+                    updateSelectionSummary();
 
                     const queueItems = Object.entries(data.queue || {}).map(([group, size]) =>
-                        `<div class='flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2'><span>${group}</span><span class='font-semibold text-violet-300'>${size}</span></div>`
+                        `<div class='flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2'><span>${escapeHtml(group)}</span><span class='font-semibold text-violet-300'>${size}</span></div>`
                     ).join('');
                     document.getElementById('queueBox').innerHTML = queueItems || "<p class='text-slate-400'>No queue data</p>";
 
@@ -755,17 +1556,16 @@
                         const drainLabel = wrapper.draining ? 'undrain' : 'drain';
                         const disabled = canMutate ? '' : 'disabled';
                         return `<div class='rounded-lg border border-slate-800 bg-slate-950/60 p-3'>
-                            <div class='font-medium'>${wrapper.wrapperId}</div>
-                            <div class='text-xs text-slate-400'>${wrapper.hostname}</div>
+                            <div class='font-medium'>${escapeHtml(wrapper.wrapperId)}</div>
+                            <div class='text-xs text-slate-400'>${escapeHtml(wrapper.hostname)}</div>
                             <div class='mt-1 text-xs'>CPU ${Number(wrapper.cpuUsage || 0).toFixed(1)}% | RAM ${usedPct}% | Servers ${wrapper.activeServers}${drain}</div>
                             <div class='mt-2'>
-                                <button ${disabled} onclick="toggleWrapperDrain('${wrapper.wrapperId}', ${wrapper.draining ? 'false' : 'true'})" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-amber-400 disabled:opacity-30'>${drainLabel}</button>
+                                <button ${disabled} data-action='toggle-wrapper-drain' data-wrapper='${escapeHtml(wrapper.wrapperId)}' data-draining='${wrapper.draining ? 'false' : 'true'}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-amber-400 disabled:opacity-30'>${drainLabel}</button>
                             </div>
                         </div>`;
                     }).join('');
                     document.getElementById('wrappersBox').innerHTML = wrappers || "<p class='text-slate-400'>No wrappers connected</p>";
                 }
-
                 function renderAlerts(data) {
                     const active = data.active || [];
                     const items = active.slice(0, 20).map(alert => {
@@ -777,20 +1577,22 @@
                                 : 'border-slate-700 bg-slate-950/40 text-slate-300');
                         return `<div class='rounded-lg border ${cls} p-2'>
                             <div class='font-semibold'>${sev}</div>
-                            <div class='mt-1 text-xs'>${alert.component || '-'}</div>
-                            <div class='mt-1 text-xs'>${alert.message || '-'}</div>
+                            <div class='mt-1 text-xs'>${escapeHtml(alert.component || '-')}</div>
+                            <div class='mt-1 text-xs'>${escapeHtml(alert.message || '-')}</div>
                         </div>`;
                     }).join('');
                     document.getElementById('alertsBox').innerHTML = items || "<p class='text-slate-400'>No active alerts</p>";
                 }
-
                 function renderLogs(data) {
                     const lines = (data.lines || []);
                     const filter = (document.getElementById('logFilter').value || '').trim().toLowerCase();
-                    const filtered = filter ? lines.filter(line => line.toLowerCase().includes(filter)) : lines;
+                    const level = (document.getElementById('logLevelFilter')?.value || 'all').toUpperCase();
+                    const byLevel = level === 'ALL' || level === 'all'
+                        ? lines
+                        : lines.filter(line => line.toUpperCase().includes('[' + level + ']') || line.toUpperCase().includes(level + ':'));
+                    const filtered = filter ? byLevel.filter(line => line.toLowerCase().includes(filter)) : byLevel;
                     document.getElementById('logsBox').textContent = filtered.slice(-250).join('\n');
                 }
-
                 function renderSetup(report) {
                     const summary = report.summary || {};
                     document.getElementById('setupSummary').textContent =
@@ -801,10 +1603,10 @@
                         const cls = healthy
                             ? 'border-emerald-700/40 bg-emerald-950/20'
                             : 'border-rose-700/40 bg-rose-950/20';
-                        const issues = (group.issues || []).map(issue => `<li>${issue}</li>`).join('');
+                        const issues = (group.issues || []).map(issue => `<li>${escapeHtml(issue)}</li>`).join('');
                         return `<div class='rounded-xl border ${cls} p-3 text-xs'>
-                            <div class='font-semibold text-sm'>${group.groupName}</div>
-                            <div class='mt-1 text-slate-300'>dynamic: ${group.dynamic} | proxy: ${group.proxyGroup}</div>
+                            <div class='font-semibold text-sm'>${escapeHtml(group.groupName)}</div>
+                            <div class='mt-1 text-slate-300'>dynamic: ${escapeHtml(group.dynamic)} | proxy: ${escapeHtml(group.proxyGroup)}</div>
                             <div class='mt-1 text-slate-300'>jar: ${group.jarFound ? 'ok' : 'missing'}</div>
                             <div class='mt-1 text-slate-300 break-all'>template: ${group.templateExists ? 'ok' : 'missing'}</div>
                             ${healthy ? "<div class='mt-2 text-emerald-300'>Healthy</div>" : `<ul class='mt-2 list-disc pl-5 text-rose-200'>${issues}</ul>`}
@@ -816,9 +1618,9 @@
                 function renderCluster(info) {
                     document.getElementById('clusterState').textContent = `cluster: ${info.clusterState || 'UNKNOWN'}`;
                     document.getElementById('clusterBox').innerHTML = `
-                        <div>Master ID: <span class='text-slate-100'>${info.masterId || '-'}</span></div>
+                        <div>Master ID: <span class='text-slate-100'>${escapeHtml(info.masterId || '-')}</span></div>
                         <div>Primary: <span class='text-slate-100'>${info.isPrimary ? 'yes' : 'no'}</span></div>
-                        <div>Primary ID: <span class='text-slate-100'>${info.primaryMasterId || '-'}</span></div>
+                        <div>Primary ID: <span class='text-slate-100'>${escapeHtml(info.primaryMasterId || '-')}</span></div>
                         <div>Nodes: <span class='text-slate-100'>${info.clusterNodes || 0}</span></div>`;
                 }
 
@@ -829,9 +1631,9 @@
                         const stateTxt = n.state || n.status || 'unknown';
                         const host = n.hostname || n.host || '-';
                         return `<div class='flex items-center justify-between rounded border border-slate-800 px-2 py-1'>
-                            <span>${nodeId}</span>
-                            <span class='text-slate-400'>${host}</span>
-                            <span>${stateTxt}</span>
+                            <span>${escapeHtml(nodeId)}</span>
+                            <span class='text-slate-400'>${escapeHtml(host)}</span>
+                            <span>${escapeHtml(stateTxt)}</span>
                         </div>`;
                     }).join('');
                     document.getElementById('clusterNodesBox').innerHTML = lines || "<p class='text-slate-400'>No cluster nodes</p>";
@@ -841,7 +1643,7 @@
                     const entries = Object.entries(policies || {});
                     const html = entries.map(([group, p]) => `
                         <div class='rounded-lg border border-slate-800 bg-slate-900/40 p-2'>
-                            <div class='font-semibold text-slate-100'>${group}</div>
+                            <div class='font-semibold text-slate-100'>${escapeHtml(group)}</div>
                             <div>min/max: ${p.minServers}/${p.maxServers}</div>
                             <div>up/down: ${p.scaleUpThreshold}/${p.scaleDownThreshold}</div>
                             <div>predictive: ${p.predictiveScaling ? 'on' : 'off'}</div>
@@ -894,11 +1696,11 @@
                     const wrappers = (overview.wrappers || []).slice();
                     const byCpu = servers.slice().sort((a, b) => Number(b.cpuUsage || 0) - Number(a.cpuUsage || 0)).slice(0, 5);
                     const byMem = servers.slice().sort((a, b) => Number(b.memoryUsage || 0) - Number(a.memoryUsage || 0)).slice(0, 5);
-                    const cpuHtml = byCpu.map(s => `<div>${s.serverName}: <span class='text-cyan-300'>${Number(s.cpuUsage || 0).toFixed(1)}%</span></div>`).join('');
-                    const memHtml = byMem.map(s => `<div>${s.serverName}: <span class='text-violet-300'>${Number(s.memoryUsage || 0).toFixed(1)}%</span></div>`).join('');
+                    const cpuHtml = byCpu.map(s => `<div>${escapeHtml(s.serverName)}: <span class='text-cyan-300'>${Number(s.cpuUsage || 0).toFixed(1)}%</span></div>`).join('');
+                    const memHtml = byMem.map(s => `<div>${escapeHtml(s.serverName)}: <span class='text-violet-300'>${Number(s.memoryUsage || 0).toFixed(1)}%</span></div>`).join('');
                     const wrapHtml = wrappers.map(w => {
                         const used = w.maxMemory > 0 ? Math.round(((w.maxMemory - w.availableMemory) / w.maxMemory) * 100) : 0;
-                        return `<div>${w.wrapperId}: RAM ${used}% | CPU ${Number(w.cpuUsage || 0).toFixed(1)}%</div>`;
+                        return `<div>${escapeHtml(w.wrapperId)}: RAM ${used}% | CPU ${Number(w.cpuUsage || 0).toFixed(1)}%</div>`;
                     }).join('');
                     document.getElementById('topCpuBox').innerHTML = cpuHtml || '<p>No data</p>';
                     document.getElementById('topMemBox').innerHTML = memHtml || '<p>No data</p>';
@@ -1096,7 +1898,7 @@
 
                 function applyRoleState() {
                     const isAdmin = state.role === 'ADMIN';
-                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnConfigSet', 'btnRestartUnhealthy', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnConsoleSend'].forEach(id => {
+                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnConfigSet', 'btnRestartUnhealthy', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnConsoleSend', 'btnBulkRestart', 'btnBulkStop'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.disabled = !isAdmin;
                     });
@@ -1109,8 +1911,11 @@
                     }
                     const baseUrl = state.wsUrl || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8090/live`;
                     const separator = baseUrl.includes('?') ? '&' : '?';
-                    const wsToken = state.wsTicket || state.apiKey;
-                    const wsUrl = `${baseUrl}${separator}token=${encodeURIComponent(wsToken)}`;
+                    if (!state.wsTicket) {
+                        document.getElementById('wsState').textContent = 'WS: no ticket';
+                        return;
+                    }
+                    const wsUrl = `${baseUrl}${separator}token=${encodeURIComponent(state.wsTicket)}`;
                     state.ws = new WebSocket(wsUrl);
                     document.getElementById('wsState').textContent = 'WS: connecting';
                     state.ws.onopen = () => {
@@ -1155,31 +1960,128 @@
                 document.getElementById('consoleServerSelect').addEventListener('change', () => loadConsoleTail().catch(() => {}));
                 document.getElementById('consoleCommandInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); sendConsoleCommand().catch(err => showToast('error', 'Console send failed', err.message)); } });
                 document.getElementById('serverFilter').addEventListener('input', () => {
+                    persistUiPreference('cloud_ui_server_filter', document.getElementById('serverFilter').value);
                     if (state.overview) renderOverview(state.overview);
                 });
                 document.getElementById('logFilter').addEventListener('input', () => {
+                    persistUiPreference('cloud_ui_log_filter', document.getElementById('logFilter').value);
                     renderLogs(state.logs);
                 });
-                document.getElementById('refreshInterval').addEventListener('change', () => showToast('success', 'Auto refresh updated'));
+                document.getElementById('refreshInterval').addEventListener('change', () => {
+                    persistUiPreference('cloud_ui_refresh_interval', document.getElementById('refreshInterval').value);
+                    updateAutoRefreshCountdown();
+                    showToast('success', 'Auto refresh updated');
+                });
                 document.getElementById('themeToggle').addEventListener('click', () => toggleTheme());
+                document.getElementById('serverStatusFilter').addEventListener('change', () => {
+                    persistUiPreference('cloud_ui_server_status_filter', document.getElementById('serverStatusFilter').value);
+                    if (state.overview) renderOverview(state.overview);
+                });
+                document.getElementById('serverWrapperFilter').addEventListener('change', () => {
+                    persistUiPreference('cloud_ui_server_wrapper_filter', document.getElementById('serverWrapperFilter').value);
+                    if (state.overview) renderOverview(state.overview);
+                });
+                document.getElementById('logLevelFilter').addEventListener('change', () => {
+                    persistUiPreference('cloud_ui_log_level_filter', document.getElementById('logLevelFilter').value);
+                    renderLogs(state.logs);
+                });
+                document.getElementById('btnBulkRestart').addEventListener('click', () => runBulkServerAction('restart').catch(err => showToast('error', 'Bulk restart failed', err.message)));
+                document.getElementById('btnBulkStop').addEventListener('click', () => runBulkServerAction('stop').catch(err => showToast('error', 'Bulk stop failed', err.message)));
+                document.getElementById('btnClearSelection').addEventListener('click', () => {
+                    state.selectedServers.clear();
+                    if (state.overview) renderOverview(state.overview);
+                });
+                document.getElementById('serverSelectAll').addEventListener('change', (ev) => {
+                    const visible = getVisibleServersFromOverview();
+                    if (ev.target.checked) {
+                        visible.forEach(s => state.selectedServers.add(String(s.serverName || '')));
+                    } else {
+                        visible.forEach(s => state.selectedServers.delete(String(s.serverName || '')));
+                    }
+                    if (state.overview) renderOverview(state.overview);
+                });
+                document.getElementById('btnToggleAutoRefresh').addEventListener('click', () => {
+                    setAutoRefreshPaused(!state.autoRefreshPaused);
+                });
+                document.addEventListener('change', (ev) => {
+                    const cb = ev.target && ev.target.matches ? ev.target : null;
+                    if (!cb) return;
+                    if (cb.matches('input[data-server-select]')) {
+                        const name = String(cb.getAttribute('data-server-select') || '');
+                        if (!name) return;
+                        if (cb.checked) state.selectedServers.add(name); else state.selectedServers.delete(name);
+                        updateSelectionSummary();
+                    }
+                });
+
+                document.addEventListener('click', (ev) => {
+                    const button = ev.target && ev.target.closest ? ev.target.closest('button[data-action]') : null;
+                    if (!button || button.disabled) return;
+                    const action = (button.dataset.action || '').trim();
+                    if (!action) return;
+
+                    const run = async () => {
+                        if (action === 'start-like') {
+                            await startLike(button.dataset.group || '');
+                            return;
+                        }
+                        if (action === 'restart-server') {
+                            await restartServer(button.dataset.server || '');
+                            return;
+                        }
+                        if (action === 'stop-server') {
+                            await stopServer(button.dataset.server || '');
+                            return;
+                        }
+                        if (action === 'toggle-wrapper-drain') {
+                            const nextDraining = (button.dataset.draining || '').toLowerCase() === 'true';
+                            await toggleWrapperDrain(button.dataset.wrapper || '', nextDraining);
+                        }
+                    };
+
+                    run().catch(err => {
+                        showToast('error', 'Action failed', err && err.message ? err.message : String(err));
+                    });
+                });
+                function setMobileNavOpen(open) {
+                    const mobileNav = document.getElementById('mobileNav');
+                    const mobileNavBackdrop = document.getElementById('mobileNavBackdrop');
+                    const navToggle = document.getElementById('navToggle');
+                    if (mobileNav) mobileNav.classList.toggle('hidden', !open);
+                    if (mobileNavBackdrop) mobileNavBackdrop.classList.toggle('hidden', !open);
+                    if (navToggle) navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+                    document.body.classList.toggle('mobile-nav-open', open);
+                }
+
+                function closeMobileNav() {
+                    setMobileNavOpen(false);
+                }
+
                 document.getElementById('navToggle').addEventListener('click', () => {
                     const mobileNav = document.getElementById('mobileNav');
-                    const navToggle = document.getElementById('navToggle');
-                    const opening = mobileNav.classList.contains('hidden');
-                    mobileNav.classList.toggle('hidden');
-                    navToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+                    const opening = mobileNav ? mobileNav.classList.contains('hidden') : false;
+                    setMobileNavOpen(opening);
                 });
-                document.querySelectorAll('#mobileNav a').forEach(el => {
+
+                const navBackdrop = document.getElementById('mobileNavBackdrop');
+                if (navBackdrop) {
+                    navBackdrop.addEventListener('click', closeMobileNav);
+                }
+                document.querySelectorAll('#mobileNav a, #mobileNavQuick a').forEach(el => {
                     el.addEventListener('click', () => {
-                        document.getElementById('mobileNav').classList.add('hidden');
-                        document.getElementById('navToggle').setAttribute('aria-expanded', 'false');
+                        closeMobileNav();
                     });
                 });
                 window.addEventListener('beforeunload', () => stopConsolePolling());
                 window.addEventListener('resize', () => {
                     if (window.innerWidth >= 768) {
-                        document.getElementById('mobileNav').classList.add('hidden');
-                        document.getElementById('navToggle').setAttribute('aria-expanded', 'false');
+                        closeMobileNav();
+                    }
+                });
+                window.addEventListener('keydown', (ev) => {
+                    if (ev.key === 'Escape') {
+                        closeServerDrawer();
+                        closeMobileNav();
                     }
                 });
 
@@ -1190,4 +2092,46 @@
         </body>
         </html>
         
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

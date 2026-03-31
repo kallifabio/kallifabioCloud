@@ -112,7 +112,7 @@ public class LiveWebSocketServer extends WebSocketServer {
             if (parts.length != 2) {
                 continue;
             }
-            if ("token".equalsIgnoreCase(parts[0]) || "apiKey".equalsIgnoreCase(parts[0])) {
+            if ("token".equalsIgnoreCase(parts[0])) {
                 return URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
             }
         }

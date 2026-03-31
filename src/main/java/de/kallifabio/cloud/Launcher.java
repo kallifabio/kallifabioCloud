@@ -102,7 +102,7 @@ public class Launcher {
         ConsoleScreenManager.printToTerminal(ConsoleColors.RESET + " ");
         ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+----------------------------------------------------------------+");
         ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.YELLOW +
-                "          KalliCloud Enterprise - Version 1.0.1                " + ConsoleColors.CYAN + "|");
+                "          KalliCloud Enterprise - Version 1.0.2                " + ConsoleColors.CYAN + "|");
         ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "|" + ConsoleColors.WHITE +
                 "     Multi-Master Cluster | Smart Auto-Scaling | REST API      " + ConsoleColors.CYAN + "|");
         ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+----------------------------------------------------------------+");
@@ -332,4 +332,5 @@ class ConsoleScreenManagerHelper {
         return String.format("%-" + n + "s", s);
     }
 }
+
 

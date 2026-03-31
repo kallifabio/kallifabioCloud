@@ -54,9 +54,12 @@ public class CloudHttpServer {
     private final Map<String, Long> liveWsTickets = new ConcurrentHashMap<>();
     private final Map<String, Deque<Long>> requestTimestampsByIp = new ConcurrentHashMap<>();
     private final Map<String, Long> blockedIps = new ConcurrentHashMap<>();
+    private volatile Set<String> corsAllowedOrigins = Set.of("*");
+    private volatile long lastRateLimitCleanupAt = 0L;
     private static final int RATE_LIMIT_PER_MINUTE = 600;
     private static final long BLOCK_DURATION_MS = 60 * 1000L;
     private static final long WS_TICKET_TTL_MS = 2 * 60 * 1000L;
+    private static final long RATE_LIMIT_CLEANUP_INTERVAL_MS = 60 * 1000L;
     private final Deque<Map<String, Object>> metricHistory = new ArrayDeque<>();
     private boolean tlsEnabled = false;
     private int port = DEFAULT_PORT;
@@ -101,6 +104,7 @@ public class CloudHttpServer {
     private void startServer() throws IOException {
         Master master = Master.getInstance();
         tlsEnabled = master != null && master.getConfigManager().isApiTlsEnabled();
+        corsAllowedOrigins = resolveAllowedOrigins(master);
         if (master != null) {
             try {
                 port = Integer.parseInt(master.getConfigManager().getMaster("CloudMaster.API.Port"));
@@ -244,7 +248,7 @@ public class CloudHttpServer {
         Map<String, Object> health = new HashMap<>();
         health.put("status", "UP");
         health.put("timestamp", System.currentTimeMillis());
-        health.put("version", "1.0.1");
+        health.put("version", "1.0.2");
 
         sendResponse(exchange, 200, health);
     }
@@ -531,7 +535,7 @@ public class CloudHttpServer {
             serverInfo.put("networkMode", server.networkMode);
             serverInfo.put("diskReadBytes", server.diskReadBytes);
             serverInfo.put("diskWriteBytes", server.diskWriteBytes);  // FIX: war server.ram
-            serverInfo.put("port", server.port);  // NEU: Port hinzugefügt
+            serverInfo.put("port", server.port);  // NEU: Port hinzugefÃ¼gt
             serverInfo.put("lastUpdate", server.lastUpdate);  // FIX: statt getStartTime()
             servers.add(serverInfo);
         });
@@ -1549,20 +1553,6 @@ public class CloudHttpServer {
         if (resolved != null) {
             return resolved;
         }
-        String query = exchange.getRequestURI().getQuery();
-        if (query == null || query.isBlank()) {
-            return null;
-        }
-        for (String pair : query.split("&")) {
-            String[] parts = pair.split("=", 2);
-            if (parts.length == 2 && "apiKey".equalsIgnoreCase(parts[0])) {
-                String decoded = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
-                resolved = resolvePresentedApiKey(decoded);
-                if (resolved != null) {
-                    return resolved;
-                }
-            }
-        }
         return null;
     }
 
@@ -1575,9 +1565,6 @@ public class CloudHttpServer {
         String sanitized = sanitizeApiKey(token);
         if (sanitized == null || sanitized.isBlank()) {
             return false;
-        }
-        if (isKnownApiKey(sanitized)) {
-            return true;
         }
         Long expiresAt = liveWsTickets.get(sanitized);
         long now = System.currentTimeMillis();
@@ -1662,6 +1649,7 @@ public class CloudHttpServer {
     private boolean checkRateLimit(HttpExchange exchange) {
         String ip = getClientIp(exchange);
         long now = System.currentTimeMillis();
+        cleanupRateLimitState(now);
 
         Long blockedUntil = blockedIps.get(ip);
         if (blockedUntil != null && blockedUntil > now) {
@@ -1686,6 +1674,30 @@ public class CloudHttpServer {
             return false;
         }
         return true;
+    }
+
+    private void cleanupRateLimitState(long now) {
+        if (now - lastRateLimitCleanupAt < RATE_LIMIT_CLEANUP_INTERVAL_MS) {
+            return;
+        }
+        lastRateLimitCleanupAt = now;
+
+        blockedIps.entrySet().removeIf(entry -> entry.getValue() == null || entry.getValue() <= now);
+        requestTimestampsByIp.entrySet().removeIf(entry -> {
+            Deque<Long> timestamps = entry.getValue();
+            if (timestamps == null) {
+                return true;
+            }
+            while (!timestamps.isEmpty()) {
+                Long first = timestamps.peekFirst();
+                if (first == null || now - first > 60_000) {
+                    timestamps.pollFirst();
+                } else {
+                    break;
+                }
+            }
+            return timestamps.isEmpty();
+        });
     }
 
     private boolean isRateLimitedNow(HttpExchange exchange) {
@@ -1758,13 +1770,48 @@ public class CloudHttpServer {
         String json = gson.toJson(data);
         byte[] payload = json.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, X-API-Key");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+        applyCorsHeaders(exchange);
         exchange.sendResponseHeaders(statusCode, payload.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(payload);
         }
+    }
+
+    private void applyCorsHeaders(HttpExchange exchange) {
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        String allowOrigin = "*";
+        if (!corsAllowedOrigins.contains("*")) {
+            if (origin != null && corsAllowedOrigins.contains(origin)) {
+                allowOrigin = origin;
+            } else if (!corsAllowedOrigins.isEmpty()) {
+                allowOrigin = corsAllowedOrigins.iterator().next();
+            }
+            exchange.getResponseHeaders().set("Vary", "Origin");
+        }
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", allowOrigin);
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, X-API-Key, Authorization");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    }
+
+    private Set<String> resolveAllowedOrigins(Master master) {
+        if (master == null || master.getConfigManager() == null) {
+            return Set.of("*");
+        }
+        String configured = master.getConfigManager().getApiAllowedOrigins();
+        if (configured == null || configured.isBlank()) {
+            return Set.of("*");
+        }
+        if ("*".equals(configured.trim())) {
+            return Set.of("*");
+        }
+        Set<String> values = new LinkedHashSet<>();
+        for (String part : configured.split(",")) {
+            String entry = part == null ? "" : part.trim();
+            if (!entry.isEmpty()) {
+                values.add(entry);
+            }
+        }
+        return values.isEmpty() ? Set.of("*") : values;
     }
 
     private String loadDashboardHtmlResource() {
@@ -1792,6 +1839,24 @@ public class CloudHttpServer {
         String resourceHtml = loadDashboardHtmlResource();
         if (resourceHtml != null && !resourceHtml.isBlank()) {
             return resourceHtml;
+        }
+        CentralLogger.warn("Dashboard", "Dashboard-Resource fehlt, nutze sicheren Minimal-Fallback");
+        String minimalFallback = """
+        <!DOCTYPE html>
+        <html lang='en'>
+        <head>
+            <meta charset='UTF-8'>
+            <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+            <title>KalliCloud Dashboard</title>
+        </head>
+        <body style='font-family: sans-serif; background: #0b1220; color: #dbeafe; padding: 24px;'>
+            <h1>KalliCloud Dashboard</h1>
+            <p>Dashboard resource not found. Please restore <code>src/main/resources/dashboard/index.html</code>.</p>
+        </body>
+        </html>
+        """;
+        if (System.nanoTime() >= 0) {
+            return minimalFallback;
         }
         return """
         <!DOCTYPE html>
@@ -2301,9 +2366,9 @@ public class CloudHttpServer {
                                 <td class='px-2 py-2 text-slate-400'>${server.wrapperId}</td>
                                 <td class='px-2 py-2'>
                                     <div class='flex gap-1'>
-                                        <button ${disabled} onclick="startLike('${server.groupName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-emerald-400 disabled:opacity-30'>start like</button>
-                                        <button ${disabled} onclick="restartServer('${server.serverName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-cyan-400 disabled:opacity-30'>restart</button>
-                                        <button ${disabled} onclick="stopServer('${server.serverName}')" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-rose-400 disabled:opacity-30'>stop</button>
+                                        <button ${disabled} data-action='start-like' data-group='${encodeURIComponent(server.groupName || '')}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-emerald-400 disabled:opacity-30'>start like</button>
+                                        <button ${disabled} data-action='restart-server' data-server='${encodeURIComponent(server.serverName || '')}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-cyan-400 disabled:opacity-30'>restart</button>
+                                        <button ${disabled} data-action='stop-server' data-server='${encodeURIComponent(server.serverName || '')}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-rose-400 disabled:opacity-30'>stop</button>
                                     </div>
                                 </td>
                             </tr>`;
@@ -2326,7 +2391,7 @@ public class CloudHttpServer {
                             <div class='text-xs text-slate-400'>${wrapper.hostname}</div>
                             <div class='mt-1 text-xs'>CPU ${Number(wrapper.cpuUsage || 0).toFixed(1)}% | RAM ${usedPct}% | Servers ${wrapper.activeServers}${drain}</div>
                             <div class='mt-2'>
-                                <button ${disabled} onclick="toggleWrapperDrain('${wrapper.wrapperId}', ${wrapper.draining ? 'false' : 'true'})" class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-amber-400 disabled:opacity-30'>${drainLabel}</button>
+                                <button ${disabled} data-action='toggle-wrapper-drain' data-wrapper='${encodeURIComponent(wrapper.wrapperId || '')}' data-draining='${wrapper.draining ? 'false' : 'true'}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-amber-400 disabled:opacity-30'>${drainLabel}</button>
                             </div>
                         </div>`;
                     }).join('');
@@ -2575,6 +2640,44 @@ public class CloudHttpServer {
                     renderLogs(state.logs);
                 });
                 document.getElementById('themeToggle').addEventListener('click', () => toggleTheme());
+                document.addEventListener('click', (ev) => {
+                    const button = ev.target && ev.target.closest ? ev.target.closest('button[data-action]') : null;
+                    if (!button || button.disabled) return;
+                    const action = (button.dataset.action || '').trim();
+                    if (!action) return;
+
+                    const decode = (value) => {
+                        if (!value) return '';
+                        try {
+                            return decodeURIComponent(value);
+                        } catch (_) {
+                            return value;
+                        }
+                    };
+
+                    const run = async () => {
+                        if (action === 'start-like') {
+                            await startLike(decode(button.dataset.group || ''));
+                            return;
+                        }
+                        if (action === 'restart-server') {
+                            await restartServer(decode(button.dataset.server || ''));
+                            return;
+                        }
+                        if (action === 'stop-server') {
+                            await stopServer(decode(button.dataset.server || ''));
+                            return;
+                        }
+                        if (action === 'toggle-wrapper-drain') {
+                            const nextDraining = (button.dataset.draining || '').toLowerCase() === 'true';
+                            await toggleWrapperDrain(decode(button.dataset.wrapper || ''), nextDraining);
+                        }
+                    };
+
+                    run().catch(err => {
+                        showToast('error', 'Action failed', err && err.message ? err.message : String(err));
+                    });
+                });
                 document.getElementById('navToggle').addEventListener('click', () => {
                     const mobileNav = document.getElementById('mobileNav');
                     const navToggle = document.getElementById('navToggle');
@@ -2662,6 +2765,7 @@ public class CloudHttpServer {
         return wsPort;
     }
 }
+
 
 
 

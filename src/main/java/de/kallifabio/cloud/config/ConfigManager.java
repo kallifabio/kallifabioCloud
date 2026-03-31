@@ -429,6 +429,10 @@ public class ConfigManager {
         return masterConfigData.getString("CloudMaster.Alerts.WebhookUrl", "");
     }
 
+    public String getApiAllowedOrigins() {
+        return masterConfigData.getString("CloudMaster.API.AllowedOrigins", "*");
+    }
+
     public boolean isApiTlsEnabled() {
         return masterConfigData.getBoolean("CloudMaster.API.TLS.Enabled", false);
     }
