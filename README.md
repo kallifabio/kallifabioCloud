@@ -36,6 +36,8 @@ Ein modulares Minecraft-Cloudsystem mit:
 - REST API (`/api/v1/*`)
 - Live WebSocket Stream
 - Dashboard mit TailwindCSS
+- Dashboard Unterseiten (`/dashboard/overview`, `/dashboard/servers`, `/dashboard/monitoring`, `/dashboard/operations`, `/dashboard/setup`, `/dashboard/advanced`, `/dashboard/console`)
+- Live Console im Dashboard (Screen-Auswahl, Tail, Command-Send)
 - API Key Auth mit Rollen (`ADMIN`, `VIEWER`)
 - Key Rotation Endpoint
 - Optional TLS für REST + WSS
@@ -296,13 +298,18 @@ Aktueller Status:
 - `GET /api/v1/setup/report`
 - `POST /api/v1/wrappers/drain`
 - `GET /api/v1/logs/recent`
+- `GET /api/v1/console/screens`
+- `GET /api/v1/console/tail?serverName=<name>&limit=<n>`
+- `POST /api/v1/console/send`
 
 ---
 
 ## API Dokumentation
 
-- Vollständige API-Doku für GitHub:
+- Vollständige REST-API-Doku für GitHub:
   - [docs/CLOUD_API.md](docs/CLOUD_API.md)
+- Java Plugin-SDK Doku für GitHub:
+  - [docs/JAVA_CLOUD_API.md](docs/JAVA_CLOUD_API.md)
 
 ---
 
@@ -366,3 +373,6 @@ Datei:
 ## Lizenz
 
 Interne Entwicklung / projektspezifisch.
+
+
+
