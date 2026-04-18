@@ -23,7 +23,6 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 public class MonitoringService {
 
@@ -35,8 +34,9 @@ public class MonitoringService {
     private final Map<String, Deque<ServerMetric>> serverMetrics = new ConcurrentHashMap<>();
 
     // Alerts
-    private final List<Alert> activeAlerts = new CopyOnWriteArrayList<>();
-    private final List<Alert> alertHistory = new CopyOnWriteArrayList<>();
+    private final Deque<Alert> activeAlerts = new ConcurrentLinkedDeque<>();
+    private final Deque<Alert> alertHistory = new ConcurrentLinkedDeque<>();
+    private final Set<String> activeAlertSignatures = ConcurrentHashMap.newKeySet();
     private final Map<String, Long> lastAlertByKey = new ConcurrentHashMap<>();
     private final Map<String, Integer> consecutiveBreaches = new ConcurrentHashMap<>();
 
@@ -52,6 +52,7 @@ public class MonitoringService {
     private volatile long criticalAlertCooldownMs = 120_000L;
     private volatile long infoAlertCooldownMs = 300_000L;
     private final int hostCores = Math.max(1, Runtime.getRuntime().availableProcessors());
+    private static final int MAX_ALERT_HISTORY = 10_000;
 
     public MonitoringService(Master master) {
         this.master = master;
@@ -212,34 +213,33 @@ public class MonitoringService {
     }
 
     private void createAlert(String severity, String componentType, String componentId, String message) {
-        // Check if alert already exists
         String componentKey = componentType + ":" + componentId;
-        boolean exists = activeAlerts.stream()
-                .anyMatch(a -> a.component.equals(componentKey) && a.message.equals(message));
+        String signature = componentKey + "|" + message;
+        if (!activeAlertSignatures.add(signature)) {
+            return;
+        }
 
-        if (!exists) {
-            Alert alert = new Alert(
-                    UUID.randomUUID().toString(),
-                    severity,
-                    componentKey,
-                    message,
-                    System.currentTimeMillis()
-            );
+        Alert alert = new Alert(
+                UUID.randomUUID().toString(),
+                severity,
+                componentKey,
+                message,
+                System.currentTimeMillis()
+        );
 
-            activeAlerts.add(alert);
-            alertHistory.add(alert);
+        activeAlerts.addLast(alert);
+        alertHistory.addLast(alert);
 
-            // Keep only last 10000 in history
-            if (alertHistory.size() > 10000) {
-                alertHistory.remove(0);
-            }
+        // Keep only last N in history
+        while (alertHistory.size() > MAX_ALERT_HISTORY) {
+            alertHistory.pollFirst();
+        }
 
-            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " [" + severity + "] " + componentType + " " + componentId + ": " + message);
+        ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                " [" + severity + "] " + componentType + " " + componentId + ": " + message);
 
-            if ("CRITICAL".equalsIgnoreCase(severity) || "WARNING".equalsIgnoreCase(severity)) {
-                sendWebhookAlert(severity, componentType, componentId, message);
-            }
+        if ("CRITICAL".equalsIgnoreCase(severity) || "WARNING".equalsIgnoreCase(severity)) {
+            sendWebhookAlert(severity, componentType, componentId, message);
         }
     }
 
@@ -430,12 +430,24 @@ public class MonitoringService {
     }
 
     public void clearAlert(String alertId) {
-        activeAlerts.removeIf(a -> a.alertId.equals(alertId));
+        if (alertId == null || alertId.isBlank()) {
+            return;
+        }
+        Iterator<Alert> iterator = activeAlerts.iterator();
+        while (iterator.hasNext()) {
+            Alert alert = iterator.next();
+            if (alertId.equals(alert.alertId)) {
+                activeAlertSignatures.remove(alert.component + "|" + alert.message);
+                iterator.remove();
+                return;
+            }
+        }
     }
 
     public int clearAllAlerts() {
         int count = activeAlerts.size();
         activeAlerts.clear();
+        activeAlertSignatures.clear();
         return count;
     }
 
@@ -447,7 +459,14 @@ public class MonitoringService {
         long fiveMinutesAgo = now - (5 * 60 * 1000);
 
         // Cleanup old active alerts (older than 5 minutes)
-        activeAlerts.removeIf(alert -> alert.timestamp < fiveMinutesAgo);
+        Iterator<Alert> iterator = activeAlerts.iterator();
+        while (iterator.hasNext()) {
+            Alert alert = iterator.next();
+            if (alert.timestamp < fiveMinutesAgo) {
+                activeAlertSignatures.remove(alert.component + "|" + alert.message);
+                iterator.remove();
+            }
+        }
     }
 
     public Map<String, Object> getMonitoringSnapshot() {

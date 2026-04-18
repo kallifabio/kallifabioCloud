@@ -1,0 +1,42 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="KalliCloud SpigotMC Banner">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#040a1d"/>
+      <stop offset="60%" stop-color="#0a1735"/>
+      <stop offset="100%" stop-color="#0f2d5c"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#67e8f9"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <circle cx="1090" cy="110" r="220" fill="#0b2a55" opacity="0.35"/>
+  <circle cx="155" cy="640" r="260" fill="#0b2a55" opacity="0.24"/>
+
+  <g transform="translate(90,120)">
+    <rect x="0" y="0" width="200" height="200" rx="48" fill="#07142f" stroke="#1e3a8a" stroke-opacity="0.75"/>
+    <path d="M43 113c0-18 14-31 31-31 4-14 17-24 31-24 20 0 35 15 36 34 13 1 23 12 23 25 0 14-11 26-26 26H61c-11 0-18-8-18-19 0-4 1-7 0-11z"
+          fill="none" stroke="url(#accent)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="67" y1="95" x2="91" y2="95" stroke="url(#accent)" stroke-width="7" stroke-linecap="round"/>
+    <line x1="102" y1="95" x2="123" y2="95" stroke="url(#accent)" stroke-width="7" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(320,170)" font-family="Segoe UI, Inter, Arial, sans-serif">
+    <text x="0" y="95" fill="#f8fafc" font-size="92" font-weight="800">KalliCloud</text>
+    <text x="4" y="148" fill="#7dd3fc" font-size="34" font-weight="600">Cloudsystem for Modern Minecraft Networks</text>
+    <text x="4" y="218" fill="#cbd5e1" font-size="28" font-weight="500">Auto Scaling, Queue, Monitoring, Templates, REST API, Java Plugin API</text>
+
+    <g transform="translate(0,280)">
+      <rect x="0" y="0" width="200" height="48" rx="24" fill="#0d2145" stroke="#1e3a8a"/>
+      <text x="100" y="31" text-anchor="middle" fill="#cffafe" font-size="22" font-weight="700">Production Ready</text>
+
+      <rect x="218" y="0" width="240" height="48" rx="24" fill="#0d2145" stroke="#1e3a8a"/>
+      <text x="338" y="31" text-anchor="middle" fill="#cffafe" font-size="22" font-weight="700">Responsive Dashboard</text>
+
+      <rect x="476" y="0" width="220" height="48" rx="24" fill="#0d2145" stroke="#1e3a8a"/>
+      <text x="586" y="31" text-anchor="middle" fill="#cffafe" font-size="22" font-weight="700">Live Console</text>
+    </g>
+  </g>
+</svg>

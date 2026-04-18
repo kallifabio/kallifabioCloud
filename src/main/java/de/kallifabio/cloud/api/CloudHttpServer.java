@@ -8,7 +8,6 @@
 package de.kallifabio.cloud.api;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpsConfigurator;
@@ -44,6 +43,7 @@ public class CloudHttpServer {
     private HttpServer server;
     private LiveWebSocketServer liveWebSocketServer;
     private final Gson gson;
+    private volatile String cachedDashboardHtml;
     private static final int DEFAULT_PORT = 8081;
     private static final int DEFAULT_WS_PORT = 8090;
     private static final int PORT_FALLBACK_RANGE = 20;
@@ -66,7 +66,7 @@ public class CloudHttpServer {
     private int wsPort = DEFAULT_WS_PORT;
 
     public CloudHttpServer() {
-        this.gson = new GsonBuilder().setPrettyPrinting().create();
+        this.gson = new Gson();
         initializeApiKeys();
         try {
             startServer();
@@ -1505,7 +1505,6 @@ public class CloudHttpServer {
         snapshot.put("runningServers", master.getRunningServers().size());
         snapshot.put("connectedWrappers", master.getConnectedWrappers().size());
         snapshot.put("queueTotal", master.getPlayerQueueManager().getTotalQueued());
-        snapshot.put("servers", new ArrayList<>(master.getRunningServers().values()));
         return snapshot;
     }
 
@@ -1513,6 +1512,7 @@ public class CloudHttpServer {
         String html = generateDashboardHTML();
         byte[] payload = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/html");
+        exchange.getResponseHeaders().set("Cache-Control", "public, max-age=300");
         exchange.sendResponseHeaders(200, payload.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(payload);
@@ -1836,10 +1836,22 @@ public class CloudHttpServer {
     }
 
     private String generateDashboardHTML() {
-        String resourceHtml = loadDashboardHtmlResource();
-        if (resourceHtml != null && !resourceHtml.isBlank()) {
-            return resourceHtml;
+        String cached = cachedDashboardHtml;
+        if (cached != null && !cached.isBlank()) {
+            return cached;
         }
+
+        synchronized (this) {
+            if (cachedDashboardHtml != null && !cachedDashboardHtml.isBlank()) {
+                return cachedDashboardHtml;
+            }
+            String resourceHtml = loadDashboardHtmlResource();
+            if (resourceHtml != null && !resourceHtml.isBlank()) {
+                cachedDashboardHtml = resourceHtml;
+                return resourceHtml;
+            }
+        }
+
         CentralLogger.warn("Dashboard", "Dashboard-Resource fehlt, nutze sicheren Minimal-Fallback");
         String minimalFallback = """
         <!DOCTYPE html>

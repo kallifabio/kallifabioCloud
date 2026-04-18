@@ -68,6 +68,9 @@ public class LoadBalancerManager {
 
         // Use appropriate strategy
         LoadBalancingStrategy strategy = strategyMap.getOrDefault(groupName, LoadBalancingStrategy.LEAST_LOADED);
+        if (strategy == LoadBalancingStrategy.ROUND_ROBIN && servers.size() > 1) {
+            servers.sort(Comparator.comparing(s -> s.serverName));
+        }
         String selectedServer = selectServerByStrategy(servers, strategy);
 
         // Store affinity
@@ -84,12 +87,15 @@ public class LoadBalancerManager {
                 .filter(s -> s.groupName.equalsIgnoreCase(groupName))
                 .filter(s -> "ONLINE".equals(s.status))
                 .filter(s -> !isWrapperDraining(s.wrapperId))
-                .sorted(Comparator.comparing(s -> s.serverName))
                 .toList();
         if (servers.isEmpty()) {
             return null;
         }
         LoadBalancingStrategy strategy = strategyMap.getOrDefault(groupName, LoadBalancingStrategy.LEAST_LOADED);
+        if (strategy == LoadBalancingStrategy.ROUND_ROBIN && servers.size() > 1) {
+            servers = new ArrayList<>(servers);
+            servers.sort(Comparator.comparing(s -> s.serverName));
+        }
         return selectServerByStrategy(servers, strategy);
     }
 
@@ -103,7 +109,6 @@ public class LoadBalancerManager {
                     return load == null || load.acceptingPlayers;
                 })
                 .filter(s -> s.playerCount < s.maxPlayers)
-                .sorted(Comparator.comparing(s -> s.serverName))
                 .toList();
     }
 
