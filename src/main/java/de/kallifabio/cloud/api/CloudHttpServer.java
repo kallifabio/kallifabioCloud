@@ -174,6 +174,8 @@ public class CloudHttpServer {
         server.createContext("/api/v1/auth/rotate", this::handleRotateKey);
         server.createContext("/api/v1/status", this::handleStatus);
         server.createContext("/api/v1/dashboard/overview", this::handleDashboardOverview);
+        server.createContext("/api/v1/system/diagnostics", this::handleSystemDiagnostics);
+        server.createContext("/api/v1/system/capacity", this::handleSystemCapacityPlanner);
 
         // Cluster Management
         server.createContext("/api/v1/cluster/info", this::handleClusterInfo);
@@ -460,6 +462,383 @@ public class CloudHttpServer {
         status.put("uptime", System.currentTimeMillis());
 
         sendResponse(exchange, 200, status);
+    }
+
+    private void handleSystemDiagnostics(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        sendResponse(exchange, 200, buildSystemDiagnostics());
+    }
+
+    private void handleSystemCapacityPlanner(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        sendResponse(exchange, 200, buildSystemCapacityPlanner());
+    }
+
+    private Map<String, Object> buildSystemCapacityPlanner() {
+        Master master = Master.getInstance();
+        long now = System.currentTimeMillis();
+        List<Map<String, Object>> wrappers = new ArrayList<>();
+        List<Map<String, Object>> groups = new ArrayList<>();
+        List<String> recommendations = new ArrayList<>();
+        int healthyWrappers = 0;
+        int drainingWrappers = 0;
+        int totalWrapperMemory = 0;
+        int availableWrapperMemory = 0;
+        double cpuCritical = master.getConfigManager().getMonitoringCpuCritical();
+
+        for (var wrapper : master.getConnectedWrappers().values()) {
+            boolean draining = master.getLoadBalancerManager().isWrapperDraining(wrapper.getWrapperId());
+            boolean healthy = wrapper.isHealthy();
+            int maxMemory = Math.max(0, wrapper.getMaxMemory());
+            int availableMemory = Math.max(0, wrapper.getAvailableMemory());
+            totalWrapperMemory += maxMemory;
+            availableWrapperMemory += availableMemory;
+            if (healthy) {
+                healthyWrappers++;
+            }
+            if (draining) {
+                drainingWrappers++;
+            }
+
+            Map<String, Object> wrapperInfo = new LinkedHashMap<>();
+            wrapperInfo.put("wrapperId", wrapper.getWrapperId());
+            wrapperInfo.put("hostname", wrapper.getHostname());
+            wrapperInfo.put("routeHost", wrapper.getRouteHost());
+            wrapperInfo.put("healthy", healthy);
+            wrapperInfo.put("draining", draining);
+            wrapperInfo.put("maxMemoryMb", maxMemory);
+            wrapperInfo.put("availableMemoryMb", availableMemory);
+            wrapperInfo.put("usedMemoryMb", Math.max(0, maxMemory - availableMemory));
+            wrapperInfo.put("cpuUsage", Math.round(wrapper.getCpuUsage() * 10.0) / 10.0);
+            wrapperInfo.put("activeServers", wrapper.getActiveServers());
+            wrappers.add(wrapperInfo);
+        }
+
+        Map<String, Object> queueStats = new LinkedHashMap<>(master.getPlayerQueueManager().getQueueStats());
+        List<String> configuredGroups = new ArrayList<>(master.getConfigManager().getAllServerGroups());
+        for (String groupName : configuredGroups) {
+            int requiredRam = Math.max(1, safeInteger(master.getConfigManager().getRamForGroup(groupName), 1024));
+            int maxPlayers = Math.max(1, safeInteger(master.getConfigManager().getMaxPlayersForGroup(groupName), 100));
+            int minServers = Math.max(0, master.getConfigManager().getMinServersForGroup(groupName));
+            int maxServers = Math.max(minServers, master.getConfigManager().getMaxServersForGroup(groupName));
+            boolean maintenance = master.getConfigManager().isMaintenanceMode(groupName);
+            boolean dynamic = master.getConfigManager().isDynamicGroup(groupName);
+            int queuedPlayers = parseQueueSize(queueStats.get(groupName));
+
+            int runningServers = 0;
+            int onlineServers = 0;
+            int startingServers = 0;
+            int totalPlayers = 0;
+            for (ServerInstance server : master.getRunningServers().values()) {
+                if (!groupName.equalsIgnoreCase(String.valueOf(server.groupName))) {
+                    continue;
+                }
+                runningServers++;
+                totalPlayers += Math.max(0, server.playerCount);
+                String status = String.valueOf(server.status == null ? "" : server.status);
+                if ("ONLINE".equalsIgnoreCase(status)) {
+                    onlineServers++;
+                }
+                if ("STARTING".equalsIgnoreCase(status)) {
+                    startingServers++;
+                }
+            }
+
+            List<String> startableWrappers = new ArrayList<>();
+            String bestWrapperId = null;
+            int bestAvailableMemory = -1;
+            int smallestShortfall = Integer.MAX_VALUE;
+            for (var wrapper : master.getConnectedWrappers().values()) {
+                boolean healthy = wrapper.isHealthy();
+                boolean draining = master.getLoadBalancerManager().isWrapperDraining(wrapper.getWrapperId());
+                int availableMemory = Math.max(0, wrapper.getAvailableMemory());
+                boolean cpuOk = wrapper.getCpuUsage() < cpuCritical;
+                if (healthy && !draining) {
+                    smallestShortfall = Math.min(smallestShortfall, Math.max(0, requiredRam - availableMemory));
+                }
+                if (healthy && !draining && cpuOk && availableMemory >= requiredRam) {
+                    startableWrappers.add(wrapper.getWrapperId());
+                    if (availableMemory > bestAvailableMemory) {
+                        bestAvailableMemory = availableMemory;
+                        bestWrapperId = wrapper.getWrapperId();
+                    }
+                }
+            }
+            int shortfallMb = startableWrappers.isEmpty()
+                    ? (smallestShortfall == Integer.MAX_VALUE ? requiredRam : smallestShortfall)
+                    : 0;
+
+            int demandFromQueue = (int) Math.ceil((double) queuedPlayers / Math.max(1, maxPlayers));
+            int recommendedServers = Math.max(minServers, runningServers + demandFromQueue);
+            if (queuedPlayers > 0 && runningServers == 0) {
+                recommendedServers = Math.max(recommendedServers, 1);
+            }
+            recommendedServers = Math.min(maxServers, recommendedServers);
+            boolean canStartNow = !maintenance && runningServers < maxServers && !startableWrappers.isEmpty();
+
+            String recommendation;
+            if (maintenance) {
+                recommendation = "Maintenance is enabled. Keep capacity stable unless staff bypass is intended.";
+            } else if (runningServers >= maxServers) {
+                recommendation = "Group already reached MaxServers. Increase MaxServers before scaling further.";
+            } else if (startableWrappers.isEmpty()) {
+                recommendation = shortfallMb > 0
+                        ? "No wrapper has enough free RAM. Need at least " + shortfallMb + "MB more free RAM on one wrapper."
+                        : "No healthy non-draining wrapper is available for scheduling.";
+            } else if (recommendedServers > runningServers) {
+                recommendation = "Scale up recommended: queue/demand suggests " + recommendedServers + " server(s).";
+            } else {
+                recommendation = "Capacity looks balanced. No immediate scale-up required.";
+            }
+
+            if (!canStartNow && queuedPlayers > 0) {
+                recommendations.add(groupName + ": queued players exist, but planner cannot start more capacity now.");
+            } else if (recommendedServers > runningServers) {
+                recommendations.add(groupName + ": start " + (recommendedServers - runningServers)
+                        + " more server(s), best wrapper: " + (bestWrapperId == null ? "none" : bestWrapperId) + ".");
+            }
+
+            Map<String, Object> groupInfo = new LinkedHashMap<>();
+            groupInfo.put("groupName", groupName);
+            groupInfo.put("ramMb", requiredRam);
+            groupInfo.put("maxPlayers", maxPlayers);
+            groupInfo.put("minServers", minServers);
+            groupInfo.put("maxServers", maxServers);
+            groupInfo.put("runningServers", runningServers);
+            groupInfo.put("onlineServers", onlineServers);
+            groupInfo.put("startingServers", startingServers);
+            groupInfo.put("players", totalPlayers);
+            groupInfo.put("queuedPlayers", queuedPlayers);
+            groupInfo.put("maintenance", maintenance);
+            groupInfo.put("dynamic", dynamic);
+            groupInfo.put("tags", master.getConfigManager().getGroupTags(groupName));
+            groupInfo.put("canStartNow", canStartNow);
+            groupInfo.put("startableWrappers", startableWrappers);
+            groupInfo.put("bestWrapperId", bestWrapperId);
+            groupInfo.put("capacityShortfallMb", shortfallMb);
+            groupInfo.put("recommendedServers", recommendedServers);
+            groupInfo.put("recommendation", recommendation);
+            groups.add(groupInfo);
+        }
+
+        if (master.getConnectedWrappers().isEmpty()) {
+            recommendations.add("No wrapper connected. Start or reconnect a wrapper before planning capacity.");
+        }
+        if (drainingWrappers > 0) {
+            recommendations.add(drainingWrappers + " wrapper(s) are draining and excluded from new scheduling.");
+        }
+        if (recommendations.isEmpty()) {
+            recommendations.add("Planner found no immediate capacity action.");
+        }
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("groups", groups.size());
+        summary.put("healthyWrappers", healthyWrappers);
+        summary.put("drainingWrappers", drainingWrappers);
+        summary.put("totalWrapperMemoryMb", totalWrapperMemory);
+        summary.put("availableWrapperMemoryMb", availableWrapperMemory);
+        summary.put("queueTotal", master.getPlayerQueueManager().getTotalQueued());
+        summary.put("startableGroups", groups.stream().filter(group -> Boolean.TRUE.equals(group.get("canStartNow"))).count());
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("generatedAt", now);
+        payload.put("summary", summary);
+        payload.put("wrappers", wrappers);
+        payload.put("groups", groups);
+        payload.put("recommendations", recommendations);
+        return payload;
+    }
+
+    private int safeInteger(Integer value, int fallback) {
+        return value == null ? fallback : value;
+    }
+
+    private int parseQueueSize(Object value) {
+        if (value instanceof Number) {
+            return Math.max(0, ((Number) value).intValue());
+        }
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(String.valueOf(value)));
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
+    }
+
+    private Map<String, Object> buildSystemDiagnostics() {
+        Master master = Master.getInstance();
+        long now = System.currentTimeMillis();
+        List<Map<String, Object>> issues = new ArrayList<>();
+        List<String> recommendations = new ArrayList<>();
+
+        int runningServers = master.getRunningServers().size();
+        int onlineServers = 0;
+        int startingServers = 0;
+        int staleServers = 0;
+        int lowTpsServers = 0;
+        int proxyServers = 0;
+
+        for (ServerInstance server : master.getRunningServers().values()) {
+            String status = String.valueOf(server.status == null ? "" : server.status);
+            if ("ONLINE".equalsIgnoreCase(status)) {
+                onlineServers++;
+            }
+            if ("STARTING".equalsIgnoreCase(status)) {
+                startingServers++;
+                if (now - server.startTime > 120_000L) {
+                    addDiagnosticIssue(issues, "WARNING", "server:" + server.serverName,
+                            "Server has been STARTING for more than 120 seconds.",
+                            "Check the screen tail and restart the server if startup is stuck.");
+                }
+            }
+            if (now - server.lastUpdate > 60_000L) {
+                staleServers++;
+                addDiagnosticIssue(issues, "WARNING", "server:" + server.serverName,
+                        "No fresh metrics for more than 60 seconds.",
+                        "Verify wrapper connectivity and server heartbeat forwarding.");
+            }
+            if (!"Proxy".equalsIgnoreCase(server.groupName) && server.tps > 0 && server.tps < 18.0) {
+                lowTpsServers++;
+                addDiagnosticIssue(issues, "WARNING", "server:" + server.serverName,
+                        "TPS is below 18.0.",
+                        "Inspect plugins, world load, CPU pressure and recent console logs.");
+            }
+            if ("Proxy".equalsIgnoreCase(server.groupName) && "ONLINE".equalsIgnoreCase(status)) {
+                proxyServers++;
+            }
+        }
+
+        int wrapperCount = master.getConnectedWrappers().size();
+        int unhealthyWrappers = 0;
+        int drainingWrappers = 0;
+        int totalWrapperMemory = 0;
+        int availableWrapperMemory = 0;
+        double maxWrapperCpu = 0.0;
+
+        for (var wrapper : master.getConnectedWrappers().values()) {
+            totalWrapperMemory += Math.max(0, wrapper.getMaxMemory());
+            availableWrapperMemory += Math.max(0, wrapper.getAvailableMemory());
+            maxWrapperCpu = Math.max(maxWrapperCpu, wrapper.getCpuUsage());
+            if (!wrapper.isHealthy()) {
+                unhealthyWrappers++;
+                addDiagnosticIssue(issues, "CRITICAL", "wrapper:" + wrapper.getWrapperId(),
+                        "Wrapper heartbeat is stale.",
+                        "Check wrapper process, network route and firewall between master and wrapper.");
+            }
+            if (master.getLoadBalancerManager().isWrapperDraining(wrapper.getWrapperId())) {
+                drainingWrappers++;
+            }
+        }
+
+        if (wrapperCount == 0) {
+            addDiagnosticIssue(issues, "CRITICAL", "wrappers",
+                    "No wrapper is connected.",
+                    "Start at least one wrapper before scheduling servers.");
+        }
+        if (proxyServers == 0 && runningServers > 0) {
+            addDiagnosticIssue(issues, "CRITICAL", "proxy",
+                    "No online proxy server detected.",
+                    "Start or restart the Proxy group so players can reach backend servers.");
+        }
+        if (drainingWrappers >= wrapperCount && wrapperCount > 0) {
+            addDiagnosticIssue(issues, "WARNING", "loadbalancer",
+                    "All connected wrappers are in drain mode.",
+                    "Disable drain on at least one wrapper before starting new servers.");
+        }
+        if (master.getPlayerQueueManager().getTotalQueued() > 0 && onlineServers == 0) {
+            addDiagnosticIssue(issues, "WARNING", "queue",
+                    "Players are queued but no online game servers are available.",
+                    "Start capacity for the queued group or review scaling policies.");
+        }
+        if (!master.getRestartInProgress().isEmpty()) {
+            recommendations.add("Restart locks active: " + master.getRestartInProgress().size()
+                    + ". Use restartstatus if a restart appears stuck.");
+        }
+
+        double memoryUsedPct = totalWrapperMemory <= 0
+                ? 0.0
+                : ((totalWrapperMemory - availableWrapperMemory) * 100.0) / totalWrapperMemory;
+        if (memoryUsedPct >= 90.0) {
+            addDiagnosticIssue(issues, "WARNING", "capacity",
+                    "Wrapper memory usage is above 90%.",
+                    "Scale out to another wrapper or lower group RAM limits.");
+        }
+        if (maxWrapperCpu >= 95.0) {
+            addDiagnosticIssue(issues, "WARNING", "capacity",
+                    "At least one wrapper reports CPU above 95%.",
+                    "Move load away from the wrapper or reduce auto-start capacity.");
+        }
+
+        long critical = issues.stream().filter(i -> "CRITICAL".equals(i.get("severity"))).count();
+        long warnings = issues.stream().filter(i -> "WARNING".equals(i.get("severity"))).count();
+        int score = Math.max(0, 100 - (int) (critical * 30) - (int) (warnings * 10));
+        String state = critical > 0 ? "CRITICAL" : warnings > 0 ? "WARNING" : "OK";
+
+        if (issues.isEmpty()) {
+            recommendations.add("System looks healthy. Keep monitoring alerts and setup reports green.");
+        } else {
+            recommendations.add("Resolve critical issues first, then review warnings by component.");
+        }
+        if (startingServers > 0) {
+            recommendations.add("Watch STARTING servers until they switch to ONLINE or hit timeout handling.");
+        }
+
+        Map<String, Object> capacity = new LinkedHashMap<>();
+        capacity.put("totalWrapperMemoryMb", totalWrapperMemory);
+        capacity.put("availableWrapperMemoryMb", availableWrapperMemory);
+        capacity.put("memoryUsedPercent", Math.round(memoryUsedPct * 10.0) / 10.0);
+        capacity.put("maxWrapperCpu", Math.round(maxWrapperCpu * 10.0) / 10.0);
+        capacity.put("drainingWrappers", drainingWrappers);
+        capacity.put("unhealthyWrappers", unhealthyWrappers);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("runningServers", runningServers);
+        summary.put("onlineServers", onlineServers);
+        summary.put("startingServers", startingServers);
+        summary.put("staleServers", staleServers);
+        summary.put("lowTpsServers", lowTpsServers);
+        summary.put("connectedWrappers", wrapperCount);
+        summary.put("queueTotal", master.getPlayerQueueManager().getTotalQueued());
+        summary.put("activeAlerts", master.getMonitoringService().getActiveAlerts().size());
+        summary.put("restartLocks", master.getRestartInProgress().size());
+
+        Map<String, Object> diagnostics = new LinkedHashMap<>();
+        diagnostics.put("generatedAt", now);
+        diagnostics.put("state", state);
+        diagnostics.put("score", score);
+        diagnostics.put("summary", summary);
+        diagnostics.put("capacity", capacity);
+        diagnostics.put("issues", issues);
+        diagnostics.put("recommendations", recommendations);
+        return diagnostics;
+    }
+
+    private void addDiagnosticIssue(List<Map<String, Object>> issues, String severity, String component,
+                                    String message, String recommendation) {
+        Map<String, Object> issue = new LinkedHashMap<>();
+        issue.put("severity", severity);
+        issue.put("component", component);
+        issue.put("message", message);
+        issue.put("recommendation", recommendation);
+        issues.add(issue);
     }
 
     private void handleClusterInfo(HttpExchange exchange) throws IOException {

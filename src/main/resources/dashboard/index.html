@@ -322,7 +322,8 @@
                     align-content: start;
                 }
                 .servers-side-stack > div:first-child,
-                .servers-side-stack > div:nth-child(2) { grid-column: span 2; }
+                .servers-side-stack > div:nth-child(2),
+                .servers-side-stack > div:nth-child(3) { grid-column: span 2; }
                 .monitoring-grid {
                     gap: 1rem;
                     grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
@@ -397,7 +398,8 @@
                     .overview-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
                     .servers-side-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
                     .servers-side-stack > div:first-child,
-                    .servers-side-stack > div:nth-child(2) { grid-column: span 2; }
+                    .servers-side-stack > div:nth-child(2),
+                    .servers-side-stack > div:nth-child(3) { grid-column: span 2; }
                 }
                 @media (max-width: 768px) {
                     #overviewSection { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -699,6 +701,19 @@
                                 <li>3. Validate in Monitoring trend panels.</li>
                             </ol>
                         </article>
+                        <article class='overview-story-card rounded-2xl border border-slate-800 bg-slate-900/60 p-4 md:col-span-2'>
+                            <div class='flex flex-wrap items-center justify-between gap-2'>
+                                <div>
+                                    <h3 class='text-sm font-semibold'>System Diagnostics</h3>
+                                    <p id='diagnosticsSummary' class='mt-1 text-xs text-slate-400'>Waiting for diagnostics...</p>
+                                </div>
+                                <span id='diagnosticsScore' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>score -</span>
+                            </div>
+                            <div class='mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]'>
+                                <div id='diagnosticsIssues' class='space-y-2 text-xs'></div>
+                                <div id='diagnosticsRecommendations' class='space-y-2 text-xs'></div>
+                            </div>
+                        </article>
                     </div>
                 </section>
                 <section id='serversSection' data-page='servers' class='dashboard-page servers-shell grid gap-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,1fr)]'>
@@ -757,6 +772,8 @@
                                 <button id='btnReloadView' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Reload view</button>
                                 <button id='btnRestartUnhealthy' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-amber-400 disabled:opacity-30'>Restart unhealthy</button>
                                 <button id='btnExportServers' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-sky-400'>Export servers</button>
+                                <button id='btnRunDiagnostics' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Run diagnostics</button>
+                                <button id='btnExportDiagnostics' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-sky-400'>Export diagnostics</button>
                             </div>
                         </div>
 
@@ -767,6 +784,22 @@
                                 <input id='startGroupName' type='text' placeholder='Group name (e.g. Lobby)' class='w-full rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
                                 <button id='btnStartServer' class='w-full rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400 disabled:opacity-30'>Start server</button>
                             </div>
+                        </div>
+
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
+                                <div>
+                                    <h2 class='font-semibold'>Capacity Planner</h2>
+                                    <p class='text-[11px] text-slate-400'>Group demand, wrapper headroom and start readiness.</p>
+                                </div>
+                                <span id='capacitySummaryBadge' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>-</span>
+                            </div>
+                            <div class='grid gap-2 text-xs md:grid-cols-2'>
+                                <select id='capacityGroupSelect' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400 md:col-span-2'></select>
+                                <button id='btnRunCapacity' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Refresh planner</button>
+                                <button id='btnExportCapacity' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-sky-400'>Export capacity</button>
+                            </div>
+                            <div id='capacityPlannerBox' class='mt-3 space-y-2 text-xs'></div>
                         </div>
 
                         <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
@@ -978,6 +1011,8 @@
                     wsUrl: null,
                     wsTicket: null,
                     overview: null,
+                    diagnostics: null,
+                    capacity: null,
                     logs: { lines: [] },
                     metricsHistory: [],
                     refreshInFlight: false,
@@ -1070,6 +1105,7 @@
                     const serverFilter = localStorage.getItem('cloud_ui_server_filter');
                     const serverStatusFilter = localStorage.getItem('cloud_ui_server_status_filter');
                     const serverWrapperFilter = localStorage.getItem('cloud_ui_server_wrapper_filter');
+                    const capacityGroup = localStorage.getItem('cloud_ui_capacity_group');
                     const logFilter = localStorage.getItem('cloud_ui_log_filter');
                     const logLevelFilter = localStorage.getItem('cloud_ui_log_level_filter');
                     const autoPaused = localStorage.getItem('cloud_ui_auto_paused');
@@ -1079,6 +1115,9 @@
                     if (serverStatusFilter && document.getElementById('serverStatusFilter')) document.getElementById('serverStatusFilter').value = serverStatusFilter;
                     if (logFilter && document.getElementById('logFilter')) document.getElementById('logFilter').value = logFilter;
                     if (logLevelFilter && document.getElementById('logLevelFilter')) document.getElementById('logLevelFilter').value = logLevelFilter;
+                    if (capacityGroup) {
+                        document.documentElement.setAttribute('data-capacity-group', capacityGroup);
+                    }
                     if (autoPaused === '1') {
                         state.autoRefreshPaused = true;
                     }
@@ -1392,8 +1431,10 @@
                             primeMonitoringSkeleton();
                         }
                         setPageLoadingState(true);
-                        const [overview, alerts, logs, setup, clusterInfo, clusterNodes, policies, metricHistory] = await Promise.all([
+                        const [overview, diagnostics, capacity, alerts, logs, setup, clusterInfo, clusterNodes, policies, metricHistory] = await Promise.all([
                             apiGet('/api/v1/dashboard/overview'),
+                            apiGet('/api/v1/system/diagnostics'),
+                            apiGet('/api/v1/system/capacity'),
                             apiGet('/api/v1/alerts'),
                             apiGet('/api/v1/logs/recent'),
                             apiGet('/api/v1/setup/report'),
@@ -1403,9 +1444,13 @@
                             apiGet('/api/v1/metrics/history')
                         ]);
                         state.overview = overview;
+                        state.diagnostics = diagnostics;
+                        state.capacity = capacity;
                         state.logs = logs;
                         state.metricsHistory = metricHistory.history || [];
                         renderOverview(overview);
+                        renderDiagnostics(diagnostics);
+                        renderCapacityPlanner(capacity);
                         renderAlerts(alerts);
                         renderLogs(logs);
                         renderSetup(setup);
@@ -1566,6 +1611,161 @@
                     }).join('');
                     document.getElementById('wrappersBox').innerHTML = wrappers || "<p class='text-slate-400'>No wrappers connected</p>";
                 }
+
+                function renderDiagnostics(data) {
+                    if (!data) return;
+                    const stateText = String(data.state || 'UNKNOWN').toUpperCase();
+                    const score = Number(data.score || 0);
+                    const summary = data.summary || {};
+                    const capacity = data.capacity || {};
+                    const scoreClass = stateText === 'CRITICAL'
+                        ? 'border-rose-500/50 bg-rose-500/10 text-rose-200'
+                        : (stateText === 'WARNING'
+                            ? 'border-amber-500/50 bg-amber-500/10 text-amber-200'
+                            : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200');
+                    const scoreEl = document.getElementById('diagnosticsScore');
+                    scoreEl.textContent = `${stateText} | score ${score}`;
+                    scoreEl.className = `rounded-full border px-3 py-1 text-xs ${scoreClass}`;
+
+                    document.getElementById('diagnosticsSummary').textContent =
+                        `Servers ${summary.onlineServers || 0}/${summary.runningServers || 0} online | Wrappers ${summary.connectedWrappers || 0} | RAM ${capacity.memoryUsedPercent || 0}% | Queue ${summary.queueTotal || 0}`;
+
+                    const issues = data.issues || [];
+                    const issueHtml = issues.slice(0, 6).map(issue => {
+                        const sev = String(issue.severity || 'INFO').toUpperCase();
+                        const cls = sev === 'CRITICAL'
+                            ? 'border-rose-700/50 bg-rose-950/30 text-rose-100'
+                            : (sev === 'WARNING'
+                                ? 'border-amber-700/50 bg-amber-950/30 text-amber-100'
+                                : 'border-slate-700 bg-slate-950/40 text-slate-300');
+                        return `<div class='rounded-lg border ${cls} p-2'>
+                            <div class='flex items-center justify-between gap-2'>
+                                <span class='font-semibold'>${sev}</span>
+                                <span class='text-[11px] opacity-80'>${escapeHtml(issue.component || '-')}</span>
+                            </div>
+                            <div class='mt-1'>${escapeHtml(issue.message || '-')}</div>
+                        </div>`;
+                    }).join('');
+                    document.getElementById('diagnosticsIssues').innerHTML = issueHtml || "<div class='rounded-lg border border-emerald-700/40 bg-emerald-950/20 p-2 text-emerald-200'>No diagnostics issues detected.</div>";
+
+                    const recommendationHtml = (data.recommendations || []).slice(0, 5).map(item =>
+                        `<div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-slate-300'>${escapeHtml(item)}</div>`
+                    ).join('');
+                    document.getElementById('diagnosticsRecommendations').innerHTML = recommendationHtml || "<div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-slate-400'>No recommendations.</div>";
+                }
+
+                async function runDiagnostics() {
+                    const diagnostics = await apiGet('/api/v1/system/diagnostics');
+                    state.diagnostics = diagnostics;
+                    renderDiagnostics(diagnostics);
+                    showToast('success', 'Diagnostics updated', `${diagnostics.state || 'UNKNOWN'} | score ${diagnostics.score ?? '-'}`);
+                }
+
+                function exportDiagnosticsJson() {
+                    if (!state.diagnostics) {
+                        showToast('info', 'No diagnostics data');
+                        return;
+                    }
+                    downloadText('system-diagnostics.json', JSON.stringify(state.diagnostics, null, 2));
+                }
+
+                function renderCapacityPlanner(data) {
+                    if (!data) return;
+                    const groups = data.groups || [];
+                    const summary = data.summary || {};
+                    const select = document.getElementById('capacityGroupSelect');
+                    const stored = document.documentElement.getAttribute('data-capacity-group') || select.value;
+                    select.innerHTML = groups.map(group =>
+                        `<option value='${escapeHtml(group.groupName)}'>${escapeHtml(group.groupName)}</option>`
+                    ).join('');
+                    if (stored && groups.some(group => String(group.groupName) === stored)) {
+                        select.value = stored;
+                    } else if (groups.length > 0) {
+                        select.selectedIndex = 0;
+                    }
+
+                    const selectedName = select.value;
+                    const selected = groups.find(group => String(group.groupName) === selectedName) || groups[0];
+                    const badge = document.getElementById('capacitySummaryBadge');
+                    badge.textContent = `startable ${summary.startableGroups || 0}/${summary.groups || 0} | free ${summary.availableWrapperMemoryMb || 0}MB`;
+                    badge.className = 'rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300';
+
+                    if (!selected) {
+                        document.getElementById('capacityPlannerBox').innerHTML = "<p class='text-slate-400'>No group capacity data available.</p>";
+                        return;
+                    }
+
+                    const canStart = Boolean(selected.canStartNow);
+                    const readinessClass = canStart
+                        ? 'border-emerald-600/50 bg-emerald-950/30 text-emerald-200'
+                        : 'border-amber-600/50 bg-amber-950/30 text-amber-200';
+                    const tags = (selected.tags || []).map(tag =>
+                        `<span class='rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-300'>${escapeHtml(tag)}</span>`
+                    ).join('');
+                    const wrappers = (selected.startableWrappers || []).slice(0, 4).map(id =>
+                        `<span class='rounded-full border border-cyan-700/40 bg-cyan-950/20 px-2 py-0.5 text-[10px] text-cyan-200'>${escapeHtml(id)}</span>`
+                    ).join('');
+                    const recommendations = (data.recommendations || []).slice(0, 3).map(item =>
+                        `<div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-slate-300'>${escapeHtml(item)}</div>`
+                    ).join('');
+                    const topGroups = groups.slice(0, 5).map(group => {
+                        const cls = group.canStartNow ? 'text-emerald-300' : 'text-amber-300';
+                        return `<div class='grid grid-cols-[1fr_auto_auto] gap-2 rounded-lg border border-slate-800 bg-slate-950/50 px-2 py-1.5'>
+                            <span>${escapeHtml(group.groupName)}</span>
+                            <span class='text-slate-400'>${group.runningServers || 0}/${group.maxServers || 0}</span>
+                            <span class='${cls}'>${group.canStartNow ? 'ready' : 'blocked'}</span>
+                        </div>`;
+                    }).join('');
+
+                    document.getElementById('capacityPlannerBox').innerHTML = `
+                        <div class='rounded-xl border ${readinessClass} p-3'>
+                            <div class='flex flex-wrap items-center justify-between gap-2'>
+                                <div>
+                                    <div class='text-[11px] opacity-80'>Selected group</div>
+                                    <div class='text-sm font-semibold'>${escapeHtml(selected.groupName)}</div>
+                                </div>
+                                <span class='rounded-full border border-current/40 px-2 py-1 text-[11px]'>${canStart ? 'CAN START NOW' : 'BLOCKED'}</span>
+                            </div>
+                            <div class='mt-2 grid gap-2 text-[11px] sm:grid-cols-2'>
+                                <div>RAM need: <b>${selected.ramMb || 0}MB</b></div>
+                                <div>Best wrapper: <b>${escapeHtml(selected.bestWrapperId || 'none')}</b></div>
+                                <div>Servers: <b>${selected.runningServers || 0}/${selected.maxServers || 0}</b> (min ${selected.minServers || 0})</div>
+                                <div>Recommended: <b>${selected.recommendedServers || 0}</b></div>
+                                <div>Queue: <b>${selected.queuedPlayers || 0}</b> | Players: <b>${selected.players || 0}/${selected.maxPlayers || 0}</b></div>
+                                <div>Shortfall: <b>${selected.capacityShortfallMb || 0}MB</b></div>
+                            </div>
+                            <div class='mt-2 text-[11px] opacity-90'>${escapeHtml(selected.recommendation || '-')}</div>
+                            <div class='mt-2 flex flex-wrap gap-1'>${tags || "<span class='text-[11px] opacity-70'>No tags</span>"}</div>
+                            <div class='mt-2 flex flex-wrap gap-1'>${wrappers || "<span class='text-[11px] opacity-70'>No startable wrapper</span>"}</div>
+                        </div>
+                        <div class='grid gap-2 md:grid-cols-2'>
+                            <div class='rounded-xl border border-slate-800 bg-slate-950/50 p-2'>
+                                <div class='mb-1 font-semibold'>Group readiness</div>
+                                <div class='space-y-1'>${topGroups || "<p class='text-slate-400'>No groups</p>"}</div>
+                            </div>
+                            <div class='rounded-xl border border-slate-800 bg-slate-950/50 p-2'>
+                                <div class='mb-1 font-semibold'>Planner notes</div>
+                                <div class='space-y-1'>${recommendations || "<p class='text-slate-400'>No recommendations</p>"}</div>
+                            </div>
+                        </div>`;
+                }
+
+                async function runCapacityPlanner() {
+                    const capacity = await apiGet('/api/v1/system/capacity');
+                    state.capacity = capacity;
+                    renderCapacityPlanner(capacity);
+                    const summary = capacity.summary || {};
+                    showToast('success', 'Capacity updated', `Startable groups: ${summary.startableGroups || 0}/${summary.groups || 0}`);
+                }
+
+                function exportCapacityJson() {
+                    if (!state.capacity) {
+                        showToast('info', 'No capacity data');
+                        return;
+                    }
+                    downloadText('capacity-planner.json', JSON.stringify(state.capacity, null, 2));
+                }
+
                 function renderAlerts(data) {
                     const active = data.active || [];
                     const items = active.slice(0, 20).map(alert => {
@@ -1943,6 +2143,16 @@
                 document.getElementById('btnStartServer').addEventListener('click', () => startServerManual().catch(err => showToast('error', 'Start failed', err.message)));
                 document.getElementById('btnRestartUnhealthy').addEventListener('click', () => restartUnhealthyServers().catch(err => showToast('error', 'Restart unhealthy failed', err.message)));
                 document.getElementById('btnExportServers').addEventListener('click', () => exportServersCsv());
+                document.getElementById('btnRunDiagnostics').addEventListener('click', () => runDiagnostics().catch(err => showToast('error', 'Diagnostics failed', err.message)));
+                document.getElementById('btnExportDiagnostics').addEventListener('click', () => exportDiagnosticsJson());
+                document.getElementById('btnRunCapacity').addEventListener('click', () => runCapacityPlanner().catch(err => showToast('error', 'Capacity planner failed', err.message)));
+                document.getElementById('btnExportCapacity').addEventListener('click', () => exportCapacityJson());
+                document.getElementById('capacityGroupSelect').addEventListener('change', () => {
+                    const value = document.getElementById('capacityGroupSelect').value;
+                    document.documentElement.setAttribute('data-capacity-group', value);
+                    persistUiPreference('cloud_ui_capacity_group', value);
+                    renderCapacityPlanner(state.capacity);
+                });
                 document.getElementById('btnConfigGet').addEventListener('click', () => getConfigValue().catch(err => showToast('error', 'Config get failed', err.message)));
                 document.getElementById('btnConfigSet').addEventListener('click', () => setConfigValue().catch(err => showToast('error', 'Config set failed', err.message)));
                 document.getElementById('btnTplDiff').addEventListener('click', () => runTemplateDiff().catch(err => showToast('error', 'Template diff failed', err.message)));

@@ -2,8 +2,10 @@ package de.kallifabio.cloud.pluginapi.service;
 
 import com.google.gson.JsonObject;
 import de.kallifabio.cloud.pluginapi.CloudApiClient;
+import de.kallifabio.cloud.pluginapi.model.CloudCapacityPlanInfo;
 import de.kallifabio.cloud.pluginapi.model.CloudOperationResult;
 import de.kallifabio.cloud.pluginapi.model.CloudRecentLogs;
+import de.kallifabio.cloud.pluginapi.model.CloudSystemDiagnosticsInfo;
 import de.kallifabio.cloud.pluginapi.request.ConfigSetRequest;
 
 import java.util.Map;
@@ -26,6 +28,22 @@ public final class OperationsService {
 
     public JsonObject setupReport() {
         return client.get("/api/v1/setup/report");
+    }
+
+    public JsonObject diagnostics() {
+        return client.get("/api/v1/system/diagnostics");
+    }
+
+    public CloudSystemDiagnosticsInfo diagnosticsModel() {
+        return CloudSystemDiagnosticsInfo.from(diagnostics());
+    }
+
+    public JsonObject capacityPlanner() {
+        return client.get("/api/v1/system/capacity");
+    }
+
+    public CloudCapacityPlanInfo capacityPlannerModel() {
+        return CloudCapacityPlanInfo.from(capacityPlanner());
     }
 
     public JsonObject configGet(String key) {
