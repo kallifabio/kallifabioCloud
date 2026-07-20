@@ -794,9 +794,10 @@
                                 </div>
                                 <span id='capacitySummaryBadge' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>-</span>
                             </div>
-                            <div class='grid gap-2 text-xs md:grid-cols-2'>
-                                <select id='capacityGroupSelect' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400 md:col-span-2'></select>
+                            <div class='grid gap-2 text-xs md:grid-cols-3'>
+                                <select id='capacityGroupSelect' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400 md:col-span-3'></select>
                                 <button id='btnRunCapacity' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Refresh planner</button>
+                                <button id='btnStartRecommendedCapacity' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400 disabled:opacity-30'>Start recommended</button>
                                 <button id='btnExportCapacity' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-sky-400'>Export capacity</button>
                             </div>
                             <div id='capacityPlannerBox' class='mt-3 space-y-2 text-xs'></div>
@@ -1363,13 +1364,54 @@
                 }
 
                 function headers() {
-                    return { 'X-API-Key': state.apiKey };
+                    const requestId = window.crypto && crypto.randomUUID
+                        ? crypto.randomUUID().replaceAll('-', '')
+                        : String(Date.now()) + String(Math.random()).slice(2);
+                    return {
+                        'X-API-Key': state.apiKey,
+                        'X-Request-Id': requestId
+                    };
+                }
+
+                class CloudDashboardError extends Error {
+                    constructor(path, status, payload, fallbackText) {
+                        const error = payload && payload.error && typeof payload.error === 'object' ? payload.error : null;
+                        const message = error
+                            ? `${error.code || 'ERROR'}: ${error.message || fallbackText || 'Request failed'}`
+                            : (payload && payload.error ? String(payload.error) : (fallbackText || 'Request failed'));
+                        super(`${path} -> ${status} | ${message}`);
+                        this.name = 'CloudDashboardError';
+                        this.path = path;
+                        this.status = status;
+                        this.payload = payload;
+                        this.code = error ? error.code : `HTTP_${status}`;
+                        this.requestId = payload && payload.requestId ? payload.requestId : '';
+                    }
+
+                    userMessage() {
+                        return this.requestId ? `${this.message} | requestId=${this.requestId}` : this.message;
+                    }
+                }
+
+                async function parseApiResponse(path, res) {
+                    const text = await res.text();
+                    let payload = null;
+                    if (text) {
+                        try {
+                            payload = JSON.parse(text);
+                        } catch (_) {
+                            payload = null;
+                        }
+                    }
+                    if (!res.ok) {
+                        throw new CloudDashboardError(path, res.status, payload, text);
+                    }
+                    return payload || {};
                 }
 
                 async function apiGet(path) {
                     const res = await fetch(path, { headers: headers() });
-                    if (!res.ok) throw new Error(path + ' -> ' + res.status);
-                    return res.json();
+                    return parseApiResponse(path, res);
                 }
 
                 async function apiPost(path, body) {
@@ -1378,8 +1420,14 @@
                         headers: { ...headers(), 'Content-Type': 'application/json' },
                         body: JSON.stringify(body)
                     });
-                    if (!res.ok) throw new Error(path + ' -> ' + res.status);
-                    return res.json();
+                    return parseApiResponse(path, res);
+                }
+
+                function errorText(err) {
+                    if (err && typeof err.userMessage === 'function') {
+                        return err.userMessage();
+                    }
+                    return err && err.message ? err.message : String(err);
                 }
 
                 function statusClass(status) {
@@ -1431,7 +1479,7 @@
                             primeMonitoringSkeleton();
                         }
                         setPageLoadingState(true);
-                        const [overview, diagnostics, capacity, alerts, logs, setup, clusterInfo, clusterNodes, policies, metricHistory] = await Promise.all([
+                        const results = await Promise.allSettled([
                             apiGet('/api/v1/dashboard/overview'),
                             apiGet('/api/v1/system/diagnostics'),
                             apiGet('/api/v1/system/capacity'),
@@ -1443,6 +1491,28 @@
                             apiGet('/api/v1/scaling/policies'),
                             apiGet('/api/v1/metrics/history')
                         ]);
+                        const failed = results
+                            .map((result, index) => ({ result, index }))
+                            .filter(item => item.result.status === 'rejected');
+                        if (results[0].status === 'rejected') {
+                            throw results[0].reason;
+                        }
+                        const valueOr = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
+                        const overview = valueOr(0, state.overview);
+                        const diagnostics = valueOr(1, state.diagnostics);
+                        const capacity = valueOr(2, state.capacity);
+                        const alerts = valueOr(3, { active: [] });
+                        const logs = valueOr(4, state.logs || { lines: [] });
+                        const setup = valueOr(5, { summary: {}, groups: [] });
+                        const clusterInfo = valueOr(6, {});
+                        const clusterNodes = valueOr(7, { nodes: [] });
+                        const policies = valueOr(8, {});
+                        const metricHistory = valueOr(9, { history: state.metricsHistory || [] });
+                        if (failed.length > 0) {
+                            const names = ['overview', 'diagnostics', 'capacity', 'alerts', 'logs', 'setup', 'cluster', 'nodes', 'policies', 'metrics'];
+                            const failedNames = failed.map(item => names[item.index]).join(', ');
+                            showToast('warning', 'Partial refresh', failedNames + ' failed, using available cached data.');
+                        }
                         state.overview = overview;
                         state.diagnostics = diagnostics;
                         state.capacity = capacity;
@@ -1766,6 +1836,39 @@
                     downloadText('capacity-planner.json', JSON.stringify(state.capacity, null, 2));
                 }
 
+                function getSelectedCapacityGroup() {
+                    const groups = (state.capacity && state.capacity.groups) ? state.capacity.groups : [];
+                    const selectedName = document.getElementById('capacityGroupSelect')?.value || '';
+                    return groups.find(group => String(group.groupName) === selectedName) || groups[0] || null;
+                }
+
+                async function startRecommendedCapacity() {
+                    if (state.role !== 'ADMIN') {
+                        showToast('warning', 'Admin required', 'Only ADMIN keys can start capacity.');
+                        return;
+                    }
+                    const group = getSelectedCapacityGroup();
+                    if (!group) {
+                        showToast('info', 'No group selected');
+                        return;
+                    }
+                    if (!group.canStartNow) {
+                        showToast('warning', 'Capacity blocked', group.recommendation || 'Planner says this group cannot start right now.');
+                        return;
+                    }
+                    const groupName = String(group.groupName || '').trim();
+                    const names = new Set(((state.overview && state.overview.servers) || []).map(server => String(server.serverName || '')));
+                    let index = Math.max(1, Number(group.runningServers || 0) + 1);
+                    let serverName = `${groupName}-${index}`;
+                    while (names.has(serverName)) {
+                        index += 1;
+                        serverName = `${groupName}-${index}`;
+                    }
+                    await apiPost('/api/v1/servers/start', { serverName, groupName });
+                    showToast('success', 'Recommended start triggered', `${serverName} on ${group.bestWrapperId || 'best wrapper'}`);
+                    await refresh();
+                }
+
                 function renderAlerts(data) {
                     const active = data.active || [];
                     const items = active.slice(0, 20).map(alert => {
@@ -1912,7 +2015,7 @@
                         showToast('success', 'Server stop triggered', serverName);
                         await refresh();
                     } catch (e) {
-                        showToast('error', 'Stop failed', e.message);
+                        showToast('error', 'Stop failed', errorText(e));
                     }
                 }
 
@@ -1922,7 +2025,7 @@
                         showToast('success', 'Server restart triggered', serverName);
                         await refresh();
                     } catch (e) {
-                        showToast('error', 'Restart failed', e.message);
+                        showToast('error', 'Restart failed', errorText(e));
                     }
                 }
 
@@ -1951,7 +2054,7 @@
                         showToast('success', 'Wrapper updated', wrapperId + ' draining=' + draining);
                         await refresh();
                     } catch (e) {
-                        showToast('error', 'Drain failed', e.message);
+                        showToast('error', 'Drain failed', errorText(e));
                     }
                 }
 
@@ -2098,7 +2201,7 @@
 
                 function applyRoleState() {
                     const isAdmin = state.role === 'ADMIN';
-                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnConfigSet', 'btnRestartUnhealthy', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnConsoleSend', 'btnBulkRestart', 'btnBulkStop'].forEach(id => {
+                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnStartRecommendedCapacity', 'btnConfigSet', 'btnRestartUnhealthy', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnConsoleSend', 'btnBulkRestart', 'btnBulkStop'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.disabled = !isAdmin;
                     });
@@ -2132,43 +2235,44 @@
                     document.getElementById('authState').className = 'rounded-full border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-rose-200';
                     sessionStorage.removeItem('cloud_api_key');
                     state.wsTicket = null;
-                    showToast('error', 'Authentication failed', err.message || String(err));
+                    showToast('error', 'Authentication failed', errorText(err) || String(err));
                     console.error(err);
                 }));
                 document.getElementById('refreshBtn').addEventListener('click', () => refresh().catch(console.error));
                 document.getElementById('btnReloadView').addEventListener('click', () => refresh().catch(console.error));
-                document.getElementById('btnWebhookTest').addEventListener('click', () => triggerWebhookTest().catch(err => showToast('error', 'Webhook failed', err.message)));
-                document.getElementById('btnClearAlerts').addEventListener('click', () => clearAlerts().catch(err => showToast('error', 'Clear alerts failed', err.message)));
-                document.getElementById('btnScaleEval').addEventListener('click', () => triggerScaleEval().catch(err => showToast('error', 'Scale eval failed', err.message)));
-                document.getElementById('btnStartServer').addEventListener('click', () => startServerManual().catch(err => showToast('error', 'Start failed', err.message)));
-                document.getElementById('btnRestartUnhealthy').addEventListener('click', () => restartUnhealthyServers().catch(err => showToast('error', 'Restart unhealthy failed', err.message)));
+                document.getElementById('btnWebhookTest').addEventListener('click', () => triggerWebhookTest().catch(err => showToast('error', 'Webhook failed', errorText(err))));
+                document.getElementById('btnClearAlerts').addEventListener('click', () => clearAlerts().catch(err => showToast('error', 'Clear alerts failed', errorText(err))));
+                document.getElementById('btnScaleEval').addEventListener('click', () => triggerScaleEval().catch(err => showToast('error', 'Scale eval failed', errorText(err))));
+                document.getElementById('btnStartServer').addEventListener('click', () => startServerManual().catch(err => showToast('error', 'Start failed', errorText(err))));
+                document.getElementById('btnRestartUnhealthy').addEventListener('click', () => restartUnhealthyServers().catch(err => showToast('error', 'Restart unhealthy failed', errorText(err))));
                 document.getElementById('btnExportServers').addEventListener('click', () => exportServersCsv());
-                document.getElementById('btnRunDiagnostics').addEventListener('click', () => runDiagnostics().catch(err => showToast('error', 'Diagnostics failed', err.message)));
+                document.getElementById('btnRunDiagnostics').addEventListener('click', () => runDiagnostics().catch(err => showToast('error', 'Diagnostics failed', errorText(err))));
                 document.getElementById('btnExportDiagnostics').addEventListener('click', () => exportDiagnosticsJson());
-                document.getElementById('btnRunCapacity').addEventListener('click', () => runCapacityPlanner().catch(err => showToast('error', 'Capacity planner failed', err.message)));
+                document.getElementById('btnRunCapacity').addEventListener('click', () => runCapacityPlanner().catch(err => showToast('error', 'Capacity planner failed', errorText(err))));
                 document.getElementById('btnExportCapacity').addEventListener('click', () => exportCapacityJson());
+                document.getElementById('btnStartRecommendedCapacity').addEventListener('click', () => startRecommendedCapacity().catch(err => showToast('error', 'Recommended start failed', errorText(err))));
                 document.getElementById('capacityGroupSelect').addEventListener('change', () => {
                     const value = document.getElementById('capacityGroupSelect').value;
                     document.documentElement.setAttribute('data-capacity-group', value);
                     persistUiPreference('cloud_ui_capacity_group', value);
                     renderCapacityPlanner(state.capacity);
                 });
-                document.getElementById('btnConfigGet').addEventListener('click', () => getConfigValue().catch(err => showToast('error', 'Config get failed', err.message)));
-                document.getElementById('btnConfigSet').addEventListener('click', () => setConfigValue().catch(err => showToast('error', 'Config set failed', err.message)));
-                document.getElementById('btnTplDiff').addEventListener('click', () => runTemplateDiff().catch(err => showToast('error', 'Template diff failed', err.message)));
-                document.getElementById('btnTplVersions').addEventListener('click', () => runTemplateVersions().catch(err => showToast('error', 'Template versions failed', err.message)));
-                document.getElementById('btnTplRollback').addEventListener('click', () => runTemplateRollback().catch(err => showToast('error', 'Template rollback failed', err.message)));
-                document.getElementById('btnGroupCreate').addEventListener('click', () => runGroupCreate().catch(err => showToast('error', 'Group create failed', err.message)));
-                document.getElementById('btnGroupDelete').addEventListener('click', () => runGroupDelete().catch(err => showToast('error', 'Group delete failed', err.message)));
-                document.getElementById('btnGroupUpdate').addEventListener('click', () => runGroupUpdate().catch(err => showToast('error', 'Group update failed', err.message)));
-                document.getElementById('btnAuthDebug').addEventListener('click', () => runAuthDebug().catch(err => showToast('error', 'Auth debug failed', err.message)));
+                document.getElementById('btnConfigGet').addEventListener('click', () => getConfigValue().catch(err => showToast('error', 'Config get failed', errorText(err))));
+                document.getElementById('btnConfigSet').addEventListener('click', () => setConfigValue().catch(err => showToast('error', 'Config set failed', errorText(err))));
+                document.getElementById('btnTplDiff').addEventListener('click', () => runTemplateDiff().catch(err => showToast('error', 'Template diff failed', errorText(err))));
+                document.getElementById('btnTplVersions').addEventListener('click', () => runTemplateVersions().catch(err => showToast('error', 'Template versions failed', errorText(err))));
+                document.getElementById('btnTplRollback').addEventListener('click', () => runTemplateRollback().catch(err => showToast('error', 'Template rollback failed', errorText(err))));
+                document.getElementById('btnGroupCreate').addEventListener('click', () => runGroupCreate().catch(err => showToast('error', 'Group create failed', errorText(err))));
+                document.getElementById('btnGroupDelete').addEventListener('click', () => runGroupDelete().catch(err => showToast('error', 'Group delete failed', errorText(err))));
+                document.getElementById('btnGroupUpdate').addEventListener('click', () => runGroupUpdate().catch(err => showToast('error', 'Group update failed', errorText(err))));
+                document.getElementById('btnAuthDebug').addEventListener('click', () => runAuthDebug().catch(err => showToast('error', 'Auth debug failed', errorText(err))));
                 document.getElementById('btnExportOverview').addEventListener('click', () => exportOverviewJson());
                 document.getElementById('btnExportLogs').addEventListener('click', () => exportLogsTxt());
-                document.getElementById('btnConsoleLoad').addEventListener('click', () => loadConsoleTail().catch(err => showToast('error', 'Console load failed', err.message)));
-                document.getElementById('btnConsoleSend').addEventListener('click', () => sendConsoleCommand().catch(err => showToast('error', 'Console send failed', err.message)));
+                document.getElementById('btnConsoleLoad').addEventListener('click', () => loadConsoleTail().catch(err => showToast('error', 'Console load failed', errorText(err))));
+                document.getElementById('btnConsoleSend').addEventListener('click', () => sendConsoleCommand().catch(err => showToast('error', 'Console send failed', errorText(err))));
                 document.getElementById('btnConsoleClear').addEventListener('click', () => { document.getElementById('consoleTailBox').textContent = ''; document.getElementById('consoleMeta').textContent = '-'; });
                 document.getElementById('consoleServerSelect').addEventListener('change', () => loadConsoleTail().catch(() => {}));
-                document.getElementById('consoleCommandInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); sendConsoleCommand().catch(err => showToast('error', 'Console send failed', err.message)); } });
+                document.getElementById('consoleCommandInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); sendConsoleCommand().catch(err => showToast('error', 'Console send failed', errorText(err))); } });
                 document.getElementById('serverFilter').addEventListener('input', () => {
                     persistUiPreference('cloud_ui_server_filter', document.getElementById('serverFilter').value);
                     if (state.overview) renderOverview(state.overview);
@@ -2195,8 +2299,8 @@
                     persistUiPreference('cloud_ui_log_level_filter', document.getElementById('logLevelFilter').value);
                     renderLogs(state.logs);
                 });
-                document.getElementById('btnBulkRestart').addEventListener('click', () => runBulkServerAction('restart').catch(err => showToast('error', 'Bulk restart failed', err.message)));
-                document.getElementById('btnBulkStop').addEventListener('click', () => runBulkServerAction('stop').catch(err => showToast('error', 'Bulk stop failed', err.message)));
+                document.getElementById('btnBulkRestart').addEventListener('click', () => runBulkServerAction('restart').catch(err => showToast('error', 'Bulk restart failed', errorText(err))));
+                document.getElementById('btnBulkStop').addEventListener('click', () => runBulkServerAction('stop').catch(err => showToast('error', 'Bulk stop failed', errorText(err))));
                 document.getElementById('btnClearSelection').addEventListener('click', () => {
                     state.selectedServers.clear();
                     if (state.overview) renderOverview(state.overview);
@@ -2250,7 +2354,7 @@
                     };
 
                     run().catch(err => {
-                        showToast('error', 'Action failed', err && err.message ? err.message : String(err));
+                        showToast('error', 'Action failed', err && errorText(err) ? errorText(err) : String(err));
                     });
                 });
                 function setMobileNavOpen(open) {
@@ -2302,6 +2406,7 @@
         </body>
         </html>
         
+
 
 
 

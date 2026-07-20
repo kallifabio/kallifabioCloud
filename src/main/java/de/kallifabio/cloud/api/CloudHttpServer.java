@@ -9,6 +9,7 @@ package de.kallifabio.cloud.api;
 
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
@@ -19,6 +20,7 @@ import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
 import de.kallifabio.cloud.libs.logging.CentralLogger;
 import de.kallifabio.cloud.master.Master;
 import de.kallifabio.cloud.master.ServerInstance;
+import de.kallifabio.cloud.master.capacity.CapacityPlannerService;
 import de.kallifabio.cloud.master.permissions.PermissionGroup;
 import de.kallifabio.cloud.setup.SetupValidator;
 
@@ -168,77 +170,103 @@ public class CloudHttpServer {
 
     private void setupEndpoints() {
         // Health & Status
-        server.createContext("/api/v1/health", this::handleHealth);
-        server.createContext("/api/v1/auth/me", this::handleAuthMe);
-        server.createContext("/api/v1/auth/debug", this::handleAuthDebug);
-        server.createContext("/api/v1/auth/rotate", this::handleRotateKey);
-        server.createContext("/api/v1/status", this::handleStatus);
-        server.createContext("/api/v1/dashboard/overview", this::handleDashboardOverview);
-        server.createContext("/api/v1/system/diagnostics", this::handleSystemDiagnostics);
-        server.createContext("/api/v1/system/capacity", this::handleSystemCapacityPlanner);
+        registerContext("/api/v1/health", this::handleHealth);
+        registerContext("/api/v1/auth/me", this::handleAuthMe);
+        registerContext("/api/v1/auth/debug", this::handleAuthDebug);
+        registerContext("/api/v1/auth/rotate", this::handleRotateKey);
+        registerContext("/api/v1/status", this::handleStatus);
+        registerContext("/api/v1/dashboard/overview", this::handleDashboardOverview);
+        registerContext("/api/v1/system/diagnostics", this::handleSystemDiagnostics);
+        registerContext("/api/v1/system/capacity", this::handleSystemCapacityPlanner);
 
         // Cluster Management
-        server.createContext("/api/v1/cluster/info", this::handleClusterInfo);
-        server.createContext("/api/v1/cluster/nodes", this::handleClusterNodes);
+        registerContext("/api/v1/cluster/info", this::handleClusterInfo);
+        registerContext("/api/v1/cluster/nodes", this::handleClusterNodes);
 
         // Server Management
-        server.createContext("/api/v1/servers", this::handleServers);
-        server.createContext("/api/v1/servers/start", this::handleServerStart);
-        server.createContext("/api/v1/servers/stop", this::handleServerStop);
-        server.createContext("/api/v1/servers/restart", this::handleServerRestart);
+        registerContext("/api/v1/servers", this::handleServers);
+        registerContext("/api/v1/servers/start", this::handleServerStart);
+        registerContext("/api/v1/servers/stop", this::handleServerStop);
+        registerContext("/api/v1/servers/restart", this::handleServerRestart);
 
         // Wrapper Management
-        server.createContext("/api/v1/wrappers", this::handleWrappers);
-        server.createContext("/api/v1/wrappers/drain", this::handleWrapperDrain);
+        registerContext("/api/v1/wrappers", this::handleWrappers);
+        registerContext("/api/v1/wrappers/drain", this::handleWrapperDrain);
 
         // Monitoring
-        server.createContext("/api/v1/metrics", this::handleMetrics);
-        server.createContext("/api/v1/metrics/history", this::handleMetricsHistory);
-        server.createContext("/api/v1/metrics/prometheus", this::handlePrometheusMetrics);
-        server.createContext("/api/v1/alerts", this::handleAlerts);
-        server.createContext("/api/v1/alerts/clear", this::handleAlertsClear);
+        registerContext("/api/v1/metrics", this::handleMetrics);
+        registerContext("/api/v1/metrics/history", this::handleMetricsHistory);
+        registerContext("/api/v1/metrics/prometheus", this::handlePrometheusMetrics);
+        registerContext("/api/v1/alerts", this::handleAlerts);
+        registerContext("/api/v1/alerts/clear", this::handleAlertsClear);
 
         // Scaling
-        server.createContext("/api/v1/scaling/policies", this::handleScalingPolicies);
-        server.createContext("/api/v1/scaling/trigger", this::handleScalingTrigger);
+        registerContext("/api/v1/scaling/policies", this::handleScalingPolicies);
+        registerContext("/api/v1/scaling/trigger", this::handleScalingTrigger);
 
         // Queue Management
-        server.createContext("/api/v1/queue/status", this::handleQueueStatus);
-        server.createContext("/api/v1/player/data", this::handlePlayerData);
-        server.createContext("/api/v1/player/friends", this::handlePlayerFriends);
-        server.createContext("/api/v1/player/party", this::handlePlayerParty);
-        server.createContext("/api/v1/party/switch", this::handlePartySwitch);
-        server.createContext("/api/v1/permissions/group", this::handlePermissionGroup);
-        server.createContext("/api/v1/permissions/assign", this::handlePermissionAssign);
-        server.createContext("/api/v1/permissions/temp", this::handleTempPermission);
+        registerContext("/api/v1/queue/status", this::handleQueueStatus);
+        registerContext("/api/v1/player/data", this::handlePlayerData);
+        registerContext("/api/v1/player/friends", this::handlePlayerFriends);
+        registerContext("/api/v1/player/party", this::handlePlayerParty);
+        registerContext("/api/v1/party/switch", this::handlePartySwitch);
+        registerContext("/api/v1/permissions/group", this::handlePermissionGroup);
+        registerContext("/api/v1/permissions/assign", this::handlePermissionAssign);
+        registerContext("/api/v1/permissions/temp", this::handleTempPermission);
 
         // Load Balancer
-        server.createContext("/api/v1/loadbalancer/stats", this::handleLoadBalancerStats);
+        registerContext("/api/v1/loadbalancer/stats", this::handleLoadBalancerStats);
 
         // Group runtime management
-        server.createContext("/api/v1/groups", this::handleGroups);
-        server.createContext("/api/v1/groups/create", this::handleGroupCreate);
-        server.createContext("/api/v1/groups/delete", this::handleGroupDelete);
-        server.createContext("/api/v1/groups/update", this::handleGroupUpdate);
+        registerContext("/api/v1/groups", this::handleGroups);
+        registerContext("/api/v1/groups/create", this::handleGroupCreate);
+        registerContext("/api/v1/groups/delete", this::handleGroupDelete);
+        registerContext("/api/v1/groups/update", this::handleGroupUpdate);
 
         // Template management
-        server.createContext("/api/v1/templates/diff", this::handleTemplateDiff);
-        server.createContext("/api/v1/templates/rollback", this::handleTemplateRollback);
-        server.createContext("/api/v1/templates/versions", this::handleTemplateVersions);
+        registerContext("/api/v1/templates/diff", this::handleTemplateDiff);
+        registerContext("/api/v1/templates/rollback", this::handleTemplateRollback);
+        registerContext("/api/v1/templates/versions", this::handleTemplateVersions);
 
         // Operations
-        server.createContext("/api/v1/logs/recent", this::handleRecentLogs);
-        server.createContext("/api/v1/console/screens", this::handleConsoleScreens);
-        server.createContext("/api/v1/console/tail", this::handleConsoleTail);
-        server.createContext("/api/v1/console/send", this::handleConsoleSend);
-        server.createContext("/api/v1/setup/report", this::handleSetupReport);
-        server.createContext("/api/v1/config/get", this::handleConfigGet);
-        server.createContext("/api/v1/config/set", this::handleConfigSet);
-        server.createContext("/api/v1/webhook/test", this::handleWebhookTest);
+        registerContext("/api/v1/logs/recent", this::handleRecentLogs);
+        registerContext("/api/v1/console/screens", this::handleConsoleScreens);
+        registerContext("/api/v1/console/tail", this::handleConsoleTail);
+        registerContext("/api/v1/console/send", this::handleConsoleSend);
+        registerContext("/api/v1/setup/report", this::handleSetupReport);
+        registerContext("/api/v1/config/get", this::handleConfigGet);
+        registerContext("/api/v1/config/set", this::handleConfigSet);
+        registerContext("/api/v1/webhook/test", this::handleWebhookTest);
 
         // Dashboard (serve static HTML)
-        server.createContext("/dashboard", this::handleDashboard);
-        server.createContext("/", this::handleRoot);
+        registerContext("/dashboard", this::handleDashboard);
+        registerContext("/", this::handleRoot);
+    }
+
+    private void registerContext(String path, HttpHandler handler) {
+        server.createContext(path, exchange -> {
+            String requestId = resolveRequestId(exchange);
+            exchange.setAttribute("requestId", requestId);
+            try {
+                if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    applyCorsHeaders(exchange);
+                    exchange.getResponseHeaders().set("X-Request-Id", requestId);
+                    exchange.sendResponseHeaders(204, -1);
+                    return;
+                }
+                handler.handle(exchange);
+            } catch (IllegalArgumentException e) {
+                sendError(exchange, 400, "BAD_REQUEST", safeErrorMessage(e), null, e);
+            } catch (SecurityException e) {
+                sendError(exchange, 403, "FORBIDDEN", safeErrorMessage(e), null, e);
+            } catch (Exception e) {
+                sendError(exchange, 500, "INTERNAL_ERROR",
+                        "Unexpected server error. Check central logs with requestId=" + requestId,
+                        null, e);
+            } finally {
+                exchange.close();
+            }
+        });
     }
 
     private void handleHealth(HttpExchange exchange) throws IOException {
@@ -491,196 +519,7 @@ public class CloudHttpServer {
     }
 
     private Map<String, Object> buildSystemCapacityPlanner() {
-        Master master = Master.getInstance();
-        long now = System.currentTimeMillis();
-        List<Map<String, Object>> wrappers = new ArrayList<>();
-        List<Map<String, Object>> groups = new ArrayList<>();
-        List<String> recommendations = new ArrayList<>();
-        int healthyWrappers = 0;
-        int drainingWrappers = 0;
-        int totalWrapperMemory = 0;
-        int availableWrapperMemory = 0;
-        double cpuCritical = master.getConfigManager().getMonitoringCpuCritical();
-
-        for (var wrapper : master.getConnectedWrappers().values()) {
-            boolean draining = master.getLoadBalancerManager().isWrapperDraining(wrapper.getWrapperId());
-            boolean healthy = wrapper.isHealthy();
-            int maxMemory = Math.max(0, wrapper.getMaxMemory());
-            int availableMemory = Math.max(0, wrapper.getAvailableMemory());
-            totalWrapperMemory += maxMemory;
-            availableWrapperMemory += availableMemory;
-            if (healthy) {
-                healthyWrappers++;
-            }
-            if (draining) {
-                drainingWrappers++;
-            }
-
-            Map<String, Object> wrapperInfo = new LinkedHashMap<>();
-            wrapperInfo.put("wrapperId", wrapper.getWrapperId());
-            wrapperInfo.put("hostname", wrapper.getHostname());
-            wrapperInfo.put("routeHost", wrapper.getRouteHost());
-            wrapperInfo.put("healthy", healthy);
-            wrapperInfo.put("draining", draining);
-            wrapperInfo.put("maxMemoryMb", maxMemory);
-            wrapperInfo.put("availableMemoryMb", availableMemory);
-            wrapperInfo.put("usedMemoryMb", Math.max(0, maxMemory - availableMemory));
-            wrapperInfo.put("cpuUsage", Math.round(wrapper.getCpuUsage() * 10.0) / 10.0);
-            wrapperInfo.put("activeServers", wrapper.getActiveServers());
-            wrappers.add(wrapperInfo);
-        }
-
-        Map<String, Object> queueStats = new LinkedHashMap<>(master.getPlayerQueueManager().getQueueStats());
-        List<String> configuredGroups = new ArrayList<>(master.getConfigManager().getAllServerGroups());
-        for (String groupName : configuredGroups) {
-            int requiredRam = Math.max(1, safeInteger(master.getConfigManager().getRamForGroup(groupName), 1024));
-            int maxPlayers = Math.max(1, safeInteger(master.getConfigManager().getMaxPlayersForGroup(groupName), 100));
-            int minServers = Math.max(0, master.getConfigManager().getMinServersForGroup(groupName));
-            int maxServers = Math.max(minServers, master.getConfigManager().getMaxServersForGroup(groupName));
-            boolean maintenance = master.getConfigManager().isMaintenanceMode(groupName);
-            boolean dynamic = master.getConfigManager().isDynamicGroup(groupName);
-            int queuedPlayers = parseQueueSize(queueStats.get(groupName));
-
-            int runningServers = 0;
-            int onlineServers = 0;
-            int startingServers = 0;
-            int totalPlayers = 0;
-            for (ServerInstance server : master.getRunningServers().values()) {
-                if (!groupName.equalsIgnoreCase(String.valueOf(server.groupName))) {
-                    continue;
-                }
-                runningServers++;
-                totalPlayers += Math.max(0, server.playerCount);
-                String status = String.valueOf(server.status == null ? "" : server.status);
-                if ("ONLINE".equalsIgnoreCase(status)) {
-                    onlineServers++;
-                }
-                if ("STARTING".equalsIgnoreCase(status)) {
-                    startingServers++;
-                }
-            }
-
-            List<String> startableWrappers = new ArrayList<>();
-            String bestWrapperId = null;
-            int bestAvailableMemory = -1;
-            int smallestShortfall = Integer.MAX_VALUE;
-            for (var wrapper : master.getConnectedWrappers().values()) {
-                boolean healthy = wrapper.isHealthy();
-                boolean draining = master.getLoadBalancerManager().isWrapperDraining(wrapper.getWrapperId());
-                int availableMemory = Math.max(0, wrapper.getAvailableMemory());
-                boolean cpuOk = wrapper.getCpuUsage() < cpuCritical;
-                if (healthy && !draining) {
-                    smallestShortfall = Math.min(smallestShortfall, Math.max(0, requiredRam - availableMemory));
-                }
-                if (healthy && !draining && cpuOk && availableMemory >= requiredRam) {
-                    startableWrappers.add(wrapper.getWrapperId());
-                    if (availableMemory > bestAvailableMemory) {
-                        bestAvailableMemory = availableMemory;
-                        bestWrapperId = wrapper.getWrapperId();
-                    }
-                }
-            }
-            int shortfallMb = startableWrappers.isEmpty()
-                    ? (smallestShortfall == Integer.MAX_VALUE ? requiredRam : smallestShortfall)
-                    : 0;
-
-            int demandFromQueue = (int) Math.ceil((double) queuedPlayers / Math.max(1, maxPlayers));
-            int recommendedServers = Math.max(minServers, runningServers + demandFromQueue);
-            if (queuedPlayers > 0 && runningServers == 0) {
-                recommendedServers = Math.max(recommendedServers, 1);
-            }
-            recommendedServers = Math.min(maxServers, recommendedServers);
-            boolean canStartNow = !maintenance && runningServers < maxServers && !startableWrappers.isEmpty();
-
-            String recommendation;
-            if (maintenance) {
-                recommendation = "Maintenance is enabled. Keep capacity stable unless staff bypass is intended.";
-            } else if (runningServers >= maxServers) {
-                recommendation = "Group already reached MaxServers. Increase MaxServers before scaling further.";
-            } else if (startableWrappers.isEmpty()) {
-                recommendation = shortfallMb > 0
-                        ? "No wrapper has enough free RAM. Need at least " + shortfallMb + "MB more free RAM on one wrapper."
-                        : "No healthy non-draining wrapper is available for scheduling.";
-            } else if (recommendedServers > runningServers) {
-                recommendation = "Scale up recommended: queue/demand suggests " + recommendedServers + " server(s).";
-            } else {
-                recommendation = "Capacity looks balanced. No immediate scale-up required.";
-            }
-
-            if (!canStartNow && queuedPlayers > 0) {
-                recommendations.add(groupName + ": queued players exist, but planner cannot start more capacity now.");
-            } else if (recommendedServers > runningServers) {
-                recommendations.add(groupName + ": start " + (recommendedServers - runningServers)
-                        + " more server(s), best wrapper: " + (bestWrapperId == null ? "none" : bestWrapperId) + ".");
-            }
-
-            Map<String, Object> groupInfo = new LinkedHashMap<>();
-            groupInfo.put("groupName", groupName);
-            groupInfo.put("ramMb", requiredRam);
-            groupInfo.put("maxPlayers", maxPlayers);
-            groupInfo.put("minServers", minServers);
-            groupInfo.put("maxServers", maxServers);
-            groupInfo.put("runningServers", runningServers);
-            groupInfo.put("onlineServers", onlineServers);
-            groupInfo.put("startingServers", startingServers);
-            groupInfo.put("players", totalPlayers);
-            groupInfo.put("queuedPlayers", queuedPlayers);
-            groupInfo.put("maintenance", maintenance);
-            groupInfo.put("dynamic", dynamic);
-            groupInfo.put("tags", master.getConfigManager().getGroupTags(groupName));
-            groupInfo.put("canStartNow", canStartNow);
-            groupInfo.put("startableWrappers", startableWrappers);
-            groupInfo.put("bestWrapperId", bestWrapperId);
-            groupInfo.put("capacityShortfallMb", shortfallMb);
-            groupInfo.put("recommendedServers", recommendedServers);
-            groupInfo.put("recommendation", recommendation);
-            groups.add(groupInfo);
-        }
-
-        if (master.getConnectedWrappers().isEmpty()) {
-            recommendations.add("No wrapper connected. Start or reconnect a wrapper before planning capacity.");
-        }
-        if (drainingWrappers > 0) {
-            recommendations.add(drainingWrappers + " wrapper(s) are draining and excluded from new scheduling.");
-        }
-        if (recommendations.isEmpty()) {
-            recommendations.add("Planner found no immediate capacity action.");
-        }
-
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("groups", groups.size());
-        summary.put("healthyWrappers", healthyWrappers);
-        summary.put("drainingWrappers", drainingWrappers);
-        summary.put("totalWrapperMemoryMb", totalWrapperMemory);
-        summary.put("availableWrapperMemoryMb", availableWrapperMemory);
-        summary.put("queueTotal", master.getPlayerQueueManager().getTotalQueued());
-        summary.put("startableGroups", groups.stream().filter(group -> Boolean.TRUE.equals(group.get("canStartNow"))).count());
-
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("generatedAt", now);
-        payload.put("summary", summary);
-        payload.put("wrappers", wrappers);
-        payload.put("groups", groups);
-        payload.put("recommendations", recommendations);
-        return payload;
-    }
-
-    private int safeInteger(Integer value, int fallback) {
-        return value == null ? fallback : value;
-    }
-
-    private int parseQueueSize(Object value) {
-        if (value instanceof Number) {
-            return Math.max(0, ((Number) value).intValue());
-        }
-        if (value == null) {
-            return 0;
-        }
-        try {
-            return Math.max(0, Integer.parseInt(String.valueOf(value)));
-        } catch (NumberFormatException ignored) {
-            return 0;
-        }
+        return CapacityPlannerService.build(Master.getInstance());
     }
 
     private Map<String, Object> buildSystemDiagnostics() {
@@ -914,7 +753,7 @@ public class CloudHttpServer {
             serverInfo.put("networkMode", server.networkMode);
             serverInfo.put("diskReadBytes", server.diskReadBytes);
             serverInfo.put("diskWriteBytes", server.diskWriteBytes);  // FIX: war server.ram
-            serverInfo.put("port", server.port);  // NEU: Port hinzugefÃ¼gt
+            serverInfo.put("port", server.port);  // NEU: Port hinzugefÃƒÆ’Ã‚Â¼gt
             serverInfo.put("lastUpdate", server.lastUpdate);  // FIX: statt getStartTime()
             servers.add(serverInfo);
         });
@@ -1909,16 +1748,28 @@ public class CloudHttpServer {
 
     private boolean authenticateRequest(HttpExchange exchange) {
         if (!checkRateLimit(exchange)) {
+            exchange.setAttribute("authFailureStatus", 429);
+            exchange.setAttribute("authFailureCode", "RATE_LIMITED");
+            exchange.setAttribute("authFailureMessage", "Rate limit exceeded. Try again later.");
             return false;
         }
         String apiKey = readApiKey(exchange);
         if (apiKey == null || !isKnownApiKey(apiKey)) {
+            exchange.setAttribute("authFailureStatus", 401);
+            exchange.setAttribute("authFailureCode", "UNAUTHORIZED");
+            exchange.setAttribute("authFailureMessage", "Missing or invalid API key.");
             return false;
         }
 
         String role = apiKeyRoles.getOrDefault(apiKey, "VIEWER");
         String requiredRole = isMutatingRequest(exchange) ? "ADMIN" : "VIEWER";
-        return hasRequiredRole(role, requiredRole);
+        boolean allowed = hasRequiredRole(role, requiredRole);
+        if (!allowed) {
+            exchange.setAttribute("authFailureStatus", 403);
+            exchange.setAttribute("authFailureCode", "FORBIDDEN");
+            exchange.setAttribute("authFailureMessage", "Role " + role + " is not allowed for this request.");
+        }
+        return allowed;
     }
 
     private String readApiKey(HttpExchange exchange) {
@@ -2146,14 +1997,129 @@ public class CloudHttpServer {
     }
 
     private void sendResponse(HttpExchange exchange, int statusCode, Object data) throws IOException {
-        String json = gson.toJson(data);
+        int effectiveStatusCode = resolveEffectiveStatusCode(exchange, statusCode);
+        Object payloadData = effectiveStatusCode >= 400 ? normalizeErrorPayload(exchange, effectiveStatusCode, data) : data;
+        String json = gson.toJson(payloadData);
         byte[] payload = json.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.getResponseHeaders().set("X-Request-Id", resolveRequestId(exchange));
         applyCorsHeaders(exchange);
-        exchange.sendResponseHeaders(statusCode, payload.length);
+        exchange.sendResponseHeaders(effectiveStatusCode, payload.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(payload);
         }
+    }
+
+    private int resolveEffectiveStatusCode(HttpExchange exchange, int statusCode) {
+        if (statusCode != 401) {
+            return statusCode;
+        }
+        Object value = exchange.getAttribute("authFailureStatus");
+        return value instanceof Number ? ((Number) value).intValue() : statusCode;
+    }
+
+    private void sendError(HttpExchange exchange, int statusCode, String code, String message,
+                           Map<String, Object> details, Throwable throwable) throws IOException {
+        if (throwable != null && statusCode >= 500) {
+            CentralLogger.error("API", code + " " + exchange.getRequestMethod() + " "
+                    + exchange.getRequestURI().getPath() + " requestId=" + resolveRequestId(exchange), throwable);
+        } else if (throwable != null) {
+            CentralLogger.warn("API", code + " " + exchange.getRequestMethod() + " "
+                    + exchange.getRequestURI().getPath() + " requestId=" + resolveRequestId(exchange)
+                    + " message=" + safeErrorMessage(throwable));
+        }
+        Map<String, Object> raw = new LinkedHashMap<>();
+        raw.put("code", code);
+        raw.put("error", message);
+        if (details != null && !details.isEmpty()) {
+            raw.put("details", details);
+        }
+        sendResponse(exchange, statusCode, raw);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> normalizeErrorPayload(HttpExchange exchange, int statusCode, Object data) {
+        String code = defaultErrorCode(statusCode);
+        String message = "Request failed";
+        Map<String, Object> details = new LinkedHashMap<>();
+
+        if (data instanceof Map<?, ?> rawMap) {
+            Map<Object, Object> map = (Map<Object, Object>) rawMap;
+            Object explicitCode = map.get("code");
+            Object explicitMessage = map.get("error");
+            if (explicitCode != null) {
+                code = String.valueOf(explicitCode);
+            }
+            if (explicitMessage != null) {
+                message = String.valueOf(explicitMessage);
+            }
+            for (Map.Entry<Object, Object> entry : map.entrySet()) {
+                String key = String.valueOf(entry.getKey());
+                if (!"code".equals(key) && !"error".equals(key)) {
+                    details.put(key, entry.getValue());
+                }
+            }
+        } else if (data != null) {
+            message = String.valueOf(data);
+        }
+
+        Object authCode = exchange.getAttribute("authFailureCode");
+        Object authMessage = exchange.getAttribute("authFailureMessage");
+        if (authCode != null) {
+            code = String.valueOf(authCode);
+        }
+        if (authMessage != null) {
+            message = String.valueOf(authMessage);
+        }
+
+        Map<String, Object> error = new LinkedHashMap<>();
+        error.put("code", code);
+        error.put("message", message);
+        error.put("status", statusCode);
+        if (!details.isEmpty()) {
+            error.put("details", details);
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("success", false);
+        payload.put("requestId", resolveRequestId(exchange));
+        payload.put("timestamp", System.currentTimeMillis());
+        payload.put("path", exchange.getRequestURI().getPath());
+        payload.put("error", error);
+        return payload;
+    }
+
+    private String defaultErrorCode(int statusCode) {
+        return switch (statusCode) {
+            case 400 -> "BAD_REQUEST";
+            case 401 -> "UNAUTHORIZED";
+            case 403 -> "FORBIDDEN";
+            case 404 -> "NOT_FOUND";
+            case 405 -> "METHOD_NOT_ALLOWED";
+            case 409 -> "CONFLICT";
+            case 429 -> "RATE_LIMITED";
+            default -> statusCode >= 500 ? "INTERNAL_ERROR" : "REQUEST_FAILED";
+        };
+    }
+
+    private String resolveRequestId(HttpExchange exchange) {
+        Object existing = exchange.getAttribute("requestId");
+        if (existing != null) {
+            return String.valueOf(existing);
+        }
+        String header = exchange.getRequestHeaders().getFirst("X-Request-Id");
+        String requestId = header == null || header.isBlank()
+                ? UUID.randomUUID().toString().replace("-", "")
+                : header.trim();
+        exchange.setAttribute("requestId", requestId);
+        return requestId;
+    }
+
+    private String safeErrorMessage(Throwable throwable) {
+        if (throwable == null || throwable.getMessage() == null || throwable.getMessage().isBlank()) {
+            return "Unexpected error";
+        }
+        return throwable.getMessage();
     }
 
     private void applyCorsHeaders(HttpExchange exchange) {
@@ -3156,6 +3122,8 @@ public class CloudHttpServer {
         return wsPort;
     }
 }
+
+
 
 
 

@@ -233,6 +233,7 @@ Wenn TLS aktiv ist:
 - `templaterollback <group> <version>`
 - `templatepull <serverName>`
 - `templatepush <serverName> [--clear] [--restart]`
+- `capacity [group]` / `cap` (RAM-Headroom, Startbarkeit, Empfehlung pro Group)
 - `scalenow <group> <count>`
 
 ### Permissions
@@ -291,6 +292,8 @@ Aktueller Status:
 - `GET /api/v1/metrics/prometheus`
 - `GET /api/v1/alerts`
 - `POST /api/v1/alerts/clear`
+- `GET /api/v1/system/diagnostics`
+- `GET /api/v1/system/capacity`
 
 ---
 

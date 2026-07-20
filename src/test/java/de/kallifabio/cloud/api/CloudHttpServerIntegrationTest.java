@@ -71,7 +71,10 @@ public class CloudHttpServerIntegrationTest {
                 dashboardKey,
                 "{\"keyName\":\"dashboard\"}"
         );
-        Assertions.assertEquals(401, rotateAsViewer.statusCode());
+        Assertions.assertEquals(403, rotateAsViewer.statusCode());
+        Map<?, ?> viewerError = GSON.fromJson(rotateAsViewer.body(), Map.class);
+        Assertions.assertEquals(false, viewerError.get("success"));
+        Assertions.assertTrue(viewerError.containsKey("requestId"));
 
         HttpResponse<String> rotateAsAdmin = sendJson(
                 baseUrl + "/api/v1/auth/rotate",

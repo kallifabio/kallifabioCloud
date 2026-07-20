@@ -26,6 +26,7 @@ import de.kallifabio.cloud.commands.permissions.PermissionProfileCommand;
 import de.kallifabio.cloud.commands.permissions.PermissionSyncCommand;
 import de.kallifabio.cloud.commands.permissions.PermissionTempCommand;
 import de.kallifabio.cloud.commands.queue.QueueCommand;
+import de.kallifabio.cloud.commands.scaling.CapacityCommand;
 import de.kallifabio.cloud.commands.scaling.ScaleGroupCommand;
 import de.kallifabio.cloud.commands.scaling.ScaleNowCommand;
 import de.kallifabio.cloud.commands.server.ForceStopServerCommand;
@@ -60,6 +61,8 @@ import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
 import de.kallifabio.cloud.libs.logging.CentralLogger;
 
 import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 
 public class CommandHandler {
@@ -103,6 +106,7 @@ public class CommandHandler {
         TemplatePullCommand templatePull = new TemplatePullCommand();
         TemplatePushCommand templatePush = new TemplatePushCommand();
         TemplateRollbackCommand templateRollback = new TemplateRollbackCommand();
+        CapacityCommand capacity = new CapacityCommand();
         ScaleNowCommand scaleNow = new ScaleNowCommand();
         ScaleGroupCommand scaleGroup = new ScaleGroupCommand();
         PermissionGroupCreateCommand permGroupCreate = new PermissionGroupCreateCommand();
@@ -159,6 +163,7 @@ public class CommandHandler {
         registerWithAlias("templatepull", templatePull);
         registerWithAlias("templatepush", templatePush, "templateapply");
         registerWithAlias("templaterollback", templateRollback);
+        registerWithAlias("capacity", capacity, "cap", "capacityplanner");
         registerWithAlias("scalenow", scaleNow, "scale");
         registerWithAlias("scalegroup", scaleGroup);
         registerWithAlias("permgroupcreate", permGroupCreate);
@@ -208,7 +213,10 @@ public class CommandHandler {
             return false;
         }
 
-        String[] args = input.trim().split(" ");
+        String[] args = parseCommandLine(input.trim());
+        if (args.length == 0) {
+            return false;
+        }
         String commandName = args[0].toLowerCase();
         Command command = commands.get(commandName);
 
@@ -223,14 +231,48 @@ public class CommandHandler {
 
         try {
             boolean success = command.execute(sender, commandArgs);
-            CentralLogger.audit(sender, commandName, String.join(" ", commandArgs));
+            CentralLogger.audit(sender, commandName + (success ? " OK" : " FAILED"), String.join(" ", commandArgs));
+            if (!success && command.getUsage() != null && !command.getUsage().isBlank()) {
+                ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + "Usage: " + command.getUsage());
+            }
             return success;
         } catch (Exception e) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED +
                     "Fehler beim Ausfuehren von '" + commandName + "': " + e.getMessage());
+            if (command.getUsage() != null && !command.getUsage().isBlank()) {
+                ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + "Usage: " + command.getUsage());
+            }
             CentralLogger.error("Command", "Fehler bei Command '" + commandName + "'", e);
             return false;
         }
+    }
+
+    private String[] parseCommandLine(String input) {
+        List<String> parts = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean quoted = false;
+        char quoteChar = 0;
+
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            if ((c == '"' || c == '\'') && (quoteChar == 0 || quoteChar == c)) {
+                quoted = !quoted;
+                quoteChar = quoted ? c : 0;
+                continue;
+            }
+            if (Character.isWhitespace(c) && !quoted) {
+                if (current.length() > 0) {
+                    parts.add(current.toString());
+                    current.setLength(0);
+                }
+                continue;
+            }
+            current.append(c);
+        }
+        if (current.length() > 0) {
+            parts.add(current.toString());
+        }
+        return parts.toArray(new String[0]);
     }
 
     public Map<String, Command> getCommands() {

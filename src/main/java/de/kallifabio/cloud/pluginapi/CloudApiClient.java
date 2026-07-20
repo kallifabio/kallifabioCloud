@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
+import java.util.UUID;
 
 public final class CloudApiClient implements AutoCloseable {
 
@@ -91,6 +92,7 @@ public final class CloudApiClient implements AutoCloseable {
                 .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .header("X-API-Key", config.apiKey())
+                .header("X-Request-Id", UUID.randomUUID().toString().replace("-", ""))
                 .header("User-Agent", config.userAgent())
                 .timeout(config.readTimeout());
     }
@@ -141,7 +143,15 @@ public final class CloudApiClient implements AutoCloseable {
             if (parsed.isJsonObject()) {
                 JsonObject object = parsed.getAsJsonObject();
                 if (object.has("error")) {
-                    return object.get("error").getAsString();
+                    JsonElement error = object.get("error");
+                    if (error.isJsonObject()) {
+                        JsonObject errorObject = error.getAsJsonObject();
+                        String code = errorObject.has("code") ? errorObject.get("code").getAsString() : "ERROR";
+                        String message = errorObject.has("message") ? errorObject.get("message").getAsString() : "request failed";
+                        String requestId = object.has("requestId") ? object.get("requestId").getAsString() : "";
+                        return code + ": " + message + (requestId.isBlank() ? "" : " (requestId=" + requestId + ")");
+                    }
+                    return error.getAsString();
                 }
                 if (object.has("message")) {
                     return object.get("message").getAsString();

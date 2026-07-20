@@ -256,3 +256,17 @@ try {
 - `src/main/java/de/kallifabio/cloud/pluginapi/service/`
 - `src/main/java/de/kallifabio/cloud/pluginapi/model/`
 - `src/main/java/de/kallifabio/cloud/pluginapi/request/`
+
+## Capacity Planner API
+
+```java
+var plan = api.operations().capacityPlannerModel();
+
+for (var group : plan.groupPlans()) {
+    if (group.canStartNow() && group.recommendedServers() > group.runningServers()) {
+        getLogger().info(group.groupName() + " kann jetzt starten. Bester Wrapper: " + group.bestWrapperId());
+    }
+}
+```
+
+Der Planner eignet sich fuer Lobby-, BedWars- oder Minigame-Plugins, die vor einem Serverstart pruefen wollen, ob genug Wrapper-RAM frei ist und ob Maintenance/MaxServers den Start blockieren.

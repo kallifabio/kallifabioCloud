@@ -59,6 +59,41 @@ Antwort (Beispiel):
 - Zweck: Aggregierte Dashboard-Daten (Server, Wrapper, Queue, Monitoring)
 - Rolle: `VIEWER`
 
+### `GET /api/v1/system/diagnostics`
+- Zweck: Systemweite Health-Auswertung mit Score, Issues und Empfehlungen
+- Rolle: `VIEWER`
+
+### `GET /api/v1/system/capacity`
+- Zweck: Maintenance & Capacity Planner fuer Groups und Wrapper
+- Rolle: `VIEWER`
+- Liefert unter anderem:
+  - freie/gesamte Wrapper-RAM-Kapazitaet
+  - startbare Groups
+  - `canStartNow` pro Group
+  - empfohlenen Server-Count
+  - besten Wrapper und RAM-Shortfall
+- Beispiel:
+```json
+{
+  "summary": {
+    "groups": 2,
+    "startableGroups": 1,
+    "healthyWrappers": 1,
+    "availableWrapperMemoryMb": 2048
+  },
+  "groups": [
+    {
+      "groupName": "Lobby",
+      "ramMb": 1024,
+      "runningServers": 1,
+      "recommendedServers": 2,
+      "canStartNow": true,
+      "bestWrapperId": "Wrapper-abc123"
+    }
+  ]
+}
+```
+
 ## Server Management
 
 ### `GET /api/v1/servers`
@@ -277,4 +312,3 @@ curl -X POST -H "X-API-Key: <ADMIN_KEY>" -H "Content-Type: application/json" \
   -d '{"serverName":"Proxy-1","command":"glist"}' \
   http://<host>:8081/api/v1/console/send
 ```
-
