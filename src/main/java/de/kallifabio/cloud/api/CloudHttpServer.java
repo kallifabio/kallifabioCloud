@@ -15,7 +15,9 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpsConfigurator;
 import com.sun.net.httpserver.HttpsServer;
+import de.kallifabio.cloud.data.ClanData;
 import de.kallifabio.cloud.data.PlayerData;
+import de.kallifabio.cloud.data.PunishmentData;
 import de.kallifabio.cloud.libs.Message;
 import de.kallifabio.cloud.libs.console.ConsoleColors;
 import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
@@ -207,6 +209,7 @@ public class CloudHttpServer {
         registerContext("/api/v1/system/capacity", this::handleSystemCapacityPlanner);
         registerContext("/api/v1/system/report", this::handleSystemReport);
         registerContext("/api/v1/events/recent", this::handleEventsRecent);
+        registerContext("/api/v1/bungeesystem", this::handleBungeeSystem);
         registerContext("/api/v1/lifecycle", this::handleLifecycle);
         registerContext("/api/v1/incidents", this::handleIncidents);
         registerContext("/api/v1/backups", this::handleBackups);
@@ -243,15 +246,32 @@ public class CloudHttpServer {
 
         // Queue Management
         registerContext("/api/v1/queue/status", this::handleQueueStatus);
+        registerContext("/api/v1/queue/join", this::handleQueueJoin);
         registerContext("/api/v1/player/data", this::handlePlayerData);
         registerContext("/api/v1/player/friends", this::handlePlayerFriends);
         registerContext("/api/v1/player/party", this::handlePlayerParty);
+        registerContext("/api/v1/player/profile", this::handlePlayerProfile);
+        registerContext("/api/v1/player/settings", this::handlePlayerSettings);
+        registerContext("/api/v1/social/players", this::handleSocialPlayer);
+        registerContext("/api/v1/party/create", this::handlePartyCreate);
+        registerContext("/api/v1/party/invite", this::handlePartyInvite);
+        registerContext("/api/v1/party/accept", this::handlePartyAccept);
+        registerContext("/api/v1/party/kick", this::handlePartyKick);
+        registerContext("/api/v1/party/leave", this::handlePartyLeave);
         registerContext("/api/v1/party/switch", this::handlePartySwitch);
+        registerContext("/api/v1/punishments", this::handlePunishments);
+        registerContext("/api/v1/punishments/upsert", this::handlePunishmentUpsert);
+        registerContext("/api/v1/punishments/pardon", this::handlePunishmentPardon);
+        registerContext("/api/v1/clans", this::handleClans);
+        registerContext("/api/v1/clans/upsert", this::handleClanUpsert);
+        registerContext("/api/v1/clans/delete", this::handleClanDelete);
         registerContext("/api/v1/permissions/group", this::handlePermissionGroup);
         registerContext("/api/v1/permissions/assign", this::handlePermissionAssign);
         registerContext("/api/v1/permissions/temp", this::handleTempPermission);
         registerContext("/api/v1/permissions/profile", this::handlePermissionProfile);
+        registerContext("/api/v1/permissions/player", this::handlePermissionPlayerAlias);
         registerContext("/api/v1/permissions/check", this::handlePermissionCheck);
+        registerContext("/api/v1/events/lobby", this::handleLobbyEvent);
 
         // Safe managed file browser
         registerContext("/api/v1/files/list", this::handleFileList);
@@ -659,6 +679,76 @@ public class CloudHttpServer {
                 ? List.of()
                 : master.getEventTimelineService().recent(limit, query.get("type"), query.get("severity"));
         sendResponse(exchange, 200, Map.of("limit", limit, "count", events.size(), "events", events));
+    }
+
+    private void handleBungeeSystem(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        Map<String, Object> overview = buildDashboardOverviewPayload();
+        List<Map<String, Object>> proxyServers = new ArrayList<>();
+        for (Object item : (List<?>) overview.getOrDefault("servers", List.of())) {
+            if (item instanceof Map<?, ?> raw) {
+                String group = String.valueOf(raw.get("groupName") == null ? "" : raw.get("groupName"));
+                String name = String.valueOf(raw.get("serverName") == null ? "" : raw.get("serverName"));
+                if (group.toLowerCase(Locale.ROOT).contains("proxy") || name.toLowerCase(Locale.ROOT).startsWith("proxy")) {
+                    Map<String, Object> proxy = new LinkedHashMap<>();
+                    raw.forEach((key, value) -> proxy.put(String.valueOf(key), value));
+                    proxyServers.add(proxy);
+                }
+            }
+        }
+
+        List<Map<String, Object>> activePunishments = new ArrayList<>();
+        for (PunishmentData punishment : master.getDataStore().getPunishments(null, true)) {
+            activePunishments.add(punishmentState(punishment));
+        }
+
+        List<Map<String, Object>> clans = new ArrayList<>();
+        for (ClanData clan : master.getDataStore().getClans()) {
+            clans.add(clanState(clan));
+        }
+
+        List<Map<String, Object>> events = master.getEventTimelineService() == null
+                ? List.of()
+                : master.getEventTimelineService().recent(120, null, null);
+        List<Map<String, Object>> bungeeEvents = events.stream()
+                .filter(event -> {
+                    String type = String.valueOf(event.getOrDefault("type", "")).toUpperCase(Locale.ROOT);
+                    String source = String.valueOf(event.getOrDefault("source", "")).toUpperCase(Locale.ROOT);
+                    return source.contains("PROXY")
+                            || type.contains("PUNISHMENT")
+                            || type.contains("CLAN")
+                            || type.contains("PARTY")
+                            || type.contains("FRIEND")
+                            || type.contains("PROXY");
+                })
+                .limit(80)
+                .toList();
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("timestamp", System.currentTimeMillis());
+        payload.put("proxies", proxyServers);
+        payload.put("activePunishments", activePunishments);
+        payload.put("activePunishmentCount", activePunishments.size());
+        payload.put("clans", clans);
+        payload.put("clanCount", clans.size());
+        payload.put("events", bungeeEvents);
+        payload.put("eventCount", bungeeEvents.size());
+        payload.put("queue", overview.getOrDefault("queue", Map.of()));
+        payload.put("liveSync", Map.of(
+                "websocketPort", wsPort,
+                "recentEventsInSnapshot", true,
+                "snapshotIntervalSeconds", 5
+        ));
+        sendResponse(exchange, 200, payload);
     }
 
     private void handleLifecycle(HttpExchange exchange) throws IOException {
@@ -1372,6 +1462,44 @@ public class CloudHttpServer {
         sendResponse(exchange, 200, queueStatus);
     }
 
+    private void handleQueueJoin(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, Object> req = readJsonBody(exchange);
+        String playerUuid = stringValue(req.get("playerUuid"));
+        String playerName = stringValue(req.getOrDefault("playerName", "Player"));
+        String group = stringValue(req.get("group"));
+        int priority = numberValue(req.get("priority"), 0);
+        if (playerUuid.isBlank() || group.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "playerUuid and group required"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        master.getPlayerQueueManager().addToQueue(playerUuid, playerName.isBlank() ? "Player" : playerName, group, priority);
+        int position = master.getPlayerQueueManager().getQueuePosition(playerUuid, group);
+        CentralLogger.audit("api", "queue_join", playerUuid + " -> " + group + " pos=" + position);
+        if (master.getEventTimelineService() != null) {
+            master.getEventTimelineService().publish("QUEUE_JOIN", "lobby-api", "INFO",
+                    playerUuid + " queued for " + group,
+                    Map.of("playerUuid", playerUuid, "playerName", playerName, "group", group, "position", position));
+        }
+        sendResponse(exchange, 200, Map.of(
+                "message", "queued",
+                "playerUuid", playerUuid,
+                "group", group,
+                "position", position,
+                "totalQueued", master.getPlayerQueueManager().getTotalQueued()
+        ));
+    }
+
     private void handlePlayerData(HttpExchange exchange) throws IOException {
         if (!authenticateRequest(exchange)) {
             sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
@@ -1423,6 +1551,109 @@ public class CloudHttpServer {
         sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
     }
 
+    private void handlePlayerProfile(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        String uuid = firstNonBlank(query.get("uuid"), query.get("playerUuid"), trailingPath(exchange, "/api/v1/player/profile/"));
+        if (uuid == null || uuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "uuid/playerUuid required"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        if ("GET".equals(exchange.getRequestMethod())) {
+            PlayerData data = master.getDataStore().getPlayerData(uuid);
+            PermissionProfile permissions = master.buildPermissionProfile(uuid);
+            sendResponse(exchange, 200, Map.of(
+                    "playerUuid", uuid,
+                    "coins", data.coins,
+                    "stats", data.stats,
+                    "lastServer", data.lastServer,
+                    "lastSeen", data.lastSeen,
+                    "permissions", permissions.permissions,
+                    "primaryGroup", permissions.primaryGroup,
+                    "prefix", permissions.prefix,
+                    "suffix", permissions.suffix
+            ));
+            return;
+        }
+
+        if ("POST".equals(exchange.getRequestMethod())) {
+            Map<String, Object> req = readJsonBody(exchange);
+            PlayerData data = master.getDataStore().getPlayerData(uuid);
+            if (req.get("coins") != null) {
+                data.coins = numberValue(req.get("coins"), data.coins);
+            }
+            if (req.get("lastServer") != null) {
+                data.lastServer = stringValue(req.get("lastServer"));
+            }
+            if (req.get("stats") instanceof Map<?, ?> map) {
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    data.stats.put(String.valueOf(entry.getKey()), numberValue(entry.getValue(), 0));
+                }
+            }
+            data.lastSeen = System.currentTimeMillis();
+            master.getDataStore().savePlayerData(data);
+            CentralLogger.audit("api", "player_profile_save", uuid);
+            sendResponse(exchange, 200, Map.of("message", "profile saved", "playerUuid", uuid));
+            return;
+        }
+
+        sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+    }
+
+    private void handlePlayerSettings(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        String uuid = firstNonBlank(query.get("uuid"), query.get("playerUuid"), trailingPath(exchange, "/api/v1/player/settings/"));
+        if (uuid == null || uuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "uuid/playerUuid required"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        PlayerData data = master.getDataStore().getPlayerData(uuid);
+        if ("GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 200, Map.of(
+                    "playerUuid", uuid,
+                    "visibility", settingInt(data, "lobby.visibility", 0),
+                    "scoreboard", settingInt(data, "lobby.scoreboard", 1) == 1,
+                    "sounds", settingInt(data, "lobby.sounds", 1) == 1,
+                    "language", settingInt(data, "lobby.language", 0) == 1 ? "en_US" : "de_DE"
+            ));
+            return;
+        }
+
+        if ("POST".equals(exchange.getRequestMethod())) {
+            Map<String, Object> req = readJsonBody(exchange);
+            if (req.get("visibility") != null) {
+                data.stats.put("lobby.visibility", visibilityToInt(stringValue(req.get("visibility"))));
+            }
+            if (req.get("scoreboard") != null) {
+                data.stats.put("lobby.scoreboard", booleanValue(req.get("scoreboard"), true) ? 1 : 0);
+            }
+            if (req.get("sounds") != null) {
+                data.stats.put("lobby.sounds", booleanValue(req.get("sounds"), true) ? 1 : 0);
+            }
+            if (req.get("language") != null) {
+                data.stats.put("lobby.language", "en_US".equalsIgnoreCase(stringValue(req.get("language"))) ? 1 : 0);
+            }
+            data.lastSeen = System.currentTimeMillis();
+            master.getDataStore().savePlayerData(data);
+            CentralLogger.audit("api", "player_settings_save", uuid);
+            sendResponse(exchange, 200, Map.of("message", "settings saved", "playerUuid", uuid));
+            return;
+        }
+
+        sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+    }
+
     private void handlePlayerFriends(HttpExchange exchange) throws IOException {
         if (!authenticateRequest(exchange)) {
             sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
@@ -1457,6 +1688,43 @@ public class CloudHttpServer {
         }
 
         sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+    }
+
+    private void handleSocialPlayer(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        String uuid = firstNonBlank(
+                parseQueryParams(exchange.getRequestURI().getQuery()).get("uuid"),
+                parseQueryParams(exchange.getRequestURI().getQuery()).get("playerUuid"),
+                trailingPath(exchange, "/api/v1/social/players/")
+        );
+        if (uuid == null || uuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "uuid/playerUuid required"));
+            return;
+        }
+        Master master = Master.getInstance();
+        List<String> friends = master.getDataStore().getFriends(uuid);
+        String partyId = Optional.ofNullable(master.getDataStore().getPartyIdForPlayer(uuid)).orElse("");
+        List<String> partyMembers = partyId.isBlank()
+                ? List.of()
+                : master.getDataStore().getPartyMembers(partyId);
+        String leaderUuid = partyId.isBlank()
+                ? ""
+                : Optional.ofNullable(master.getDataStore().getPartyLeader(partyId)).orElse("");
+        sendResponse(exchange, 200, Map.of(
+                "playerUuid", uuid,
+                "friends", friends,
+                "partyId", partyId,
+                "leaderUuid", leaderUuid,
+                "partyMembers", partyMembers,
+                "friendCount", friends.size()
+        ));
     }
 
     private void handlePlayerParty(HttpExchange exchange) throws IOException {
@@ -1499,6 +1767,223 @@ public class CloudHttpServer {
         sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
     }
 
+    private void handlePartyCreate(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, Object> req = readJsonBody(exchange);
+        String leaderUuid = firstNonBlank(stringValue(req.get("leaderUuid")), stringValue(req.get("playerUuid")));
+        if (leaderUuid == null || leaderUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "leaderUuid/playerUuid required"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        String partyId = firstNonBlank(stringValue(req.get("partyId")), master.getDataStore().getPartyIdForPlayer(leaderUuid));
+        if (partyId == null || partyId.isBlank()) {
+            partyId = "party-" + leaderUuid.replace("-", "").substring(0, Math.min(8, leaderUuid.replace("-", "").length()))
+                    + "-" + Long.toUnsignedString(System.currentTimeMillis(), 36);
+        }
+
+        LinkedHashSet<String> members = new LinkedHashSet<>();
+        members.add(leaderUuid);
+        if (req.get("members") instanceof List<?> list) {
+            for (Object member : list) {
+                String value = stringValue(member);
+                if (value != null && !value.isBlank()) {
+                    members.add(value);
+                }
+            }
+        }
+
+        master.getDataStore().setPartyMembers(partyId, leaderUuid, new ArrayList<>(members));
+        CentralLogger.audit("api", "party_create", partyId + " leader=" + leaderUuid + " size=" + members.size());
+        sendResponse(exchange, 200, partyState(partyId));
+    }
+
+    private void handlePartyInvite(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, Object> req = readJsonBody(exchange);
+        String inviterUuid = firstNonBlank(stringValue(req.get("inviterUuid")), stringValue(req.get("fromUuid")), stringValue(req.get("playerUuid")));
+        String targetUuid = firstNonBlank(stringValue(req.get("targetUuid")), stringValue(req.get("toUuid")));
+        if (inviterUuid == null || targetUuid == null || inviterUuid.isBlank() || targetUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "inviterUuid/fromUuid and targetUuid/toUuid required"));
+            return;
+        }
+        if (inviterUuid.equalsIgnoreCase(targetUuid)) {
+            sendResponse(exchange, 409, Map.of("error", "cannot invite yourself"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        String partyId = firstNonBlank(stringValue(req.get("partyId")), master.getDataStore().getPartyIdForPlayer(inviterUuid));
+        String leaderUuid = master.getDataStore().getPartyLeader(partyId);
+        if (partyId == null || partyId.isBlank() || leaderUuid == null || leaderUuid.isBlank()) {
+            partyId = "party-" + inviterUuid.replace("-", "").substring(0, Math.min(8, inviterUuid.replace("-", "").length()))
+                    + "-" + Long.toUnsignedString(System.currentTimeMillis(), 36);
+            leaderUuid = inviterUuid;
+            master.getDataStore().setPartyMembers(partyId, leaderUuid, List.of(inviterUuid));
+        }
+
+        List<String> members = master.getDataStore().getPartyMembers(partyId);
+        if (!members.stream().anyMatch(member -> member.equalsIgnoreCase(inviterUuid))) {
+            sendResponse(exchange, 403, Map.of("error", "inviter is not member of party"));
+            return;
+        }
+        if (members.stream().anyMatch(member -> member.equalsIgnoreCase(targetUuid))) {
+            sendResponse(exchange, 200, partyState(partyId, Map.of("message", "target already in party")));
+            return;
+        }
+
+        long ttlMs = Math.max(60_000L, numberValue(req.get("ttlMs"), 10 * 60 * 1000));
+        long expiresAt = System.currentTimeMillis() + ttlMs;
+        master.getDataStore().createPartyInvite(partyId, inviterUuid, targetUuid, expiresAt);
+        CentralLogger.audit("api", "party_invite", partyId + " " + inviterUuid + " -> " + targetUuid);
+        sendResponse(exchange, 200, partyState(partyId, Map.of(
+                "message", "party invite created",
+                "targetUuid", targetUuid,
+                "expiresAt", expiresAt
+        )));
+    }
+
+    private void handlePartyAccept(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, Object> req = readJsonBody(exchange);
+        String playerUuid = firstNonBlank(stringValue(req.get("playerUuid")), stringValue(req.get("targetUuid")));
+        if (playerUuid == null || playerUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "playerUuid/targetUuid required"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        String partyId = firstNonBlank(master.getDataStore().consumePartyInvite(playerUuid), stringValue(req.get("partyId")));
+        if (partyId == null || partyId.isBlank()) {
+            sendResponse(exchange, 404, Map.of("error", "no pending party invite found"));
+            return;
+        }
+
+        List<String> current = master.getDataStore().getPartyMembers(partyId);
+        if (current.isEmpty()) {
+            sendResponse(exchange, 404, Map.of("error", "party not found", "partyId", partyId));
+            return;
+        }
+        LinkedHashSet<String> members = new LinkedHashSet<>(current);
+        members.add(playerUuid);
+        String leaderUuid = Optional.ofNullable(master.getDataStore().getPartyLeader(partyId)).orElse(current.get(0));
+        master.getDataStore().setPartyMembers(partyId, leaderUuid, new ArrayList<>(members));
+        CentralLogger.audit("api", "party_accept", partyId + " player=" + playerUuid);
+        sendResponse(exchange, 200, partyState(partyId, Map.of("message", "party invite accepted")));
+    }
+
+    private void handlePartyKick(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, Object> req = readJsonBody(exchange);
+        String targetUuid = firstNonBlank(stringValue(req.get("targetUuid")), stringValue(req.get("playerUuid")));
+        String actorUuid = firstNonBlank(stringValue(req.get("actorUuid")), stringValue(req.get("leaderUuid")));
+        if (targetUuid == null || targetUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "targetUuid/playerUuid required"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        String partyId = firstNonBlank(stringValue(req.get("partyId")), master.getDataStore().getPartyIdForPlayer(targetUuid));
+        if (partyId == null || partyId.isBlank()) {
+            sendResponse(exchange, 404, Map.of("error", "party not found"));
+            return;
+        }
+        String leaderUuid = master.getDataStore().getPartyLeader(partyId);
+        if (actorUuid != null && leaderUuid != null && !actorUuid.equalsIgnoreCase(leaderUuid)) {
+            sendResponse(exchange, 403, Map.of("error", "only party leader can kick members"));
+            return;
+        }
+        if (leaderUuid != null && targetUuid.equalsIgnoreCase(leaderUuid)) {
+            sendResponse(exchange, 409, Map.of("error", "leader cannot be kicked; use leave to transfer leadership"));
+            return;
+        }
+
+        List<String> members = new ArrayList<>(master.getDataStore().getPartyMembers(partyId));
+        boolean removed = members.removeIf(member -> member.equalsIgnoreCase(targetUuid));
+        if (!removed) {
+            sendResponse(exchange, 404, Map.of("error", "target is not in party"));
+            return;
+        }
+        master.getDataStore().setPartyMembers(partyId, leaderUuid == null ? "" : leaderUuid, members);
+        CentralLogger.audit("api", "party_kick", partyId + " target=" + targetUuid);
+        sendResponse(exchange, 200, partyState(partyId, Map.of("message", "party member kicked")));
+    }
+
+    private void handlePartyLeave(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, Object> req = readJsonBody(exchange);
+        String playerUuid = stringValue(req.get("playerUuid"));
+        if (playerUuid == null || playerUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "playerUuid required"));
+            return;
+        }
+
+        Master master = Master.getInstance();
+        String partyId = firstNonBlank(stringValue(req.get("partyId")), master.getDataStore().getPartyIdForPlayer(playerUuid));
+        if (partyId == null || partyId.isBlank()) {
+            sendResponse(exchange, 404, Map.of("error", "party not found"));
+            return;
+        }
+
+        List<String> members = new ArrayList<>(master.getDataStore().getPartyMembers(partyId));
+        boolean removed = members.removeIf(member -> member.equalsIgnoreCase(playerUuid));
+        if (!removed) {
+            sendResponse(exchange, 404, Map.of("error", "player is not in party"));
+            return;
+        }
+        String oldLeader = master.getDataStore().getPartyLeader(partyId);
+        String newLeader = members.isEmpty()
+                ? ""
+                : (playerUuid.equalsIgnoreCase(Optional.ofNullable(oldLeader).orElse("")) ? members.get(0) : oldLeader);
+        master.getDataStore().setPartyMembers(partyId, newLeader == null ? "" : newLeader, members);
+        CentralLogger.audit("api", "party_leave", partyId + " player=" + playerUuid + " remaining=" + members.size());
+        sendResponse(exchange, 200, partyState(partyId, Map.of(
+                "message", "party left",
+                "removedUuid", playerUuid
+        )));
+    }
+
     private void handlePartySwitch(HttpExchange exchange) throws IOException {
         if (!authenticateRequest(exchange)) {
             sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
@@ -1527,6 +2012,240 @@ public class CloudHttpServer {
         }
         CentralLogger.audit("api", "party_switch", partyId + " -> " + targetServer + " members=" + members.size());
         sendResponse(exchange, 200, Map.of("message", "party switched", "partyId", partyId, "members", members.size()));
+    }
+
+    private Map<String, Object> partyState(String partyId) {
+        return partyState(partyId, Map.of());
+    }
+
+    private Map<String, Object> partyState(String partyId, Map<String, Object> extra) {
+        Master master = Master.getInstance();
+        List<String> members = partyId == null || partyId.isBlank()
+                ? List.of()
+                : master.getDataStore().getPartyMembers(partyId);
+        String leaderUuid = partyId == null || partyId.isBlank()
+                ? ""
+                : Optional.ofNullable(master.getDataStore().getPartyLeader(partyId)).orElse("");
+        Map<String, Object> response = new LinkedHashMap<>();
+        if (extra != null) {
+            response.putAll(extra);
+        }
+        response.put("partyId", partyId == null ? "" : partyId);
+        response.put("leaderUuid", leaderUuid);
+        response.put("members", members);
+        response.put("memberCount", members.size());
+        return response;
+    }
+
+    private void handlePunishments(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        String targetUuid = firstNonBlank(query.get("targetUuid"), query.get("uuid"), trailingPath(exchange, "/api/v1/punishments/"));
+        boolean activeOnly = Boolean.parseBoolean(firstNonBlank(query.get("activeOnly"), query.get("active"), "false"));
+        List<Map<String, Object>> punishments = new ArrayList<>();
+        for (PunishmentData punishment : Master.getInstance().getDataStore().getPunishments(targetUuid, activeOnly)) {
+            punishments.add(punishmentState(punishment));
+        }
+        sendResponse(exchange, 200, Map.of("punishments", punishments, "count", punishments.size()));
+    }
+
+    private void handlePunishmentUpsert(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> req = readJsonBody(exchange);
+        PunishmentData punishment = new PunishmentData();
+        punishment.id = firstNonBlank(stringValue(req.get("id")),
+                firstNonBlank(stringValue(req.get("type")), "punishment").toLowerCase(Locale.ROOT)
+                        + "-" + Long.toUnsignedString(System.currentTimeMillis(), 36)
+                        + "-" + UUID.randomUUID().toString().substring(0, 8));
+        punishment.targetUuid = firstNonBlank(stringValue(req.get("targetUuid")), stringValue(req.get("uuid")));
+        punishment.targetName = firstNonBlank(stringValue(req.get("targetName")), "");
+        punishment.actorUuid = firstNonBlank(stringValue(req.get("actorUuid")), "");
+        punishment.actorName = firstNonBlank(stringValue(req.get("actorName")), "API");
+        punishment.type = firstNonBlank(stringValue(req.get("type")), "WARN").toUpperCase(Locale.ROOT);
+        punishment.reason = firstNonBlank(stringValue(req.get("reason")), "No reason provided");
+        punishment.proof = firstNonBlank(stringValue(req.get("proof")), "");
+        punishment.notes = firstNonBlank(stringValue(req.get("notes")), "");
+        punishment.address = firstNonBlank(stringValue(req.get("address")), "");
+        punishment.createdAt = longValue(req.get("createdAt"), System.currentTimeMillis());
+        punishment.expiresAt = longValue(req.get("expiresAt"), 0L);
+        punishment.active = req.get("active") == null || Boolean.parseBoolean(String.valueOf(req.get("active")));
+        if (punishment.targetUuid == null || punishment.targetUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "targetUuid required"));
+            return;
+        }
+        Master.getInstance().getDataStore().upsertPunishment(punishment);
+        CentralLogger.audit("api", "punishment_upsert", punishment.type + " " + punishment.targetUuid + " id=" + punishment.id);
+        publishApiEvent("PUNISHMENT_" + punishment.type, punishment.targetName + " " + punishment.reason);
+        sendResponse(exchange, 200, punishmentState(punishment));
+    }
+
+    private void handlePunishmentPardon(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> req = readJsonBody(exchange);
+        String id = stringValue(req.get("id"));
+        String targetUuid = firstNonBlank(stringValue(req.get("targetUuid")), stringValue(req.get("uuid")));
+        String typeLike = stringValue(req.get("typeLike"));
+        boolean changed = id != null && !id.isBlank()
+                ? Master.getInstance().getDataStore().deactivatePunishment(id)
+                : Master.getInstance().getDataStore().deactivatePunishmentsForTarget(targetUuid, typeLike) > 0;
+        CentralLogger.audit("api", "punishment_pardon", firstNonBlank(id, targetUuid, "-"));
+        sendResponse(exchange, 200, Map.of("changed", changed));
+    }
+
+    private void handleClans(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        String name = firstNonBlank(query.get("name"), trailingPath(exchange, "/api/v1/clans/"));
+        if (name != null && !name.isBlank()) {
+            ClanData clan = Master.getInstance().getDataStore().getClan(name);
+            if (clan == null) {
+                sendResponse(exchange, 404, Map.of("error", "clan not found"));
+                return;
+            }
+            sendResponse(exchange, 200, clanState(clan));
+            return;
+        }
+        List<Map<String, Object>> clans = new ArrayList<>();
+        for (ClanData clan : Master.getInstance().getDataStore().getClans()) {
+            clans.add(clanState(clan));
+        }
+        sendResponse(exchange, 200, Map.of("clans", clans, "count", clans.size()));
+    }
+
+    private void handleClanUpsert(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> req = readJsonBody(exchange);
+        ClanData clan = new ClanData();
+        clan.name = firstNonBlank(stringValue(req.get("name")), stringValue(req.get("clanName")));
+        clan.tag = firstNonBlank(stringValue(req.get("tag")), "");
+        clan.ownerUuid = firstNonBlank(stringValue(req.get("ownerUuid")), "");
+        clan.homeServer = firstNonBlank(stringValue(req.get("homeServer")), "");
+        clan.friendlyFire = req.get("friendlyFire") != null && Boolean.parseBoolean(String.valueOf(req.get("friendlyFire")));
+        clan.createdAt = longValue(req.get("createdAt"), System.currentTimeMillis());
+        clan.wins = numberValue(req.get("wins"), 0);
+        clan.kills = numberValue(req.get("kills"), 0);
+        clan.points = numberValue(req.get("points"), 0);
+        clan.admins = stringList(req.get("admins"));
+        clan.moderators = stringList(req.get("moderators"));
+        clan.members = stringList(req.get("members"));
+        if (clan.name == null || clan.name.isBlank() || clan.ownerUuid == null || clan.ownerUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "name and ownerUuid required"));
+            return;
+        }
+        if (!clan.members.contains(clan.ownerUuid)) {
+            clan.members.add(clan.ownerUuid);
+        }
+        Master.getInstance().getDataStore().upsertClan(clan);
+        CentralLogger.audit("api", "clan_upsert", clan.name + " owner=" + clan.ownerUuid);
+        publishApiEvent("CLAN_UPSERT", clan.name);
+        sendResponse(exchange, 200, clanState(clan));
+    }
+
+    private void handleClanDelete(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> req = readJsonBody(exchange);
+        String name = firstNonBlank(stringValue(req.get("name")), stringValue(req.get("clanName")));
+        boolean deleted = Master.getInstance().getDataStore().deleteClan(name);
+        CentralLogger.audit("api", "clan_delete", firstNonBlank(name, "-"));
+        sendResponse(exchange, 200, Map.of("deleted", deleted));
+    }
+
+    private Map<String, Object> punishmentState(PunishmentData punishment) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", punishment.id);
+        map.put("targetUuid", punishment.targetUuid);
+        map.put("targetName", punishment.targetName);
+        map.put("actorUuid", punishment.actorUuid);
+        map.put("actorName", punishment.actorName);
+        map.put("type", punishment.type);
+        map.put("reason", punishment.reason);
+        map.put("proof", punishment.proof);
+        map.put("notes", punishment.notes);
+        map.put("address", punishment.address);
+        map.put("createdAt", punishment.createdAt);
+        map.put("expiresAt", punishment.expiresAt);
+        map.put("active", punishment.active && !punishment.isExpired(System.currentTimeMillis()));
+        return map;
+    }
+
+    private Map<String, Object> clanState(ClanData clan) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("name", clan.name);
+        map.put("tag", clan.tag);
+        map.put("ownerUuid", clan.ownerUuid);
+        map.put("homeServer", clan.homeServer);
+        map.put("friendlyFire", clan.friendlyFire);
+        map.put("createdAt", clan.createdAt);
+        map.put("wins", clan.wins);
+        map.put("kills", clan.kills);
+        map.put("points", clan.points);
+        map.put("admins", clan.admins);
+        map.put("moderators", clan.moderators);
+        map.put("members", clan.members);
+        map.put("memberCount", clan.members == null ? 0 : clan.members.size());
+        return map;
+    }
+
+    private List<String> stringList(Object value) {
+        List<String> result = new ArrayList<>();
+        if (value instanceof List<?> list) {
+            for (Object item : list) {
+                String text = stringValue(item);
+                if (text != null && !text.isBlank()) {
+                    result.add(text);
+                }
+            }
+        }
+        return result;
+    }
+
+    private void publishApiEvent(String type, String message) {
+        Master master = Master.getInstance();
+        if (master != null && master.getEventTimelineService() != null) {
+            master.getEventTimelineService().publish(type, "api", "INFO", message == null ? type : message, Map.of());
+        }
     }
 
     private void handlePermissionGroup(HttpExchange exchange) throws IOException {
@@ -1631,6 +2350,69 @@ public class CloudHttpServer {
                 "permissions", permissions,
                 "permissionCount", permissions.size()
         ));
+    }
+
+    private void handlePermissionPlayerAlias(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        String playerUuid = firstNonBlank(
+                parseQueryParams(exchange.getRequestURI().getQuery()).get("playerUuid"),
+                parseQueryParams(exchange.getRequestURI().getQuery()).get("uuid"),
+                trailingPath(exchange, "/api/v1/permissions/player/")
+        );
+        if (playerUuid == null || playerUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "playerUuid required"));
+            return;
+        }
+        PermissionProfile profile = Master.getInstance().buildPermissionProfile(playerUuid);
+        List<String> permissions = new ArrayList<>(profile.permissions);
+        permissions.sort(String.CASE_INSENSITIVE_ORDER);
+        sendResponse(exchange, 200, Map.of(
+                "playerUuid", profile.playerUuid,
+                "primaryGroup", profile.primaryGroup,
+                "prefix", profile.prefix,
+                "suffix", profile.suffix,
+                "permissions", permissions,
+                "permissionCount", permissions.size()
+        ));
+    }
+
+    private void handleLobbyEvent(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> req = readJsonBody(exchange);
+        String type = firstNonBlank(stringValue(req.get("type")), "LOBBY_EVENT");
+        String playerUuid = stringValue(req.get("playerUuid"));
+        String playerName = stringValue(req.get("playerName"));
+        String serverName = stringValue(req.get("serverName"));
+        String groupName = stringValue(req.get("groupName"));
+        Map<String, Object> details = new LinkedHashMap<>();
+        req.forEach((key, value) -> {
+            if (key != null && value != null) {
+                details.put(key, value);
+            }
+        });
+        Master master = Master.getInstance();
+        if (master != null && master.getEventTimelineService() != null) {
+            master.getEventTimelineService().publish("LOBBY_" + type, "lobby-plugin", "INFO",
+                    playerName + " " + type + " on " + serverName,
+                    details);
+        }
+        CentralLogger.audit("lobby-plugin", "event_" + type,
+                playerUuid + " " + playerName + " server=" + serverName + " group=" + groupName);
+        sendResponse(exchange, 200, Map.of("message", "event accepted", "type", type));
     }
 
     private void handlePermissionCheck(HttpExchange exchange) throws IOException {
@@ -2257,6 +3039,9 @@ public class CloudHttpServer {
         snapshot.put("runningServers", master.getRunningServers().size());
         snapshot.put("connectedWrappers", master.getConnectedWrappers().size());
         snapshot.put("queueTotal", master.getPlayerQueueManager().getTotalQueued());
+        if (master.getEventTimelineService() != null) {
+            snapshot.put("recentEvents", master.getEventTimelineService().recent(20, null, null));
+        }
         return snapshot;
     }
 
@@ -2361,6 +3146,11 @@ public class CloudHttpServer {
                       summary: Recent event timeline
                       responses:
                         '200': { description: Event list }
+                  /bungeesystem:
+                    get:
+                      summary: BungeeSystem proxy-layer overview with proxies, punishments, clans and live events
+                      responses:
+                        '200': { description: BungeeSystem dashboard payload }
                   /lifecycle:
                     get:
                       summary: Server lifecycle transitions
@@ -2400,6 +3190,61 @@ public class CloudHttpServer {
                     get:
                       summary: Cluster nodes
                       responses: { '200': { description: Cluster node list } }
+                  /punishments:
+                    get:
+                      summary: List punishments, optionally filtered by targetUuid and activeOnly
+                      parameters:
+                        - in: query
+                          name: targetUuid
+                          schema: { type: string }
+                        - in: query
+                          name: activeOnly
+                          schema: { type: boolean }
+                      responses: { '200': { description: Punishment list } }
+                  /punishments/upsert:
+                    post:
+                      summary: Create or update a punishment from proxy/plugin clients
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema: { $ref: '#/components/schemas/GenericObject' }
+                      responses: { '200': { description: Stored punishment } }
+                  /punishments/pardon:
+                    post:
+                      summary: Deactivate a punishment by id or by target/type filter
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema: { $ref: '#/components/schemas/GenericObject' }
+                      responses: { '200': { description: Pardon result } }
+                  /clans:
+                    get:
+                      summary: List clans or fetch one clan by name
+                      parameters:
+                        - in: query
+                          name: name
+                          schema: { type: string }
+                      responses: { '200': { description: Clan payload } }
+                  /clans/upsert:
+                    post:
+                      summary: Create or update a clan including members, roles and stats
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema: { $ref: '#/components/schemas/GenericObject' }
+                      responses: { '200': { description: Stored clan } }
+                  /clans/delete:
+                    post:
+                      summary: Delete a clan by name
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema: { $ref: '#/components/schemas/GenericObject' }
+                      responses: { '200': { description: Delete result } }
                   /servers:
                     get:
                       summary: List running servers
@@ -2487,6 +3332,26 @@ public class CloudHttpServer {
                     post:
                       summary: Save party
                       responses: { '200': { description: Party saved } }
+                  /party/create:
+                    post:
+                      summary: Create or return a player's Cloud party
+                      responses: { '200': { description: Party state } }
+                  /party/invite:
+                    post:
+                      summary: Create a persistent party invite with timeout
+                      responses: { '200': { description: Party invite created } }
+                  /party/accept:
+                    post:
+                      summary: Consume a pending party invite and add the player
+                      responses: { '200': { description: Party invite accepted } }
+                  /party/kick:
+                    post:
+                      summary: Remove a party member with optional leader validation
+                      responses: { '200': { description: Party member removed } }
+                  /party/leave:
+                    post:
+                      summary: Leave a party and transfer leadership when required
+                      responses: { '200': { description: Party left } }
                   /party/switch:
                     post:
                       summary: Switch all party members to target server
@@ -3112,6 +3977,70 @@ public class CloudHttpServer {
     private long countLogLevel(List<String> lines, String level) {
         String token = "[" + level + "]";
         return lines.stream().filter(line -> line.contains(token)).count();
+    }
+
+    private String trailingPath(HttpExchange exchange, String prefix) {
+        String path = exchange.getRequestURI().getPath();
+        if (path == null || prefix == null || !path.startsWith(prefix)) {
+            return "";
+        }
+        String value = path.substring(prefix.length());
+        while (value.startsWith("/")) {
+            value = value.substring(1);
+        }
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private int numberValue(Object value, int fallback) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return value == null ? fallback : Integer.parseInt(String.valueOf(value));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private long longValue(Object value, long fallback) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return value == null ? fallback : Long.parseLong(String.valueOf(value));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private int settingInt(PlayerData data, String key, int fallback) {
+        return data == null || data.stats == null ? fallback : data.stats.getOrDefault(key, fallback);
+    }
+
+    private int visibilityToInt(String visibility) {
+        if ("FRIENDS".equalsIgnoreCase(visibility)) {
+            return 1;
+        }
+        if ("NONE".equalsIgnoreCase(visibility)) {
+            return 2;
+        }
+        return 0;
     }
 
     @SuppressWarnings("unchecked")

@@ -7,6 +7,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -44,6 +46,11 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
         info("NetworkDoctor gestartet (" + mode + ")...");
 
         boolean expectedProxyOnline = getExpectedProxyOnlineMode();
+        boolean expectedProxyBindLocalAddress = getExpectedProxyBindLocalAddress();
+        boolean expectedProxyForceDefaultServer = getExpectedProxyForceDefaultServer();
+        int expectedServerConnectTimeoutMs = getExpectedProxyServerConnectTimeoutMs();
+        int expectedProxyTimeoutMs = getExpectedProxyTimeoutMs();
+        int expectedRemotePingTimeoutMs = getExpectedProxyRemotePingTimeoutMs();
         boolean enforceBackendBind = getEnforceBackendBind();
         String expectedBackendBindAddress = getExpectedBackendBindAddress();
         String forwardingSecret = getForwardingSecret();
@@ -99,6 +106,76 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                 }
             } else {
                 info("[OK] Proxy " + proxy.serverName + " ip_forward=true");
+            }
+
+            boolean bindLocalAddress = cfg.getBoolean("listeners.0.bind_local_address", true);
+            if (bindLocalAddress != expectedProxyBindLocalAddress) {
+                warn("[WARN] Proxy " + proxy.serverName + " listeners.0.bind_local_address=" + bindLocalAddress +
+                        " (erwartet " + expectedProxyBindLocalAddress + ")");
+                ok = false;
+                if (fix) {
+                    cfg.set("listeners.0.bind_local_address", expectedProxyBindLocalAddress);
+                    changed = true;
+                    info("[FIX] Proxy " + proxy.serverName + " bind_local_address=" + expectedProxyBindLocalAddress + " gesetzt.");
+                }
+            } else {
+                info("[OK] Proxy " + proxy.serverName + " bind_local_address=" + bindLocalAddress);
+            }
+
+            boolean forceDefaultServer = cfg.getBoolean("listeners.0.force_default_server", false);
+            if (forceDefaultServer != expectedProxyForceDefaultServer) {
+                warn("[WARN] Proxy " + proxy.serverName + " listeners.0.force_default_server=" + forceDefaultServer +
+                        " (erwartet " + expectedProxyForceDefaultServer + ")");
+                ok = false;
+                if (fix) {
+                    cfg.set("listeners.0.force_default_server", expectedProxyForceDefaultServer);
+                    changed = true;
+                    info("[FIX] Proxy " + proxy.serverName + " force_default_server=" + expectedProxyForceDefaultServer + " gesetzt.");
+                }
+            } else {
+                info("[OK] Proxy " + proxy.serverName + " force_default_server=" + forceDefaultServer);
+            }
+
+            int serverConnectTimeout = cfg.getInt("server_connect_timeout", 5000);
+            if (serverConnectTimeout != expectedServerConnectTimeoutMs) {
+                warn("[WARN] Proxy " + proxy.serverName + " server_connect_timeout=" + serverConnectTimeout +
+                        " (erwartet " + expectedServerConnectTimeoutMs + ")");
+                ok = false;
+                if (fix) {
+                    cfg.set("server_connect_timeout", expectedServerConnectTimeoutMs);
+                    changed = true;
+                    info("[FIX] Proxy " + proxy.serverName + " server_connect_timeout=" + expectedServerConnectTimeoutMs + " gesetzt.");
+                }
+            } else {
+                info("[OK] Proxy " + proxy.serverName + " server_connect_timeout=" + serverConnectTimeout);
+            }
+
+            int timeout = cfg.getInt("timeout", 30000);
+            if (timeout != expectedProxyTimeoutMs) {
+                warn("[WARN] Proxy " + proxy.serverName + " timeout=" + timeout +
+                        " (erwartet " + expectedProxyTimeoutMs + ")");
+                ok = false;
+                if (fix) {
+                    cfg.set("timeout", expectedProxyTimeoutMs);
+                    changed = true;
+                    info("[FIX] Proxy " + proxy.serverName + " timeout=" + expectedProxyTimeoutMs + " gesetzt.");
+                }
+            } else {
+                info("[OK] Proxy " + proxy.serverName + " timeout=" + timeout);
+            }
+
+            int remotePingTimeout = cfg.getInt("remote_ping_timeout", 5000);
+            if (remotePingTimeout != expectedRemotePingTimeoutMs) {
+                warn("[WARN] Proxy " + proxy.serverName + " remote_ping_timeout=" + remotePingTimeout +
+                        " (erwartet " + expectedRemotePingTimeoutMs + ")");
+                ok = false;
+                if (fix) {
+                    cfg.set("remote_ping_timeout", expectedRemotePingTimeoutMs);
+                    changed = true;
+                    info("[FIX] Proxy " + proxy.serverName + " remote_ping_timeout=" + expectedRemotePingTimeoutMs + " gesetzt.");
+                }
+            } else {
+                info("[OK] Proxy " + proxy.serverName + " remote_ping_timeout=" + remotePingTimeout);
             }
 
             ConfigurationSection serversSection = cfg.getConfigurationSection("servers");
@@ -173,6 +250,15 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                         changed = true;
                         info("[FIX] Route " + backend.serverName + " auf " + expectedAddress + " gesetzt.");
                     }
+                }
+
+                String effectiveAddress = fix ? expectedAddress : address;
+                if (isTcpReachable(effectiveAddress, 1500)) {
+                    info("[OK] Route " + backend.serverName + " erreichbar: " + effectiveAddress);
+                } else {
+                    warn("[WARN] Route " + backend.serverName + " nicht erreichbar: " + effectiveAddress +
+                            " (Backend noch nicht ONLINE, falscher Host/Port oder Firewall/Bind).");
+                    ok = false;
                 }
             }
 
@@ -366,6 +452,47 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
         return Boolean.parseBoolean(configured);
     }
 
+    private boolean getExpectedProxyBindLocalAddress() {
+        String configured = master().getConfigManager().getMaster("CloudMaster.Network.ProxyBindLocalAddress");
+        if (configured == null || configured.isBlank()) {
+            return false;
+        }
+        return Boolean.parseBoolean(configured);
+    }
+
+    private boolean getExpectedProxyForceDefaultServer() {
+        String configured = master().getConfigManager().getMaster("CloudMaster.Network.ProxyForceDefaultServer");
+        if (configured == null || configured.isBlank()) {
+            return true;
+        }
+        return Boolean.parseBoolean(configured);
+    }
+
+    private int getExpectedProxyServerConnectTimeoutMs() {
+        return getConfiguredInt("CloudMaster.Network.ProxyServerConnectTimeoutMs", 15000, 1000, 120000);
+    }
+
+    private int getExpectedProxyTimeoutMs() {
+        return getConfiguredInt("CloudMaster.Network.ProxyTimeoutMs", 60000, 10000, 300000);
+    }
+
+    private int getExpectedProxyRemotePingTimeoutMs() {
+        return getConfiguredInt("CloudMaster.Network.ProxyRemotePingTimeoutMs", 5000, 1000, 60000);
+    }
+
+    private int getConfiguredInt(String key, int fallback, int min, int max) {
+        String configured = master().getConfigManager().getMaster(key);
+        if (configured == null || configured.isBlank()) {
+            return fallback;
+        }
+        try {
+            int value = Integer.parseInt(configured.trim());
+            return Math.max(min, Math.min(max, value));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
     private boolean getEnforceBackendBind() {
         String configured = master().getConfigManager().getMaster("CloudMaster.Network.EnforceBackendBind");
         if (configured == null || configured.isBlank()) {
@@ -421,6 +548,29 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
             return address.trim();
         }
         return address.substring(0, idx).trim();
+    }
+
+    private boolean isTcpReachable(String address, int timeoutMs) {
+        if (address == null || address.isBlank()) {
+            return false;
+        }
+        int idx = address.lastIndexOf(':');
+        if (idx <= 0 || idx >= address.length() - 1) {
+            return false;
+        }
+        String host = address.substring(0, idx).trim();
+        int port;
+        try {
+            port = Integer.parseInt(address.substring(idx + 1).trim());
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(host, port), timeoutMs);
+            return true;
+        } catch (IOException ignored) {
+            return false;
+        }
     }
 
     @Override

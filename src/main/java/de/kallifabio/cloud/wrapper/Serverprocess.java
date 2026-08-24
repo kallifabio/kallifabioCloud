@@ -111,6 +111,9 @@ public class Serverprocess {
         // Setup server directory
         File serverDir = setupServerDirectory();
 
+        // Template roots must exist before any copy/bootstrap decision is made.
+        ensureTemplateDirectories();
+
         // Prepare server files (template copy/bootstrap)
         prepareServerFiles(serverDir);
 
@@ -186,6 +189,13 @@ public class Serverprocess {
 
     private void prepareServerFiles(File serverDir) throws IOException {
         if (isDynamicGroup()) {
+            copyTemplateFiles(serverDir);
+            return;
+        }
+
+        if (configManager.isTemplateAutoUpdateAfterRestart()) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                    " Template-Refresh für statischen Server " + serverName + " gestartet");
             copyTemplateFiles(serverDir);
             return;
         }
@@ -463,6 +473,13 @@ public class Serverprocess {
 
         proxyCfg.set("ip_forward", true);
         proxyCfg.set("online_mode", getProxyOnlineModeDefaultTrue());
+        proxyCfg.set("server_connect_timeout", getProxyServerConnectTimeoutMs());
+        proxyCfg.set("timeout", getProxyTimeoutMs());
+        proxyCfg.set("remote_ping_timeout", getProxyRemotePingTimeoutMs());
+        proxyCfg.set("remote_ping_cache", -1);
+        proxyCfg.set("enforce_secure_profile", false);
+        proxyCfg.set("prevent_proxy_connections", false);
+        proxyCfg.set("reject_transfers", false);
 
         String lobbyName = "Lobby-1";
         int lobbyPort = configManager.getFirstLobbyPort();
@@ -478,9 +495,9 @@ public class Serverprocess {
         listener.put("host", getProxyBindHost() + ":" + port);
         listener.put("query_port", port + 1);
         listener.put("max_players", maxPlayers);
-        listener.put("force_default_server", true);
+        listener.put("force_default_server", getProxyForceDefaultServer());
         listener.put("tab_size", 60);
-        listener.put("bind_local_address", true);
+        listener.put("bind_local_address", getProxyBindLocalAddress());
         listener.put("ping_passthrough", false);
         listener.put("query_enabled", false);
         listener.put("proxy_protocol", false);
@@ -535,6 +552,47 @@ public class Serverprocess {
             return "0.0.0.0";
         }
         return configured.trim();
+    }
+
+    private boolean getProxyBindLocalAddress() {
+        String configured = configManager.getMaster("CloudMaster.Network.ProxyBindLocalAddress");
+        if (configured == null || configured.isBlank()) {
+            return false;
+        }
+        return Boolean.parseBoolean(configured);
+    }
+
+    private boolean getProxyForceDefaultServer() {
+        String configured = configManager.getMaster("CloudMaster.Network.ProxyForceDefaultServer");
+        if (configured == null || configured.isBlank()) {
+            return true;
+        }
+        return Boolean.parseBoolean(configured);
+    }
+
+    private int getProxyServerConnectTimeoutMs() {
+        return getConfiguredInt("CloudMaster.Network.ProxyServerConnectTimeoutMs", 15000, 1000, 120000);
+    }
+
+    private int getProxyTimeoutMs() {
+        return getConfiguredInt("CloudMaster.Network.ProxyTimeoutMs", 60000, 10000, 300000);
+    }
+
+    private int getProxyRemotePingTimeoutMs() {
+        return getConfiguredInt("CloudMaster.Network.ProxyRemotePingTimeoutMs", 5000, 1000, 60000);
+    }
+
+    private int getConfiguredInt(String key, int fallback, int min, int max) {
+        String configured = configManager.getMaster(key);
+        if (configured == null || configured.isBlank()) {
+            return fallback;
+        }
+        try {
+            int value = Integer.parseInt(configured.trim());
+            return Math.max(min, Math.min(max, value));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 
     private boolean getBackendBindEnforcement() {
@@ -670,11 +728,21 @@ public class Serverprocess {
 
     private File ensureServerJar(File serverDir, String expectedJarName) throws IOException {
         File targetJar = new File(serverDir, expectedJarName);
+        List<String> aliasNames = getJarCandidateNames(expectedJarName);
+        File refreshedAlias = findMatchingJarInDirectory(serverDir, aliasNames, Set.of(expectedJarName.toLowerCase(Locale.ROOT)));
+        if (refreshedAlias != null && (!targetJar.exists() || refreshedAlias.lastModified() >= targetJar.lastModified())) {
+            Files.copy(refreshedAlias.toPath(), targetJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            ConsoleScreenManager.printToTerminal(
+                    ConsoleColors.YELLOW + ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                            " Preflight: " + refreshedAlias.getName() + " als " + expectedJarName +
+                            " für " + serverName + " übernommen"
+            );
+            return targetJar;
+        }
         if (targetJar.exists()) {
             return targetJar;
         }
 
-        List<String> aliasNames = getJarCandidateNames(expectedJarName);
         List<File> searchDirectories = getJarSearchDirectories(serverDir);
         File matched = null;
         for (File dir : searchDirectories) {
@@ -741,6 +809,10 @@ public class Serverprocess {
     }
 
     private File findMatchingJarInDirectory(File directory, List<String> aliasNames) {
+        return findMatchingJarInDirectory(directory, aliasNames, Set.of());
+    }
+
+    private File findMatchingJarInDirectory(File directory, List<String> aliasNames, Set<String> ignoredLowercaseNames) {
         if (directory == null || !directory.exists() || !directory.isDirectory()) {
             return null;
         }
@@ -756,6 +828,9 @@ public class Serverprocess {
                     : aliasLower;
             for (File file : files) {
                 String name = file.getName().toLowerCase(Locale.ROOT);
+                if (ignoredLowercaseNames.contains(name)) {
+                    continue;
+                }
                 if (!name.endsWith(".jar")) {
                     continue;
                 }
@@ -1248,9 +1323,8 @@ public class Serverprocess {
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Stoppe Server: " + serverName);
 
-        running = false;
-
         if (!graceful) {
+            running = false;
             process.destroyForcibly();
             cleanup();
             wrapper.sendServerStatus(serverName, "KILLED");
@@ -1273,6 +1347,7 @@ public class Serverprocess {
         sendCommand("stop");
 
         // Wait for graceful shutdown
+        boolean killed = false;
         try {
             if (!process.waitFor(30, TimeUnit.SECONDS)) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
@@ -1280,17 +1355,23 @@ public class Serverprocess {
                         " reagiert nicht, erzwinge Beendigung...");
                 process.destroyForcibly();
                 wrapper.sendServerStatus(serverName, "KILLED");
+                killed = true;
             }
         } catch (InterruptedException e) {
             process.destroyForcibly();
+            killed = true;
             Thread.currentThread().interrupt();
         }
+
+        running = false;
 
         // Cleanup
         cleanup();
 
         // Send status to master
-        wrapper.sendServerStatus(serverName, "OFFLINE");
+        if (!killed) {
+            wrapper.sendServerStatus(serverName, "OFFLINE");
+        }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Server " + serverName + " gestoppt");

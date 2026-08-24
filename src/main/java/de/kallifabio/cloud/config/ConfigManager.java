@@ -165,6 +165,11 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.API.TLS.KeystoreType", "PKCS12");
             masterConfigData.set("CloudMaster.Network.ProxyOnlineMode", true);
             masterConfigData.set("CloudMaster.Network.ProxyBindHost", "0.0.0.0");
+            masterConfigData.set("CloudMaster.Network.ProxyBindLocalAddress", false);
+            masterConfigData.set("CloudMaster.Network.ProxyForceDefaultServer", true);
+            masterConfigData.set("CloudMaster.Network.ProxyServerConnectTimeoutMs", 15000);
+            masterConfigData.set("CloudMaster.Network.ProxyTimeoutMs", 60000);
+            masterConfigData.set("CloudMaster.Network.ProxyRemotePingTimeoutMs", 5000);
             masterConfigData.set("CloudMaster.Network.EnforceBackendBind", true);
             masterConfigData.set("CloudMaster.Network.BackendBindAddress", "127.0.0.1");
             masterConfigData.set("CloudMaster.Network.ForwardingSecret", java.util.UUID.randomUUID().toString().replace("-", ""));
@@ -677,6 +682,26 @@ public class ConfigManager {
         }
         if (!masterConfigData.contains("CloudMaster.Network.ProxyBindHost")) {
             masterConfigData.set("CloudMaster.Network.ProxyBindHost", "0.0.0.0");
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.ProxyBindLocalAddress")) {
+            masterConfigData.set("CloudMaster.Network.ProxyBindLocalAddress", false);
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.ProxyForceDefaultServer")) {
+            masterConfigData.set("CloudMaster.Network.ProxyForceDefaultServer", true);
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.ProxyServerConnectTimeoutMs")) {
+            masterConfigData.set("CloudMaster.Network.ProxyServerConnectTimeoutMs", 15000);
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.ProxyTimeoutMs")) {
+            masterConfigData.set("CloudMaster.Network.ProxyTimeoutMs", 60000);
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.Network.ProxyRemotePingTimeoutMs")) {
+            masterConfigData.set("CloudMaster.Network.ProxyRemotePingTimeoutMs", 5000);
             changed = true;
         }
         if (!masterConfigData.contains("CloudMaster.Network.EnforceBackendBind")) {

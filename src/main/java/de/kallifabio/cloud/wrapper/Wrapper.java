@@ -40,6 +40,7 @@ public class Wrapper {
     private final Map<String, Serverprocess> managedServers = new ConcurrentHashMap<>();
     private final Set<String> restartInProgress = ConcurrentHashMap.newKeySet();
     private final Set<String> startInProgress = ConcurrentHashMap.newKeySet();
+    private final Set<String> stopInProgress = ConcurrentHashMap.newKeySet();
     private final Map<String, Integer> restartRetryCounts = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3);
 
@@ -185,7 +186,7 @@ public class Wrapper {
         kryo.register(Message.APIRequest.class);
         kryo.register(Message.APIResponse.class);
 
-        // Arrays fÃ¼r byte[]
+        // Arrays fuer byte[]
         kryo.register(byte[].class);
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
@@ -245,7 +246,7 @@ public class Wrapper {
         } catch (IOException e) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Verbindung zu Master fehlgeschlagen: " + e.getMessage());
-            e.printStackTrace(); // Zeige vollstaendigen Stacktrace fÃ¼r Debugging
+            e.printStackTrace(); // Zeige vollstaendigen Stacktrace fuer Debugging
 
             // Schedule reconnect
             scheduleReconnect();
@@ -331,7 +332,7 @@ public class Wrapper {
     private void handleRegisterAck(Message.WrapperRegisterAck ack) {
         if (ack.success) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.GREEN + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " [OK] Registrierung bestÃ¤tigt von Master: " + ack.masterId);
+                    ConsoleColors.getCurrentTime() + " [OK] Registrierung bestaetigt von Master: " + ack.masterId);
         } else {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Registrierung abgelehnt");
@@ -408,9 +409,13 @@ public class Wrapper {
         if (shuttingDown) {
             return;
         }
+        if (stopInProgress.contains(serverName)) {
+            scheduleStartRetry(serverName, groupName, port, attempt, "Server stoppt noch");
+            return;
+        }
         if (managedServers.containsKey(serverName)) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
-                    ConsoleColors.getCurrentTime() + " Server " + serverName + " lÃ¤uft bereits");
+                    ConsoleColors.getCurrentTime() + " Server " + serverName + " laeuft bereits");
             return;
         }
         if (!startInProgress.add(serverName)) {
@@ -455,23 +460,45 @@ public class Wrapper {
     }
 
     private void stopServer(String serverName, boolean graceful) {
+        stopServerAsync(serverName, graceful, null);
+    }
+
+    private void stopServerAsync(String serverName, boolean graceful, Runnable afterStop) {
         Serverprocess server = managedServers.get(serverName);
         if (server == null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Server " + serverName + " nicht gefunden");
+            if (afterStop != null && !shuttingDown) {
+                scheduler.execute(afterStop);
+            }
             return;
         }
         if (shuttingDown) {
             graceful = false;
         }
+        if (!stopInProgress.add(serverName)) {
+            if (afterStop != null && !shuttingDown) {
+                scheduler.schedule(afterStop, 1, TimeUnit.SECONDS);
+            }
+            return;
+        }
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Stoppe Server: " + serverName);
 
-        server.stop(graceful);
-        managedServers.remove(serverName);
-
-        availableMemory = calculateAvailableMemory();
+        boolean gracefulStop = graceful;
+        scheduler.execute(() -> {
+            try {
+                server.stop(gracefulStop);
+            } finally {
+                managedServers.remove(serverName, server);
+                stopInProgress.remove(serverName);
+                availableMemory = calculateAvailableMemory();
+                if (afterStop != null && !shuttingDown) {
+                    afterStop.run();
+                }
+            }
+        });
     }
 
     private void restartServer(String serverName) {
@@ -498,9 +525,10 @@ public class Wrapper {
 
         String groupName = server.getGroupName();
         int serverPort = server.getPort();
-        stopServer(serverName);
-
-        scheduler.schedule(() -> startServer(serverName, groupName, serverPort, 1), 3, TimeUnit.SECONDS);
+        stopServerAsync(serverName, true,
+                () -> scheduler.schedule(() -> startServer(serverName, groupName, serverPort, 1),
+                        1,
+                        TimeUnit.SECONDS));
     }
 
     private void startHeartbeat() {
@@ -530,7 +558,7 @@ public class Wrapper {
     }
 
     private void scheduleReconnect() {
-        if (reconnecting || shuttingDown) return; // NEU: PrÃ¼fe shutdown-Flag
+        if (reconnecting || shuttingDown) return; // NEU: Pruefe shutdown-Flag
 
         reconnecting = true;
         reconnectAttempts++;
@@ -547,7 +575,7 @@ public class Wrapper {
                 "/" + MAX_RECONNECT_ATTEMPTS + ")");
 
         scheduler.schedule(() -> {
-            if (shuttingDown) return; // NEU: Abbrechen wenn Shutdown lÃ¤uft
+            if (shuttingDown) return; // NEU: Abbrechen wenn Shutdown laeuft
 
             reconnecting = false;
 
@@ -609,6 +637,9 @@ public class Wrapper {
         List<String> unhealthyServers = new ArrayList<>();
 
         for (Map.Entry<String, Serverprocess> entry : managedServers.entrySet()) {
+            if (stopInProgress.contains(entry.getKey())) {
+                continue;
+            }
             if (!entry.getValue().isHealthy()) {
                 unhealthyServers.add(entry.getKey());
             }
@@ -779,6 +810,10 @@ public class Wrapper {
             }
 
             for (Serverprocess process : managedServers.values()) {
+                if (stopInProgress.contains(process.getServerName())) {
+                    sendServerStatus(process.getServerName(), "STOPPING");
+                    continue;
+                }
                 sendServerStatus(process.getServerName(), process.isRunning() ? "ONLINE" : "OFFLINE");
                 Message.ServerMetrics metrics = process.collectMetrics();
                 if (metrics != null) {

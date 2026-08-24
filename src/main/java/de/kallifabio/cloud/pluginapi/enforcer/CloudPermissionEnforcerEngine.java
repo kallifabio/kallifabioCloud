@@ -90,22 +90,30 @@ public final class CloudPermissionEnforcerEngine {
             return false;
         }
         String requested = requestedPermission.trim().toLowerCase(Locale.ROOT);
+        boolean allowed = false;
         for (String grantedRaw : grantedPermissions) {
             if (grantedRaw == null || grantedRaw.isBlank()) {
                 continue;
             }
             String granted = grantedRaw.trim().toLowerCase(Locale.ROOT);
-            if ("*".equals(granted) || granted.equals(requested)) {
-                return true;
+            boolean negative = granted.startsWith("-");
+            if (negative) {
+                granted = granted.substring(1);
             }
-            if (granted.endsWith(".*")) {
+            boolean matched = "*".equals(granted) || granted.equals(requested);
+            if (!matched && granted.endsWith(".*")) {
                 String prefix = granted.substring(0, granted.length() - 1);
-                if (requested.startsWith(prefix)) {
-                    return true;
-                }
+                matched = requested.startsWith(prefix);
             }
+            if (!matched) {
+                continue;
+            }
+            if (negative) {
+                return false;
+            }
+            allowed = true;
         }
-        return false;
+        return allowed;
     }
 
     private record CachedProfile(CloudPermissionProfileInfo profile, long expiresAt) {

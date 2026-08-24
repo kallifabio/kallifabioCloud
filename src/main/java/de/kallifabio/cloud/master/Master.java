@@ -75,6 +75,7 @@ public class Master {
     private final Map<Integer, WrapperConnection> connectedWrappers = new ConcurrentHashMap<>();
     private final Map<String, ServerInstance> runningServers = new ConcurrentHashMap<>();
     private final Set<String> restartInProgress = ConcurrentHashMap.newKeySet();
+    private final Set<String> stopInProgress = ConcurrentHashMap.newKeySet();
     private final Map<String, Integer> restartRetryCounts = new ConcurrentHashMap<>();
     private final Map<String, Integer> serverFailureCounts = new ConcurrentHashMap<>();
 
@@ -496,6 +497,12 @@ public class Master {
     private void handleServerStatus(Connection connection, Message.ServerStatusMessage message) {
         ServerInstance instance = runningServers.get(message.serverName);
         boolean recoverableStatus = "ONLINE".equalsIgnoreCase(message.status) || "STARTING".equalsIgnoreCase(message.status);
+        if (recoverableStatus && stopInProgress.contains(message.serverName)) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Ignoriere Status " + message.status + " von " +
+                    message.serverName + " waehrend STOPPING aktiv ist");
+            return;
+        }
         if (instance == null && recoverableStatus && message.groupName != null && !message.groupName.isBlank()) {
             WrapperConnection wrapper = connectedWrappers.get(connection.getID());
             String wrapperId = wrapper != null ? wrapper.wrapperId : "unknown";
@@ -520,6 +527,7 @@ public class Master {
                     "wrapper status update");
 
             if ("ONLINE".equals(message.status)) {
+                stopInProgress.remove(message.serverName);
                 restartInProgress.remove(message.serverName);
                 restartRetryCounts.remove(message.serverName);
                 if (isProxyGroup(instance.groupName)) {
@@ -531,21 +539,34 @@ public class Master {
             } else if ("OFFLINE".equalsIgnoreCase(message.status)
                     || "KILLED".equalsIgnoreCase(message.status)
                     || "CRASHED".equalsIgnoreCase(message.status)) {
-                if ("CRASHED".equalsIgnoreCase(message.status) || "KILLED".equalsIgnoreCase(message.status)) {
+                if (shuttingDown) {
+                    cleanupStoppedServer(instance, false);
+                    return;
+                }
+                boolean expectedStop = stopInProgress.remove(message.serverName);
+                boolean restarting = restartInProgress.contains(message.serverName);
+                boolean failureStatus = "CRASHED".equalsIgnoreCase(message.status) || "KILLED".equalsIgnoreCase(message.status);
+                if (failureStatus && !expectedStop && !restarting) {
                     handleServerFailure(instance, true);
                     return;
                 }
-                restartInProgress.remove(message.serverName);
-                restartRetryCounts.remove(message.serverName);
-                if (!isProxyGroup(instance.groupName)) {
-                    syncBackendRouteToProxies(instance, false);
-                }
-                Integer releasedPort = serverPorts.remove(message.serverName);
-                if (releasedPort != null) {
-                    releasePort(releasedPort);
-                }
-                runningServers.remove(message.serverName);
+                cleanupStoppedServer(instance, restarting);
             }
+        }
+    }
+
+    private void cleanupStoppedServer(ServerInstance instance, boolean keepRestartState) {
+        if (!isProxyGroup(instance.groupName)) {
+            syncBackendRouteToProxies(instance, false);
+        }
+        Integer releasedPort = serverPorts.remove(instance.serverName);
+        if (releasedPort != null) {
+            releasePort(releasedPort);
+        }
+        runningServers.remove(instance.serverName);
+        if (!keepRestartState) {
+            restartInProgress.remove(instance.serverName);
+            restartRetryCounts.remove(instance.serverName);
         }
     }
 
@@ -799,7 +820,16 @@ public class Master {
                 runningServers.values().stream()
                         .filter(s -> s.wrapperId.equals(wrapper.wrapperId))
                         .toList()
-                        .forEach(s -> handleServerFailure(s, true));
+                        .forEach(s -> {
+                            if (stopInProgress.remove(s.serverName) || restartInProgress.contains(s.serverName)) {
+                                ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                                        ConsoleColors.getCurrentTime() + " Wrapper-Disconnect waehrend Stop/Restart von " +
+                                        s.serverName + " - keine Crash-Recovery gestartet");
+                                cleanupStoppedServer(s, restartInProgress.contains(s.serverName));
+                                return;
+                            }
+                            handleServerFailure(s, true);
+                        });
             }
 
             clusterManager.notifyWrapperLeft(wrapper);
@@ -967,7 +997,7 @@ public class Master {
             for (int i = 1; i <= count; i++) {
                 String serverName = groupName + "-" + i;
 
-                // Nur starten wenn noch nicht läuft
+                // Nur starten wenn noch nicht laeuft
                 if (!runningServers.containsKey(serverName)) {
                     try {
                         startServer(serverName, groupName);
@@ -1026,6 +1056,11 @@ public class Master {
         }
         long now = System.currentTimeMillis();
         for (ServerInstance server : new ArrayList<>(runningServers.values())) {
+            if (restartInProgress.contains(server.serverName)
+                    || stopInProgress.contains(server.serverName)
+                    || isLifecycleTransitionStatus(server.status)) {
+                continue;
+            }
             if ("ONLINE".equals(server.status) && now - server.lastUpdate > SERVER_HEARTBEAT_TIMEOUT_MS) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " Kein Heartbeat von " + server.serverName +
@@ -1045,9 +1080,23 @@ public class Master {
         }
     }
 
+    private boolean isLifecycleTransitionStatus(String status) {
+        if (status == null) {
+            return false;
+        }
+        return "QUEUED".equalsIgnoreCase(status)
+                || "PREPARING".equalsIgnoreCase(status)
+                || "DRAINING".equalsIgnoreCase(status)
+                || "STOPPING".equalsIgnoreCase(status)
+                || "OFFLINE".equalsIgnoreCase(status)
+                || "FAILED".equalsIgnoreCase(status)
+                || "QUARANTINED".equalsIgnoreCase(status);
+    }
+
     private void handleServerFailure(ServerInstance server, boolean recover) {
         if (shuttingDown) {
-            recover = false;
+            cleanupStoppedServer(server, false);
+            return;
         }
         if (!isProxyGroup(server.groupName)) {
             syncBackendRouteToProxies(server, false);
@@ -1236,6 +1285,9 @@ public class Master {
         if (!isProxyGroup(instance.groupName)) {
             syncBackendRouteToProxies(instance, false);
         }
+        stopInProgress.add(serverName);
+        instance.status = "DRAINING";
+        instance.lastUpdate = System.currentTimeMillis();
         lifecycleOrchestrator.transition(instance, ServerLifecycleState.DRAINING, "graceful stop requested");
         WrapperConnection wrapper = getWrapperById(instance.wrapperId);
         if (wrapper != null) {
@@ -1250,6 +1302,8 @@ public class Master {
                     "mode", "graceful"
             ));
             lifecycleOrchestrator.transition(instance, ServerLifecycleState.STOPPING, "stop command sent");
+            instance.status = "STOPPING";
+            instance.lastUpdate = System.currentTimeMillis();
             return;
         }
         Integer releasedPort = serverPorts.remove(serverName);
@@ -1257,6 +1311,7 @@ public class Master {
             releasePort(releasedPort);
         }
         runningServers.remove(serverName);
+        stopInProgress.remove(serverName);
         restartInProgress.remove(serverName);
         restartRetryCounts.remove(serverName);
     }
@@ -1269,6 +1324,9 @@ public class Master {
         if (!isProxyGroup(instance.groupName)) {
             syncBackendRouteToProxies(instance, false);
         }
+        stopInProgress.add(serverName);
+        instance.status = "STOPPING";
+        instance.lastUpdate = System.currentTimeMillis();
         lifecycleOrchestrator.transition(instance, ServerLifecycleState.STOPPING, "force stop requested");
         WrapperConnection wrapper = getWrapperById(instance.wrapperId);
         if (wrapper != null) {
@@ -1290,6 +1348,7 @@ public class Master {
             releasePort(releasedPort);
         }
         runningServers.remove(serverName);
+        stopInProgress.remove(serverName);
         restartInProgress.remove(serverName);
         restartRetryCounts.remove(serverName);
     }

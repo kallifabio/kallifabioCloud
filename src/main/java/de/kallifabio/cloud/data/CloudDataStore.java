@@ -191,6 +191,43 @@ public class CloudDataStore {
                     "expires_at BIGINT NOT NULL," +
                     "created_at BIGINT NOT NULL," +
                     "PRIMARY KEY (target_uuid))");
+
+            s.executeUpdate("CREATE TABLE IF NOT EXISTS punishments (" +
+                    "id TEXT PRIMARY KEY," +
+                    "target_uuid TEXT NOT NULL," +
+                    "target_name TEXT DEFAULT ''," +
+                    "actor_uuid TEXT DEFAULT ''," +
+                    "actor_name TEXT DEFAULT ''," +
+                    "type TEXT NOT NULL," +
+                    "reason TEXT DEFAULT ''," +
+                    "proof TEXT DEFAULT ''," +
+                    "notes TEXT DEFAULT ''," +
+                    "address TEXT DEFAULT ''," +
+                    "created_at BIGINT NOT NULL," +
+                    "expires_at BIGINT DEFAULT 0," +
+                    "active INTEGER DEFAULT 1)");
+
+            s.executeUpdate("CREATE TABLE IF NOT EXISTS clans (" +
+                    "name TEXT PRIMARY KEY," +
+                    "tag TEXT DEFAULT ''," +
+                    "owner_uuid TEXT NOT NULL," +
+                    "home_server TEXT DEFAULT ''," +
+                    "friendly_fire INTEGER DEFAULT 0," +
+                    "created_at BIGINT NOT NULL," +
+                    "wins INTEGER DEFAULT 0," +
+                    "kills INTEGER DEFAULT 0," +
+                    "points INTEGER DEFAULT 0," +
+                    "admins_json TEXT DEFAULT '[]'," +
+                    "moderators_json TEXT DEFAULT '[]'," +
+                    "members_json TEXT DEFAULT '[]')");
+
+            s.executeUpdate("CREATE TABLE IF NOT EXISTS clan_invites (" +
+                    "clan_name TEXT NOT NULL," +
+                    "target_uuid TEXT NOT NULL," +
+                    "inviter_uuid TEXT NOT NULL," +
+                    "expires_at BIGINT NOT NULL," +
+                    "created_at BIGINT NOT NULL," +
+                    "PRIMARY KEY (clan_name, target_uuid))");
         } catch (SQLException e) {
             CentralLogger.error("DataStore", "Failed to create tables", e);
         }
@@ -478,6 +515,32 @@ public class CloudDataStore {
             }
         } catch (SQLException e) {
             CentralLogger.error("DataStore", "Failed to load party leader", e);
+        }
+        return null;
+    }
+
+    public String getPartyIdForPlayer(String playerUuid) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            return null;
+        }
+
+        if (backendType == BackendType.MONGO) {
+            Document doc = mongoDatabase.getCollection("parties")
+                    .find(Filters.in("members", playerUuid))
+                    .first();
+            return doc == null ? null : doc.getString("party_id");
+        }
+
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(
+                "SELECT party_id FROM party_members WHERE player_uuid=? LIMIT 1")) {
+            ps.setString(1, playerUuid);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("party_id");
+                }
+            }
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to lookup player party", e);
         }
         return null;
     }
@@ -820,6 +883,203 @@ public class CloudDataStore {
         return removed;
     }
 
+    public void upsertPunishment(PunishmentData punishment) {
+        if (punishment == null || punishment.id == null || punishment.id.isBlank()) {
+            return;
+        }
+        if (backendType == BackendType.MONGO) {
+            Document doc = new Document("id", punishment.id)
+                    .append("target_uuid", punishment.targetUuid)
+                    .append("target_name", punishment.targetName)
+                    .append("actor_uuid", punishment.actorUuid)
+                    .append("actor_name", punishment.actorName)
+                    .append("type", punishment.type)
+                    .append("reason", punishment.reason)
+                    .append("proof", punishment.proof)
+                    .append("notes", punishment.notes)
+                    .append("address", punishment.address)
+                    .append("created_at", punishment.createdAt)
+                    .append("expires_at", punishment.expiresAt)
+                    .append("active", punishment.active);
+            mongoDatabase.getCollection("punishments").replaceOne(Filters.eq("id", punishment.id), doc, new ReplaceOptions().upsert(true));
+            return;
+        }
+        String sql = backendType == BackendType.MYSQL
+                ? "INSERT INTO punishments(id,target_uuid,target_name,actor_uuid,actor_name,type,reason,proof,notes,address,created_at,expires_at,active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE target_uuid=VALUES(target_uuid),target_name=VALUES(target_name),actor_uuid=VALUES(actor_uuid),actor_name=VALUES(actor_name),type=VALUES(type),reason=VALUES(reason),proof=VALUES(proof),notes=VALUES(notes),address=VALUES(address),created_at=VALUES(created_at),expires_at=VALUES(expires_at),active=VALUES(active)"
+                : "INSERT INTO punishments(id,target_uuid,target_name,actor_uuid,actor_name,type,reason,proof,notes,address,created_at,expires_at,active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET target_uuid=excluded.target_uuid,target_name=excluded.target_name,actor_uuid=excluded.actor_uuid,actor_name=excluded.actor_name,type=excluded.type,reason=excluded.reason,proof=excluded.proof,notes=excluded.notes,address=excluded.address,created_at=excluded.created_at,expires_at=excluded.expires_at,active=excluded.active";
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            bindPunishment(ps, punishment);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to save punishment", e);
+        }
+    }
+
+    public List<PunishmentData> getPunishments(String targetUuid, boolean activeOnly) {
+        List<PunishmentData> result = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        if (backendType == BackendType.MONGO) {
+            Object filter = targetUuid == null || targetUuid.isBlank() ? new Document() : Filters.eq("target_uuid", targetUuid);
+            for (Document doc : mongoDatabase.getCollection("punishments").find((org.bson.conversions.Bson) filter)) {
+                PunishmentData data = punishmentFromDocument(doc);
+                if (activeOnly && (!data.active || data.isExpired(now))) {
+                    continue;
+                }
+                result.add(data);
+            }
+            return result;
+        }
+        StringBuilder sql = new StringBuilder("SELECT * FROM punishments");
+        if (targetUuid != null && !targetUuid.isBlank()) {
+            sql.append(" WHERE target_uuid=?");
+        }
+        sql.append(" ORDER BY created_at DESC");
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql.toString())) {
+            if (targetUuid != null && !targetUuid.isBlank()) {
+                ps.setString(1, targetUuid);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    PunishmentData data = punishmentFromResultSet(rs);
+                    if (activeOnly && (!data.active || data.isExpired(now))) {
+                        continue;
+                    }
+                    result.add(data);
+                }
+            }
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to load punishments", e);
+        }
+        return result;
+    }
+
+    public boolean deactivatePunishment(String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        if (backendType == BackendType.MONGO) {
+            return mongoDatabase.getCollection("punishments")
+                    .updateOne(Filters.eq("id", id), new Document("$set", new Document("active", false)))
+                    .getModifiedCount() > 0;
+        }
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement("UPDATE punishments SET active=0 WHERE id=?")) {
+            ps.setString(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to deactivate punishment", e);
+            return false;
+        }
+    }
+
+    public int deactivatePunishmentsForTarget(String targetUuid, String typeLike) {
+        if (targetUuid == null || targetUuid.isBlank()) {
+            return 0;
+        }
+        if (backendType == BackendType.MONGO) {
+            Document filter = new Document("target_uuid", targetUuid).append("active", true);
+            return (int) mongoDatabase.getCollection("punishments")
+                    .updateMany(filter, new Document("$set", new Document("active", false)))
+                    .getModifiedCount();
+        }
+        String sql = "UPDATE punishments SET active=0 WHERE target_uuid=?" +
+                (typeLike == null || typeLike.isBlank() ? "" : " AND type LIKE ?");
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, targetUuid);
+            if (typeLike != null && !typeLike.isBlank()) {
+                ps.setString(2, typeLike);
+            }
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to deactivate target punishments", e);
+            return 0;
+        }
+    }
+
+    public void upsertClan(ClanData clan) {
+        if (clan == null || clan.name == null || clan.name.isBlank()) {
+            return;
+        }
+        if (backendType == BackendType.MONGO) {
+            Document doc = new Document("name", clan.name)
+                    .append("tag", clan.tag)
+                    .append("owner_uuid", clan.ownerUuid)
+                    .append("home_server", clan.homeServer)
+                    .append("friendly_fire", clan.friendlyFire)
+                    .append("created_at", clan.createdAt)
+                    .append("wins", clan.wins)
+                    .append("kills", clan.kills)
+                    .append("points", clan.points)
+                    .append("admins", clan.admins)
+                    .append("moderators", clan.moderators)
+                    .append("members", clan.members);
+            mongoDatabase.getCollection("clans").replaceOne(Filters.eq("name", clan.name), doc, new ReplaceOptions().upsert(true));
+            return;
+        }
+        String sql = backendType == BackendType.MYSQL
+                ? "INSERT INTO clans(name,tag,owner_uuid,home_server,friendly_fire,created_at,wins,kills,points,admins_json,moderators_json,members_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE tag=VALUES(tag),owner_uuid=VALUES(owner_uuid),home_server=VALUES(home_server),friendly_fire=VALUES(friendly_fire),created_at=VALUES(created_at),wins=VALUES(wins),kills=VALUES(kills),points=VALUES(points),admins_json=VALUES(admins_json),moderators_json=VALUES(moderators_json),members_json=VALUES(members_json)"
+                : "INSERT INTO clans(name,tag,owner_uuid,home_server,friendly_fire,created_at,wins,kills,points,admins_json,moderators_json,members_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET tag=excluded.tag,owner_uuid=excluded.owner_uuid,home_server=excluded.home_server,friendly_fire=excluded.friendly_fire,created_at=excluded.created_at,wins=excluded.wins,kills=excluded.kills,points=excluded.points,admins_json=excluded.admins_json,moderators_json=excluded.moderators_json,members_json=excluded.members_json";
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement(sql)) {
+            bindClan(ps, clan);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to save clan", e);
+        }
+    }
+
+    public ClanData getClan(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        if (backendType == BackendType.MONGO) {
+            return clanFromDocument(mongoDatabase.getCollection("clans").find(Filters.eq("name", name)).first());
+        }
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement("SELECT * FROM clans WHERE name=?")) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? clanFromResultSet(rs) : null;
+            }
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to load clan", e);
+            return null;
+        }
+    }
+
+    public List<ClanData> getClans() {
+        List<ClanData> result = new ArrayList<>();
+        if (backendType == BackendType.MONGO) {
+            for (Document doc : mongoDatabase.getCollection("clans").find()) {
+                result.add(clanFromDocument(doc));
+            }
+            return result;
+        }
+        try (Connection c = dataSource.getConnection();
+             PreparedStatement ps = c.prepareStatement("SELECT * FROM clans ORDER BY points DESC, name ASC");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                result.add(clanFromResultSet(rs));
+            }
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to load clans", e);
+        }
+        return result;
+    }
+
+    public boolean deleteClan(String name) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        if (backendType == BackendType.MONGO) {
+            return mongoDatabase.getCollection("clans").deleteOne(Filters.eq("name", name)).getDeletedCount() > 0;
+        }
+        try (Connection c = dataSource.getConnection(); PreparedStatement ps = c.prepareStatement("DELETE FROM clans WHERE name=?")) {
+            ps.setString(1, name);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            CentralLogger.error("DataStore", "Failed to delete clan", e);
+            return false;
+        }
+    }
+
     private void logDbErrorThrottled(String action, Exception e, String message) {
         String signature = action + "|" + (e == null ? "-" : String.valueOf(e.getMessage()));
         long now = System.currentTimeMillis();
@@ -832,6 +1092,121 @@ public class CloudDataStore {
             lastDbErrorSignature = signature;
             lastDbErrorLogAt = now;
         }
+    }
+
+    private void bindPunishment(PreparedStatement ps, PunishmentData p) throws SQLException {
+        ps.setString(1, p.id);
+        ps.setString(2, p.targetUuid);
+        ps.setString(3, p.targetName);
+        ps.setString(4, p.actorUuid);
+        ps.setString(5, p.actorName);
+        ps.setString(6, p.type);
+        ps.setString(7, p.reason);
+        ps.setString(8, p.proof);
+        ps.setString(9, p.notes);
+        ps.setString(10, p.address);
+        ps.setLong(11, p.createdAt);
+        ps.setLong(12, p.expiresAt);
+        ps.setInt(13, p.active ? 1 : 0);
+    }
+
+    private PunishmentData punishmentFromResultSet(ResultSet rs) throws SQLException {
+        PunishmentData p = new PunishmentData();
+        p.id = rs.getString("id");
+        p.targetUuid = rs.getString("target_uuid");
+        p.targetName = rs.getString("target_name");
+        p.actorUuid = rs.getString("actor_uuid");
+        p.actorName = rs.getString("actor_name");
+        p.type = rs.getString("type");
+        p.reason = rs.getString("reason");
+        p.proof = rs.getString("proof");
+        p.notes = rs.getString("notes");
+        p.address = rs.getString("address");
+        p.createdAt = rs.getLong("created_at");
+        p.expiresAt = rs.getLong("expires_at");
+        p.active = rs.getInt("active") == 1;
+        return p;
+    }
+
+    private PunishmentData punishmentFromDocument(Document doc) {
+        PunishmentData p = new PunishmentData();
+        if (doc == null) {
+            return p;
+        }
+        p.id = doc.getString("id");
+        p.targetUuid = doc.getString("target_uuid");
+        p.targetName = doc.getString("target_name");
+        p.actorUuid = doc.getString("actor_uuid");
+        p.actorName = doc.getString("actor_name");
+        p.type = doc.getString("type");
+        p.reason = doc.getString("reason");
+        p.proof = doc.getString("proof");
+        p.notes = doc.getString("notes");
+        p.address = doc.getString("address");
+        p.createdAt = doc.getLong("created_at") == null ? 0L : doc.getLong("created_at");
+        p.expiresAt = doc.getLong("expires_at") == null ? 0L : doc.getLong("expires_at");
+        p.active = doc.getBoolean("active", true);
+        return p;
+    }
+
+    private void bindClan(PreparedStatement ps, ClanData c) throws SQLException {
+        ps.setString(1, c.name);
+        ps.setString(2, c.tag);
+        ps.setString(3, c.ownerUuid);
+        ps.setString(4, c.homeServer);
+        ps.setInt(5, c.friendlyFire ? 1 : 0);
+        ps.setLong(6, c.createdAt);
+        ps.setInt(7, c.wins);
+        ps.setInt(8, c.kills);
+        ps.setInt(9, c.points);
+        ps.setString(10, gson.toJson(c.admins));
+        ps.setString(11, gson.toJson(c.moderators));
+        ps.setString(12, gson.toJson(c.members));
+    }
+
+    private ClanData clanFromResultSet(ResultSet rs) throws SQLException {
+        ClanData c = new ClanData();
+        c.name = rs.getString("name");
+        c.tag = rs.getString("tag");
+        c.ownerUuid = rs.getString("owner_uuid");
+        c.homeServer = rs.getString("home_server");
+        c.friendlyFire = rs.getInt("friendly_fire") == 1;
+        c.createdAt = rs.getLong("created_at");
+        c.wins = rs.getInt("wins");
+        c.kills = rs.getInt("kills");
+        c.points = rs.getInt("points");
+        Type listType = new TypeToken<List<String>>() {}.getType();
+        c.admins = gson.fromJson(rs.getString("admins_json"), listType);
+        c.moderators = gson.fromJson(rs.getString("moderators_json"), listType);
+        c.members = gson.fromJson(rs.getString("members_json"), listType);
+        if (c.admins == null) c.admins = new ArrayList<>();
+        if (c.moderators == null) c.moderators = new ArrayList<>();
+        if (c.members == null) c.members = new ArrayList<>();
+        return c;
+    }
+
+    @SuppressWarnings("unchecked")
+    private ClanData clanFromDocument(Document doc) {
+        if (doc == null) {
+            return null;
+        }
+        ClanData c = new ClanData();
+        c.name = doc.getString("name");
+        c.tag = doc.getString("tag");
+        c.ownerUuid = doc.getString("owner_uuid");
+        c.homeServer = doc.getString("home_server");
+        c.friendlyFire = doc.getBoolean("friendly_fire", false);
+        c.createdAt = doc.getLong("created_at") == null ? 0L : doc.getLong("created_at");
+        c.wins = doc.getInteger("wins", 0);
+        c.kills = doc.getInteger("kills", 0);
+        c.points = doc.getInteger("points", 0);
+        c.admins = doc.get("admins", List.class);
+        c.moderators = doc.get("moderators", List.class);
+        c.members = doc.get("members", List.class);
+        if (c.admins == null) c.admins = new ArrayList<>();
+        if (c.moderators == null) c.moderators = new ArrayList<>();
+        if (c.members == null) c.members = new ArrayList<>();
+        return c;
     }
 
     private PlayerData fromResultSet(ResultSet rs) throws SQLException {

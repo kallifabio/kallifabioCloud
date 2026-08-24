@@ -24,7 +24,8 @@ public class Launcher {
     private static Wrapper wrapper;
     private static CloudHttpServer apiServer;
     private static CommandHandler commandHandler;
-    private static boolean shutdownRequested = false;
+    private static final Object SHUTDOWN_LOCK = new Object();
+    private static volatile boolean shutdownRequested = false;
 
     // Launch modes
     private static LaunchMode launchMode = LaunchMode.COMBINED;
@@ -234,16 +235,21 @@ public class Launcher {
     private static void registerShutdownHook() {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             if (!shutdownRequested) {
-                performShutdown();
+                performShutdown(false);
             }
         }, "Shutdown-Hook"));
     }
 
-    private static void performShutdown() {
-        if (shutdownRequested) {
-            return;
+    private static void performShutdown(boolean exitJvm) {
+        synchronized (SHUTDOWN_LOCK) {
+            if (shutdownRequested) {
+                if (exitJvm) {
+                    System.exit(0);
+                }
+                return;
+            }
+            shutdownRequested = true;
         }
-        shutdownRequested = true;
 
         ConsoleScreenManager.printToTerminal(" ");
         ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
@@ -287,10 +293,14 @@ public class Launcher {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+
+        if (exitJvm) {
+            System.exit(0);
+        }
     }
 
     public static void requestShutdown() {
-        performShutdown();
+        performShutdown(true);
     }
 
     private static void keepAlive() {

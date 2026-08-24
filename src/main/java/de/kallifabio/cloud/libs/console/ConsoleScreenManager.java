@@ -10,14 +10,14 @@ import org.jline.reader.UserInterruptException;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ConsoleScreenManager {
 
-    private static final Map<String, ConsoleScreen> screens = new HashMap<>();
+    private static final Map<String, ConsoleScreen> screens = new ConcurrentHashMap<>();
     private static final ConsoleScreen mainScreen = new ConsoleScreen("main");
     private static final Object OUTPUT_LOCK = new Object();
 
@@ -38,6 +38,9 @@ public class ConsoleScreenManager {
     }
 
     public static void startConsole() {
+        if (inputThread != null && inputThread.isAlive()) {
+            return;
+        }
         running = true;
         screens.put("main", mainScreen);
         currentScreen = mainScreen;
@@ -62,6 +65,7 @@ public class ConsoleScreenManager {
                         } else if (input.equals("/exit")) {
                             handleExitCommand();
                         } else if (input.equalsIgnoreCase("exit") || input.equalsIgnoreCase("stop")) {
+                            running = false;
                             printToTerminal("Fahre System herunter...");
                             Launcher.requestShutdown();
                             break;
@@ -90,7 +94,7 @@ public class ConsoleScreenManager {
                 }
             }, "Console-Input");
 
-            inputThread.setDaemon(false);
+            inputThread.setDaemon(true);
             inputThread.start();
 
         } catch (Exception e) {
@@ -101,8 +105,9 @@ public class ConsoleScreenManager {
 
     public static void stopConsole() {
         running = false;
-        if (inputThread != null) {
-            inputThread.interrupt();
+        Thread thread = inputThread;
+        if (thread != null && thread != Thread.currentThread()) {
+            thread.interrupt();
         }
         if (terminal != null) {
             try {
@@ -112,13 +117,15 @@ public class ConsoleScreenManager {
             } catch (Exception ignored) {
             }
         }
-        if (inputThread != null) {
+        if (thread != null && thread != Thread.currentThread()) {
             try {
-                inputThread.join(1000);
+                thread.join(1000);
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
             }
         }
+        lineReader = null;
+        terminal = null;
     }
 
     private static void handleSwitchCommand(String input) {
@@ -233,7 +240,12 @@ public class ConsoleScreenManager {
         CentralLogger.info("Console", message);
         if (terminal != null && lineReader != null) {
             synchronized (OUTPUT_LOCK) {
-                lineReader.printAbove(message);
+                try {
+                    lineReader.printAbove(message);
+                } catch (Exception ignored) {
+                    System.out.println(message);
+                    System.out.flush();
+                }
             }
         } else {
             System.out.println(message);

@@ -301,6 +301,165 @@
                 }
 
                 .layout-shell { display: grid; gap: 1.55rem; }
+                .page-context-bar {
+                    position: relative;
+                    overflow: hidden;
+                    border: 1px solid var(--line);
+                    border-radius: 1.1rem;
+                    background:
+                        radial-gradient(700px 180px at 0% 0%, rgba(34, 211, 238, 0.13), transparent 58%),
+                        linear-gradient(135deg, color-mix(in oklab, var(--card-strong) 92%, transparent 8%), color-mix(in oklab, var(--card) 86%, transparent 14%));
+                    box-shadow: 0 14px 34px rgba(2, 6, 23, 0.22);
+                }
+                .page-context-bar::before {
+                    content: "";
+                    position: absolute;
+                    inset: 0 auto 0 0;
+                    width: 4px;
+                    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+                }
+                .page-eyebrow {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.42rem;
+                    color: color-mix(in oklab, var(--accent) 78%, white 22%);
+                    font-size: 0.68rem;
+                    font-weight: 700;
+                    letter-spacing: 0.18em;
+                    text-transform: uppercase;
+                }
+                .page-title {
+                    margin-top: 0.2rem;
+                    font-size: clamp(1.25rem, 2vw, 1.85rem);
+                    font-weight: 800;
+                    letter-spacing: -0.04em;
+                }
+                .page-description {
+                    margin-top: 0.35rem;
+                    max-width: 62rem;
+                    color: var(--muted);
+                    font-size: 0.82rem;
+                    line-height: 1.55;
+                }
+                .context-pill-grid {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.5rem;
+                }
+                .context-pill {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.42rem;
+                    border: 1px solid var(--line);
+                    border-radius: 999px;
+                    padding: 0.42rem 0.68rem;
+                    background: color-mix(in oklab, var(--bg-soft) 70%, transparent 30%);
+                    color: color-mix(in oklab, var(--text) 82%, var(--muted) 18%);
+                    font-size: 0.72rem;
+                    white-space: nowrap;
+                }
+                .section-card-title {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    font-size: 0.88rem;
+                    font-weight: 700;
+                    letter-spacing: -0.015em;
+                }
+                .section-card-subtitle {
+                    margin-top: 0.2rem;
+                    color: var(--muted);
+                    font-size: 0.7rem;
+                    line-height: 1.45;
+                }
+                .panel-divider {
+                    height: 1px;
+                    margin: 0.75rem 0;
+                    background: linear-gradient(90deg, transparent, var(--line), transparent);
+                }
+                .dashboard-page h2.font-semibold,
+                .dashboard-page h3.font-semibold {
+                    color: color-mix(in oklab, var(--text) 92%, white 8%);
+                    letter-spacing: -0.03em;
+                    line-height: 1.15;
+                }
+                .dashboard-page p.text-slate-400,
+                .dashboard-page .text-slate-400 {
+                    color: var(--muted) !important;
+                }
+                .dashboard-page > .rounded-2xl,
+                .dashboard-page > div.rounded-2xl,
+                .dashboard-page article.rounded-2xl,
+                .dashboard-page article.rounded-xl {
+                    position: relative;
+                    overflow: hidden;
+                    background:
+                        radial-gradient(520px 120px at 0% 0%, rgba(34, 211, 238, 0.08), transparent 62%),
+                        color-mix(in oklab, var(--card) 86%, transparent 14%) !important;
+                }
+                .dashboard-page > .rounded-2xl::before,
+                .dashboard-page > div.rounded-2xl::before,
+                .dashboard-page article.rounded-2xl::before,
+                .dashboard-page article.rounded-xl::before {
+                    content: "";
+                    position: absolute;
+                    inset: 0 0 auto 0;
+                    height: 1px;
+                    background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.34), transparent);
+                    pointer-events: none;
+                }
+                .dashboard-page button {
+                    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+                }
+                .dashboard-page button:hover:not(:disabled) {
+                    transform: translateY(-1px);
+                    background: color-mix(in oklab, var(--bg-soft) 76%, transparent 24%);
+                    box-shadow: 0 10px 22px rgba(2, 6, 23, 0.16);
+                }
+                .dashboard-page input,
+                .dashboard-page select,
+                .dashboard-page textarea {
+                    min-height: 2.35rem;
+                }
+                .data-card {
+                    border: 1px solid var(--line);
+                    border-radius: 0.9rem;
+                    background: color-mix(in oklab, var(--bg-soft) 72%, transparent 28%);
+                }
+                .ops-muted { color: var(--muted) !important; }
+                .servers-table-wrap {
+                    background:
+                        linear-gradient(180deg, color-mix(in oklab, var(--bg-soft) 88%, transparent 12%), transparent),
+                        color-mix(in oklab, var(--card) 78%, transparent 22%);
+                }
+                .servers-table-wrap table {
+                    border-collapse: separate;
+                    border-spacing: 0;
+                }
+                .servers-table-wrap thead {
+                    position: sticky;
+                    top: 0;
+                    z-index: 1;
+                    background: color-mix(in oklab, var(--bg-soft) 90%, transparent 10%);
+                    backdrop-filter: blur(10px);
+                }
+                .overview-kpi-card {
+                    min-height: 6rem;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                }
+                .overview-kpi-label {
+                    color: var(--muted);
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    letter-spacing: -0.01em;
+                }
+                .overview-kpi-value {
+                    margin-top: 0.65rem;
+                    font-size: clamp(1.45rem, 2vw, 2rem);
+                    line-height: 1;
+                }
                 .overview-kpi-grid {
                     display: grid;
                     gap: 1rem;
@@ -393,6 +552,7 @@
                     .overview-info-grid { grid-template-columns: 1fr; }
                     .servers-shell { grid-template-columns: 1fr; }
                     .monitoring-grid { grid-template-columns: 1fr; }
+                    .servers-side-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }
                 }
                 @media (max-width: 1280px) {
                     .overview-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -402,13 +562,42 @@
                     .servers-side-stack > div:nth-child(3) { grid-column: span 2; }
                 }
                 @media (max-width: 768px) {
-                    #overviewSection { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                    .layout-shell { gap: 1rem; }
+                    .page-context-bar { padding: 0.95rem !important; border-radius: 0.9rem; }
+                    .page-title { font-size: 1.18rem; }
+                    .page-description { font-size: 0.76rem; }
+                    .context-pill-grid {
+                        display: grid;
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                        width: 100%;
+                    }
+                    .context-pill {
+                        justify-content: center;
+                        padding: 0.38rem 0.5rem;
+                        font-size: 0.66rem;
+                    }
+                    .overview-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+                    header.rounded-2xl { padding: 1rem !important; }
+                    header .mt-3.flex { gap: 0.45rem !important; }
+                    header .rounded-full { font-size: 0.68rem; }
+                    .servers-main-head {
+                        align-items: stretch !important;
+                        flex-direction: column;
+                    }
+                    .servers-main-head > .flex {
+                        width: 100%;
+                    }
+                    .servers-main-head input,
+                    .servers-main-head button {
+                        flex: 1;
+                    }
                 }
                 @media (max-width: 640px) {
                     .mx-auto.max-w-7xl.p-4, .mx-auto.max-w-7xl.p-4.md\:p-6 { padding-left: 1.15rem; padding-right: 1.15rem; }
                     .servers-side-stack { grid-template-columns: 1fr; }
                     .servers-side-stack > div:first-child,
-                    .servers-side-stack > div:nth-child(2) { grid-column: auto; }
+                    .servers-side-stack > div:nth-child(2),
+                    .servers-side-stack > div:nth-child(3) { grid-column: auto; }
                     .dashboard-page { gap: 0.9rem !important; }
                     .dashboard-page table { font-size: 0.75rem; }
                     .dashboard-page th, .dashboard-page td { padding: 0.42rem 0.34rem !important; white-space: nowrap; }
@@ -420,6 +609,10 @@
                 }
                 @media (max-width: 520px) {
                     #overviewSection { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+                    .overview-kpi-grid { grid-template-columns: 1fr; }
+                    .overview-kpi-card { min-height: 4.8rem; }
+                    .overview-info-grid { gap: 0.85rem; }
+                    .context-pill-grid { grid-template-columns: 1fr; }
                     header .w-full { flex-direction: column; }
                     #apiKey, #connectBtn { width: 100%; }
                     .mobile-nav-link { font-size: 0.8rem; }
@@ -575,7 +768,7 @@
         </head>
         <body class='min-h-screen bg-slate-950 text-slate-100'>
             <nav class='sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur'>
-                <div class='mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-6'>
+                <div class='mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 md:px-6'>
                     <div class='flex items-center gap-3'>
                         <div class='h-8 w-8 rounded-lg bg-gradient-to-br from-cyan-300 to-blue-500 p-[2px]'>
                             <div class='flex h-full w-full items-center justify-center rounded-md bg-slate-900 text-xs font-bold text-cyan-300'>
@@ -589,6 +782,16 @@
                             <div class='text-[10px] text-slate-400'>Operations Dashboard</div>
                         </div>
                     </div>
+                    <div class='hidden flex-1 items-center justify-center gap-2 md:flex'>
+                        <a href='/dashboard/overview' data-page-link='overview' class='nav-link'><i class='fa-solid fa-gauge-high text-[11px]'></i><span>Overview</span></a>
+                        <a href='/dashboard/servers' data-page-link='servers' class='nav-link'><i class='fa-solid fa-server text-[11px]'></i><span>Servers</span></a>
+                        <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link'><i class='fa-solid fa-heart-pulse text-[11px]'></i><span>Monitoring</span></a>
+                        <a href='/dashboard/operations' data-page-link='operations' class='nav-link'><i class='fa-solid fa-gears text-[11px]'></i><span>Operations</span></a>
+                        <a href='/dashboard/setup' data-page-link='setup' class='nav-link'><i class='fa-solid fa-screwdriver-wrench text-[11px]'></i><span>Setup</span></a>
+                        <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link'><i class='fa-solid fa-flask-vial text-[11px]'></i><span>Advanced</span></a>
+                        <a href='/dashboard/bungeesystem' data-page-link='bungeesystem' class='nav-link'><i class='fa-solid fa-network-wired text-[11px]'></i><span>Bungee</span></a>
+                        <a href='/dashboard/console' data-page-link='console' class='nav-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
+                    </div>
                     <div class='flex items-center gap-2'>
                         <button id='themeToggle' class='inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1 text-xs hover:border-cyan-400'>
                             <i class='fa-solid fa-circle-half-stroke text-[11px]'></i><span>Theme</span>
@@ -600,15 +803,6 @@
                             <span>Menu</span>
                         </button>
                     </div>
-                    <div class='hidden items-center gap-2 md:flex'>
-                        <a href='/dashboard/overview' data-page-link='overview' class='nav-link'><i class='fa-solid fa-gauge-high text-[11px]'></i><span>Overview</span></a>
-                        <a href='/dashboard/servers' data-page-link='servers' class='nav-link'><i class='fa-solid fa-server text-[11px]'></i><span>Servers</span></a>
-                        <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link'><i class='fa-solid fa-heart-pulse text-[11px]'></i><span>Monitoring</span></a>
-                        <a href='/dashboard/operations' data-page-link='operations' class='nav-link'><i class='fa-solid fa-gears text-[11px]'></i><span>Operations</span></a>
-                        <a href='/dashboard/setup' data-page-link='setup' class='nav-link'><i class='fa-solid fa-screwdriver-wrench text-[11px]'></i><span>Setup</span></a>
-                        <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link'><i class='fa-solid fa-flask-vial text-[11px]'></i><span>Advanced</span></a>
-                        <a href='/dashboard/console' data-page-link='console' class='nav-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
-                    </div>
                 </div>
                 <div id='mobileNavQuick' class='mobile-nav-quick md:hidden'>
                     <a href='/dashboard/overview' data-page-link='overview' class='nav-link mobile-quick-link'><i class='fa-solid fa-gauge-high text-[11px]'></i><span>Overview</span></a>
@@ -617,7 +811,8 @@
                     <a href='/dashboard/operations' data-page-link='operations' class='nav-link mobile-quick-link'><i class='fa-solid fa-gears text-[11px]'></i><span>Operations</span></a>
                     <a href='/dashboard/setup' data-page-link='setup' class='nav-link mobile-quick-link'><i class='fa-solid fa-screwdriver-wrench text-[11px]'></i><span>Setup</span></a>
                     <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link mobile-quick-link'><i class='fa-solid fa-flask-vial text-[11px]'></i><span>Advanced</span></a>
-                    <a href='/dashboard/console' data-page-link='console' class='nav-link mobile-quick-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
+                    <a href='/dashboard/bungeesystem' data-page-link='bungeesystem' class='nav-link mobile-quick-link'><i class='fa-solid fa-network-wired text-[11px]'></i><span>Bungee</span></a>
+                        <a href='/dashboard/console' data-page-link='console' class='nav-link mobile-quick-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
                 </div>
                 <div id='mobileNavBackdrop' class='mobile-nav-overlay hidden md:hidden'></div>
                 <div id='mobileNav' class='mobile-nav-panel hidden md:hidden'>
@@ -629,6 +824,7 @@
                         <a href='/dashboard/operations' data-page-link='operations' class='nav-link mobile-nav-link'><i class='fa-solid fa-gears text-[12px]'></i><span>Operations</span></a>
                         <a href='/dashboard/setup' data-page-link='setup' class='nav-link mobile-nav-link'><i class='fa-solid fa-screwdriver-wrench text-[12px]'></i><span>Setup</span></a>
                         <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link mobile-nav-link'><i class='fa-solid fa-flask-vial text-[12px]'></i><span>Advanced</span></a>
+                        <a href='/dashboard/bungeesystem' data-page-link='bungeesystem' class='nav-link mobile-nav-link'><i class='fa-solid fa-network-wired text-[12px]'></i><span>Bungee</span></a>
                         <a href='/dashboard/console' data-page-link='console' class='nav-link mobile-nav-link'><i class='fa-solid fa-terminal text-[12px]'></i><span>Console</span></a>
                         </div>
                     </div>
@@ -665,6 +861,19 @@
                         <span id='autoRefreshCountdown' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Next refresh: -</span>
                     </div>
                 </header>
+                <section id='pageContextBar' class='page-context-bar p-4 md:p-5'>
+                    <div class='flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between'>
+                        <div>
+                            <div id='pageEyebrow' class='page-eyebrow'><i class='fa-solid fa-compass'></i><span>Overview</span></div>
+                            <h2 id='pageTitle' class='page-title'>Operations Overview</h2>
+                            <p id='pageDescription' class='page-description'>Fast orientation for the current KalliCloud state.</p>
+                        </div>
+                        <div id='pageContextPills' class='context-pill-grid'>
+                            <span class='context-pill'><i class='fa-solid fa-circle-nodes'></i><span>Live data</span></span>
+                            <span class='context-pill'><i class='fa-solid fa-shield-halved'></i><span>Role gated</span></span>
+                        </div>
+                    </div>
+                </section>
                 <section id='overviewSection' data-page='overview' class='dashboard-page overview-shell space-y-4'>
                     <div class='overview-kpi-grid'>
                         <article class='overview-kpi-card rounded-xl border border-slate-800 bg-slate-900/60 p-4'>
@@ -1007,6 +1216,31 @@
                         <pre id='advancedOutputBox' class='mt-3 h-56 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
                     </div>
                 </section>
+
+                <section id='bungeeSystemSection' data-page='bungeesystem' class='dashboard-page space-y-4'>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='flex flex-wrap items-center justify-between gap-2'>
+                            <div>
+                                <h2 class='font-semibold'>BungeeSystem Control</h2>
+                                <p class='text-[11px] text-slate-400'>Proxy layer, punishments, clans and cross-proxy live events.</p>
+                            </div>
+                            <span id='bungeeLiveSyncBadge' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>LiveSync: -</span>
+                        </div>
+                    </div>
+                    <div class='grid gap-4 lg:grid-cols-4'>
+                        <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'><p class='text-xs text-slate-400'>Proxies</p><p id='bungeeProxyCount' class='mt-1 text-2xl font-bold text-cyan-300'>0</p></article>
+                        <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'><p class='text-xs text-slate-400'>Active Punishments</p><p id='bungeePunishmentCount' class='mt-1 text-2xl font-bold text-rose-300'>0</p></article>
+                        <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'><p class='text-xs text-slate-400'>Clans</p><p id='bungeeClanCount' class='mt-1 text-2xl font-bold text-emerald-300'>0</p></article>
+                        <article class='rounded-xl border border-slate-800 bg-slate-900/60 p-4'><p class='text-xs text-slate-400'>Recent Events</p><p id='bungeeEventCount' class='mt-1 text-2xl font-bold text-violet-300'>0</p></article>
+                    </div>
+                    <div class='grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]'>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'><h3 class='mb-3 text-sm font-semibold'>Proxy Instances</h3><div id='bungeeProxiesBox' class='grid gap-2 md:grid-cols-2'></div></div>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'><h3 class='mb-3 text-sm font-semibold'>Active Punishments</h3><div id='bungeePunishmentsBox' class='space-y-2 text-xs'></div></div>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'><h3 class='mb-3 text-sm font-semibold'>Clans</h3><div id='bungeeClansBox' class='space-y-2 text-xs'></div></div>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'><h3 class='mb-3 text-sm font-semibold'>Live Events</h3><div id='bungeeEventsBox' class='space-y-2 text-xs'></div></div>
+                    </div>
+                </section>
+
                 <section id='consoleSection' data-page='console' class='dashboard-page grid gap-6 lg:grid-cols-3'>
                     <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-1'>
                         <h2 class='mb-3 font-semibold'>Live Console</h2>
@@ -1176,6 +1410,7 @@
                     logSearch: { lines: [] },
                     logs: { lines: [] },
                     metricsHistory: [],
+                    bungeeSystem: null,
                     refreshInFlight: false,
                     refreshQueued: false,
                     lastAutoRefreshAt: 0,
@@ -1190,6 +1425,68 @@
                 };
                 const apiKeyInput = document.getElementById('apiKey');
                 apiKeyInput.value = state.apiKey;
+                const pageMeta = {
+                    overview: {
+                        icon: 'fa-gauge-high',
+                        eyebrow: 'Overview',
+                        title: 'Operations Overview',
+                        description: 'A calm command-center summary for health, readiness and the most important network KPIs.'
+                    },
+                    servers: {
+                        icon: 'fa-server',
+                        eyebrow: 'Server Operations',
+                        title: 'Server Inventory & Actions',
+                        description: 'Filter, inspect and control live servers with bulk-safe operations and direct detail pages.'
+                    },
+                    monitoring: {
+                        icon: 'fa-heart-pulse',
+                        eyebrow: 'Monitoring',
+                        title: 'Performance Observatory',
+                        description: 'CPU, RAM, TPS, wrapper pressure and alert signals arranged for fast diagnosis.'
+                    },
+                    operations: {
+                        icon: 'fa-gears',
+                        eyebrow: 'Operations',
+                        title: 'Cluster & Operational Tools',
+                        description: 'Cluster state, scaling policies, reports, audit trail and log search in one operational workspace.'
+                    },
+                    setup: {
+                        icon: 'fa-screwdriver-wrench',
+                        eyebrow: 'Setup',
+                        title: 'Setup Health',
+                        description: 'Validate templates, jars and group readiness before players notice broken infrastructure.'
+                    },
+                    advanced: {
+                        icon: 'fa-flask-vial',
+                        eyebrow: 'Advanced',
+                        title: 'Advanced Tooling',
+                        description: 'Template, group, backup, incident and API debug tools for careful administrative work.'
+                    },
+                    bungeesystem: {
+                        icon: 'fa-network-wired',
+                        eyebrow: 'BungeeSystem',
+                        title: 'Proxy Layer Control',
+                        description: 'Proxy instances, punishments, clans and cross-proxy live events grouped in one page.'
+                    },
+                    console: {
+                        icon: 'fa-terminal',
+                        eyebrow: 'Console',
+                        title: 'Live Console',
+                        description: 'Tail server screens and send safe commands without leaving the dashboard.'
+                    },
+                    'server-detail': {
+                        icon: 'fa-cube',
+                        eyebrow: 'Server Detail',
+                        title: 'Server Detail',
+                        description: 'Focused metrics, logs, actions and managed files for one server.'
+                    },
+                    'wrapper-detail': {
+                        icon: 'fa-microchip',
+                        eyebrow: 'Wrapper Detail',
+                        title: 'Wrapper Detail',
+                        description: 'Wrapper capacity, running servers and wrapper-scoped operations.'
+                    }
+                };
                 initTheme();
                 loadUiPreferences();
                 applyDashboardPage();
@@ -1239,13 +1536,14 @@
                         return 'wrapper-detail';
                     }
                     const last = parts.length ? parts[parts.length - 1].toLowerCase() : 'dashboard';
-                    const known = new Set(['overview', 'servers', 'monitoring', 'operations', 'setup', 'advanced', 'console']);
+                    const known = new Set(['overview', 'servers', 'monitoring', 'operations', 'setup', 'advanced', 'bungeesystem', 'console']);
                     if (known.has(last)) return last;
                     return 'overview';
                 }
 
                 function applyDashboardPage() {
                     const current = getCurrentPage();
+                    updatePageContext(current);
                     document.querySelectorAll('.dashboard-page').forEach(section => {
                         const page = section.getAttribute('data-page');
                         if (page === current) {
@@ -1278,6 +1576,45 @@
                     if (current === 'wrapper-detail') {
                         renderWrapperDetailPage();
                     }
+                }
+
+                function updatePageContext(current) {
+                    const meta = pageMeta[current] || pageMeta.overview;
+                    const title = current === 'server-detail' && state.routeServerName
+                        ? `Server ${state.routeServerName}`
+                        : current === 'wrapper-detail' && state.routeWrapperId
+                            ? `Wrapper ${state.routeWrapperId}`
+                            : meta.title;
+                    const eyebrow = current === 'server-detail' && state.routeServerName
+                        ? 'Server Detail'
+                        : current === 'wrapper-detail' && state.routeWrapperId
+                            ? 'Wrapper Detail'
+                            : meta.eyebrow;
+                    const pageEyebrow = document.getElementById('pageEyebrow');
+                    const pageTitle = document.getElementById('pageTitle');
+                    const pageDescription = document.getElementById('pageDescription');
+                    if (pageEyebrow) pageEyebrow.innerHTML = `<i class='fa-solid ${meta.icon}'></i><span>${escapeHtml(eyebrow)}</span>`;
+                    if (pageTitle) pageTitle.textContent = title;
+                    if (pageDescription) pageDescription.textContent = meta.description;
+                    updatePageContextPills();
+                }
+
+                function updatePageContextPills() {
+                    const box = document.getElementById('pageContextPills');
+                    if (!box) return;
+                    const overview = state.overview || {};
+                    const readyText = state.readiness && state.readiness.ready ? 'Ready' : (state.readiness ? 'Degraded' : 'Readiness -');
+                    const roleText = state.role ? `Role ${state.role}` : 'Not signed in';
+                    const wsText = state.ws && state.ws.readyState === WebSocket.OPEN ? 'WS connected' : 'WS offline';
+                    const serverText = `${overview.runningServers || 0} servers`;
+                    const alertText = `${(overview.monitoring && overview.monitoring.activeAlerts) || 0} alerts`;
+                    box.innerHTML = [
+                        ['fa-circle-check', readyText],
+                        ['fa-server', serverText],
+                        ['fa-triangle-exclamation', alertText],
+                        ['fa-user-shield', roleText],
+                        ['fa-bolt', wsText]
+                    ].map(([icon, text]) => `<span class='context-pill'><i class='fa-solid ${icon}'></i><span>${escapeHtml(text)}</span></span>`).join('');
                 }
 
                 function navigateDashboard(path) {
@@ -1850,7 +2187,8 @@
                             apiGet('/api/v1/cluster/info'),
                             apiGet('/api/v1/cluster/nodes'),
                             apiGet('/api/v1/scaling/policies'),
-                            apiGet('/api/v1/metrics/history')
+                            apiGet('/api/v1/metrics/history'),
+                            apiGet('/api/v1/bungeesystem')
                         ]);
                         const failed = results
                             .map((result, index) => ({ result, index }))
@@ -1870,8 +2208,9 @@
                         const clusterNodes = valueOr(8, { nodes: [] });
                         const policies = valueOr(9, {});
                         const metricHistory = valueOr(10, { history: state.metricsHistory || [] });
+                        const bungeeSystem = valueOr(11, state.bungeeSystem || {});
                         if (failed.length > 0) {
-                            const names = ['overview', 'readiness', 'diagnostics', 'capacity', 'alerts', 'logs', 'setup', 'cluster', 'nodes', 'policies', 'metrics'];
+                            const names = ['overview', 'readiness', 'diagnostics', 'capacity', 'alerts', 'logs', 'setup', 'cluster', 'nodes', 'policies', 'metrics', 'bungeesystem'];
                             const failedNames = failed.map(item => names[item.index]).join(', ');
                             showToast('warning', 'Partial refresh', failedNames + ' failed, using available cached data.');
                         }
@@ -1881,6 +2220,7 @@
                         state.capacity = capacity;
                         state.logs = logs;
                         state.metricsHistory = metricHistory.history || [];
+                        state.bungeeSystem = bungeeSystem;
                         renderOverview(overview);
                         renderReadiness(readiness);
                         renderDiagnostics(diagnostics);
@@ -1893,6 +2233,8 @@
                         renderPolicies(policies);
                         renderMetricsTrend(state.metricsHistory);
                         renderMonitoringInsights(overview);
+                        renderBungeeSystem(bungeeSystem);
+                        updatePageContextPills();
                         if (state.drawerServerName) renderServerDrawer();
                         if (getCurrentPage() === 'server-detail') renderServerDetailPage();
                         if (getCurrentPage() === 'wrapper-detail') renderWrapperDetailPage();
@@ -2260,6 +2602,32 @@
                     await apiPost('/api/v1/servers/start', { serverName, groupName });
                     showToast('success', 'Recommended start triggered', `${serverName} on ${group.bestWrapperId || 'best wrapper'}`);
                     await refresh();
+                }
+
+
+                function renderBungeeSystem(data) {
+                    data = data || {};
+                    const proxies = data.proxies || [];
+                    const punishments = data.activePunishments || [];
+                    const clans = data.clans || [];
+                    const events = data.events || [];
+                    const live = data.liveSync || {};
+                    const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+                    setText('bungeeProxyCount', proxies.length || 0);
+                    setText('bungeePunishmentCount', data.activePunishmentCount ?? punishments.length ?? 0);
+                    setText('bungeeClanCount', data.clanCount ?? clans.length ?? 0);
+                    setText('bungeeEventCount', data.eventCount ?? events.length ?? 0);
+                    setText('bungeeLiveSyncBadge', `LiveSync: WS ${live.websocketPort || '-'} | snapshot ${live.snapshotIntervalSeconds || 5}s`);
+                    const proxyHtml = proxies.map(proxy => `
+                        <div class='rounded-xl border border-slate-800 bg-slate-950/60 p-3'>
+                            <div class='flex items-center justify-between gap-2'><div class='font-semibold'>${escapeHtml(proxy.serverName || '-')}</div><span class='rounded-full px-2 py-1 text-[10px] ${statusClass(proxy.status || '')}'>${escapeHtml(proxy.status || '-')}</span></div>
+                            <div class='mt-2 text-xs text-slate-400'>Wrapper ${escapeHtml(proxy.wrapperId || '-')} | Port ${proxy.port || '-'}</div>
+                            <div class='mt-1 text-xs'>Players ${proxy.playerCount || 0}/${proxy.maxPlayers || 0} | TPS ${Number(proxy.tps || 0).toFixed(1)}</div>
+                        </div>`).join('');
+                    document.getElementById('bungeeProxiesBox').innerHTML = proxyHtml || "<p class='text-slate-400'>No proxy servers detected.</p>";
+                    document.getElementById('bungeePunishmentsBox').innerHTML = punishments.slice(0, 16).map(p => `<div class='rounded-lg border border-rose-800/50 bg-rose-950/20 p-2'><div class='flex items-center justify-between gap-2'><b>${escapeHtml(p.type || '-')}</b><span class='text-slate-400'>${escapeHtml(p.id || '')}</span></div><div class='mt-1 text-slate-300'>${escapeHtml(p.targetName || p.targetUuid || '-')} | ${escapeHtml(p.reason || '-')}</div></div>`).join('') || "<p class='text-slate-400'>No active punishments.</p>";
+                    document.getElementById('bungeeClansBox').innerHTML = clans.slice(0, 18).map(clan => `<div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2'><div class='flex items-center justify-between gap-2'><b>${escapeHtml(clan.name || '-')}</b><span class='text-cyan-300'>[${escapeHtml(clan.tag || '-')}]</span></div><div class='mt-1 text-slate-400'>Members ${(clan.members || []).length} | Points ${clan.points || 0} | FF ${clan.friendlyFire ? 'on' : 'off'}</div></div>`).join('') || "<p class='text-slate-400'>No clans stored.</p>";
+                    document.getElementById('bungeeEventsBox').innerHTML = events.slice(0, 20).map(event => `<div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2'><div class='flex items-center justify-between gap-2'><b>${escapeHtml(event.type || '-')}</b><span class='text-slate-500'>${new Date(Number(event.timestamp || Date.now())).toLocaleTimeString()}</span></div><div class='mt-1 text-slate-300'>${escapeHtml(event.message || event.source || '-')}</div></div>`).join('') || "<p class='text-slate-400'>No BungeeSystem events yet.</p>";
                 }
 
                 function renderAlerts(data) {
@@ -2756,10 +3124,17 @@
                     document.getElementById('wsState').textContent = 'WS: connecting';
                     state.ws.onopen = () => {
                         document.getElementById('wsState').textContent = 'WS: connected';
+                        updatePageContextPills();
                     };
-                    state.ws.onmessage = () => { scheduleAutoRefresh(); };
+                    state.ws.onmessage = (event) => {
+                        try {
+                            const payload = JSON.parse(event.data || '{}');
+                            if ((payload.recentEvents || []).length || payload.type === 'live_update') scheduleAutoRefresh();
+                        } catch (_) { scheduleAutoRefresh(); }
+                    };
                     state.ws.onclose = () => {
                         document.getElementById('wsState').textContent = 'WS: disconnected';
+                        updatePageContextPills();
                     };
                 }
 
