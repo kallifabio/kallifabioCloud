@@ -28,17 +28,23 @@ Ein modulares Minecraft-Cloudsystem mit:
 ### Permissions / Social
 - Cross-Server Permission-Sync
 - Runtime Permission-Enforcement im Master Join-/Switch-Pfad
-- Runtime Permission-Enforcer im Wrapper/Serverprocess-Pfad (Cloud-Provider Standard, LuckPerms optional)
+- Cloud-Permissions als Standard-System ohne LuckPerms-Pflicht
+- Separates Proxy-/Spigot-Permission-Enforcer-Plugin im externen Plugin-Workspace `D:\Programmieren\IntelliJ\kallifabioCloud-Plugins\CloudPermissionEnforcer`
+- REST Permission-Profile und Permission-Check Endpoints für eigene Minecraft-Plugins
 - Friend-/Party-Daten persistent im DataStore
 - Pending Friend/Party Requests persistent inkl. TTL + Cleanup Job
 
 ### API / Dashboard / Security
 - REST API (`/api/v1/*`)
+- Vollständige OpenAPI-Spezifikation unter `/openapi.yml`
 - Live WebSocket Stream
 - Dashboard mit TailwindCSS
 - Dashboard Unterseiten (`/dashboard/overview`, `/dashboard/servers`, `/dashboard/monitoring`, `/dashboard/operations`, `/dashboard/setup`, `/dashboard/advanced`, `/dashboard/console`)
+- Server-Detailseiten (`/dashboard/server/<name>`) mit Live-Metriken, Logs, Quick-Actions und File-Browser
+- Wrapper-Detailseiten (`/dashboard/wrapper/<id>`) mit Kapazität, Serverliste und Wrapper-Operations
+- Sicherer File-Browser für verwaltete Server-/Template-Dateien
 - Live Console im Dashboard (Screen-Auswahl, Tail, Command-Send)
-- API Key Auth mit Rollen (`ADMIN`, `VIEWER`)
+- API Key Auth mit Rollen (`VIEWER`, `OPERATOR`, `ADMIN`, `OWNER`)
 - Key Rotation Endpoint
 - Optional TLS für REST + WSS
 - Rate Limiting
@@ -182,10 +188,16 @@ Wichtige Dateien:
 
 ### Runtime Permission Enforcer
 - `CloudMaster.Permissions.Runtime.Enabled`
-- `CloudMaster.Permissions.Runtime.Provider` (`cloud` Standard, optional `luckperms`)
+- `CloudMaster.Permissions.Runtime.Provider` (`cloud` Standard)
 - `CloudMaster.Permissions.Runtime.EnforcePrefixSuffix`
 - `CloudMaster.Permissions.Runtime.PermissionPrefixFilter` (Default: `cloud.`)
 - `CloudMaster.Permissions.Runtime.CloudSyncCommand` (optional, Platzhalter: `{uuid}`, `{server}`)
+
+Separates Plugin:
+
+- Spigot/Paper: `D:\Programmieren\IntelliJ\kallifabioCloud-Plugins\CloudPermissionEnforcer\spigot`
+- Bungee/Waterfall: `D:\Programmieren\IntelliJ\kallifabioCloud-Plugins\CloudPermissionEnforcer\proxy-bungee`
+- Build-Hinweise: `D:\Programmieren\IntelliJ\kallifabioCloud-Plugins\CloudPermissionEnforcer\README.md`
 
 ### Monitoring Thresholds (konfigurierbar)
 - `CloudMaster.Monitoring.CPU.Warning`
@@ -279,6 +291,7 @@ Aktueller Status:
 
 ### Infrastruktur
 - `GET /api/v1/health`
+- `GET /api/v1/readiness`
 - `GET /api/v1/status`
 - `GET /api/v1/servers`
 - `POST /api/v1/servers/start`
@@ -294,6 +307,32 @@ Aktueller Status:
 - `POST /api/v1/alerts/clear`
 - `GET /api/v1/system/diagnostics`
 - `GET /api/v1/system/capacity`
+- `GET /api/v1/system/report`
+- `GET /api/v1/events/recent`
+- `GET /api/v1/lifecycle`
+- `GET /api/v1/incidents`
+- `GET /api/v1/backups`
+- `POST /api/v1/backups/create`
+- `POST /api/v1/backups/restore-staging`
+- `POST /api/v1/rolling/restart`
+- `GET /api/v1/firewall/check`
+- `GET /openapi.yml`
+
+---
+
+### Permissions / Files
+- `GET /api/v1/permissions/profile?playerUuid=<uuid>`
+- `GET /api/v1/permissions/check?playerUuid=<uuid>&permission=<node>`
+- `POST /api/v1/permissions/group`
+- `POST /api/v1/permissions/assign`
+- `POST /api/v1/permissions/temp`
+- `GET /api/v1/files/list?scope=server|template|wrapper&...`
+- `GET /api/v1/files/read?scope=server|template|wrapper&...`
+- `POST /api/v1/files/write`
+- `POST /api/v1/files/mkdir`
+- `POST /api/v1/files/delete`
+
+Der File-Browser ist auf verwaltete Cloud-Pfade begrenzt und blockiert Path-Traversal.
 
 ---
 
@@ -301,6 +340,8 @@ Aktueller Status:
 - `GET /api/v1/setup/report`
 - `POST /api/v1/wrappers/drain`
 - `GET /api/v1/logs/recent`
+- `GET /api/v1/logs/search?query=<text>&level=<level>&limit=<n>`
+- `GET /api/v1/audit/recent?limit=<n>`
 - `GET /api/v1/console/screens`
 - `GET /api/v1/console/tail?serverName=<name>&limit=<n>`
 - `POST /api/v1/console/send`

@@ -5,6 +5,8 @@ import java.util.List;
 public record CloudPermissionProfileInfo(
         String playerUuid,
         String primaryGroup,
-        List<String> groups
+        String prefix,
+        String suffix,
+        List<String> permissions
 ) {
 }

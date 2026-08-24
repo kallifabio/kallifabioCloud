@@ -270,3 +270,44 @@ for (var group : plan.groupPlans()) {
 ```
 
 Der Planner eignet sich fuer Lobby-, BedWars- oder Minigame-Plugins, die vor einem Serverstart pruefen wollen, ob genug Wrapper-RAM frei ist und ob Maintenance/MaxServers den Start blockieren.
+
+## Readiness API
+
+```java
+var readiness = api.status().readiness();
+
+if (!readiness.ready()) {
+    getLogger().warning("Cloud ist DEGRADED: " + readiness.diagnosticsState());
+}
+```
+
+Readiness prueft Master, REST API, WebSocket und mindestens einen gesunden Wrapper. Fuer Monitoring und Plugin-Startlogik ist das aussagekraeftiger als ein reiner Health-Ping.
+
+## Operations Report, Log Search und Audit
+
+```java
+var report = api.operations().systemReport();
+var errors = api.operations().searchLogsModel("Lobby-1", "ERROR", 100);
+var audit = api.operations().recentAudit(50);
+
+getLogger().info("Log Treffer: " + errors.count());
+for (String line : audit.lines()) {
+    getLogger().fine(line);
+}
+```
+
+`systemReport()` ist fuer Support-Dumps, externe Monitoring-Integrationen und Dashboard-Exports gedacht. `searchLogsModel(...)` und `recentAudit(...)` ersparen Plugins eigene REST-Query-Logik.
+
+## Platform Operations API
+
+```java
+api.operations().recentEvents(100);
+api.operations().lifecycle("Lobby-1", 50);
+api.operations().incidents(25);
+api.operations().backups(25);
+api.operations().createBackup("before-update", false);
+api.operations().rollingRestart("Lobby", 15);
+api.operations().firewallCheck();
+```
+
+Diese Methoden bilden die neuen Plattform-Funktionen ab: Event Timeline, Lifecycle-State-Machine, Incident Reports, Backup-Snapshots, Rolling Restarts und Firewall-/Route-Checks. Fuer Restore wird bewusst `restoreBackupToStaging(...)` angeboten, damit Plugins keine Live-Dateien ungeprueft ueberschreiben.

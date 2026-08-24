@@ -18,6 +18,10 @@ import de.kallifabio.cloud.config.ConfigManager;
 import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
 import de.kallifabio.cloud.libs.logging.CentralLogger;
 import de.kallifabio.cloud.master.cluster.ClusterManager;
+import de.kallifabio.cloud.master.backup.BackupManager;
+import de.kallifabio.cloud.master.events.EventTimelineService;
+import de.kallifabio.cloud.master.lifecycle.ServerLifecycleOrchestrator;
+import de.kallifabio.cloud.master.lifecycle.ServerLifecycleState;
 import de.kallifabio.cloud.master.loadbalancer.LoadBalancerManager;
 import de.kallifabio.cloud.master.monitoring.MonitoringService;
 import de.kallifabio.cloud.master.player.PlayerSessionManager;
@@ -25,6 +29,7 @@ import de.kallifabio.cloud.master.permissions.PermissionGroup;
 import de.kallifabio.cloud.master.permissions.PermissionEnforcer;
 import de.kallifabio.cloud.master.permissions.PermissionSyncService;
 import de.kallifabio.cloud.master.queue.PlayerQueueManager;
+import de.kallifabio.cloud.master.recovery.IncidentReportService;
 import de.kallifabio.cloud.master.scaling.AutoScalingManager;
 import de.kallifabio.cloud.master.template.TemplateManager;
 import de.kallifabio.cloud.wrapper.Wrapper;
@@ -60,6 +65,10 @@ public class Master {
     private TemplateManager templateManager;
     private PermissionSyncService permissionSyncService;
     private PermissionEnforcer permissionEnforcer;
+    private EventTimelineService eventTimelineService;
+    private ServerLifecycleOrchestrator lifecycleOrchestrator;
+    private IncidentReportService incidentReportService;
+    private BackupManager backupManager;
     private ScheduledExecutorService executorService;
 
     // Connected Wrappers Management
@@ -67,6 +76,7 @@ public class Master {
     private final Map<String, ServerInstance> runningServers = new ConcurrentHashMap<>();
     private final Set<String> restartInProgress = ConcurrentHashMap.newKeySet();
     private final Map<String, Integer> restartRetryCounts = new ConcurrentHashMap<>();
+    private final Map<String, Integer> serverFailureCounts = new ConcurrentHashMap<>();
 
     // Port Management
     private int nextAvailablePort;
@@ -85,6 +95,7 @@ public class Master {
     private static final long SERVER_STARTING_TIMEOUT_MS = 120000;
     private static final long WRAPPER_PONG_TIMEOUT_MS = 20000;
     private static final int RESTART_PORT_RETRY_LIMIT = 8;
+    private static final int FAILURE_QUARANTINE_THRESHOLD = 3;
     private volatile boolean shuttingDown = false;
     private volatile boolean shutdownCompleted = false;
 
@@ -100,6 +111,10 @@ public class Master {
         this.templateManager = new TemplateManager();
         this.permissionSyncService = new PermissionSyncService(this, dataStore);
         this.permissionEnforcer = new PermissionEnforcer(permissionSyncService);
+        this.eventTimelineService = new EventTimelineService();
+        this.lifecycleOrchestrator = new ServerLifecycleOrchestrator(eventTimelineService);
+        this.incidentReportService = new IncidentReportService(eventTimelineService);
+        this.backupManager = new BackupManager(eventTimelineService);
 
         // Lade Port-Konfiguration aus Config
         this.FIRST_PROXY_PORT = configManager.getFirstProxyPort();
@@ -436,6 +451,14 @@ public class Master {
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Wrapper registriert: " + message.wrapperId + " | RAM: " +
                 message.availableMemory + "MB / " + message.maxMemory + "MB");
+        eventTimelineService.publish("WRAPPER_JOIN", "wrapper:" + message.wrapperId, "INFO",
+                "Wrapper connected", Map.of(
+                        "wrapperId", message.wrapperId,
+                        "hostname", message.hostname == null ? "" : message.hostname,
+                        "routeHost", message.routeHost == null ? "" : message.routeHost,
+                        "maxMemory", message.maxMemory,
+                        "availableMemory", message.availableMemory
+                ));
 
         Message.WrapperRegisterAck ack = new Message.WrapperRegisterAck();
         ack.masterId = masterId;
@@ -493,6 +516,8 @@ public class Master {
 
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Server Status: " + message.serverName + " -> " + message.status);
+            lifecycleOrchestrator.transition(instance, ServerLifecycleState.fromStatus(message.status),
+                    "wrapper status update");
 
             if ("ONLINE".equals(message.status)) {
                 restartInProgress.remove(message.serverName);
@@ -506,6 +531,10 @@ public class Master {
             } else if ("OFFLINE".equalsIgnoreCase(message.status)
                     || "KILLED".equalsIgnoreCase(message.status)
                     || "CRASHED".equalsIgnoreCase(message.status)) {
+                if ("CRASHED".equalsIgnoreCase(message.status) || "KILLED".equalsIgnoreCase(message.status)) {
+                    handleServerFailure(instance, true);
+                    return;
+                }
                 restartInProgress.remove(message.serverName);
                 restartRetryCounts.remove(message.serverName);
                 if (!isProxyGroup(instance.groupName)) {
@@ -762,6 +791,9 @@ public class Master {
         if (wrapper != null) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Wrapper getrennt: " + wrapper.wrapperId);
+            eventTimelineService.publish("WRAPPER_LEAVE", "wrapper:" + wrapper.wrapperId,
+                    shuttingDown ? "INFO" : "WARNING",
+                    "Wrapper disconnected", Map.of("wrapperId", wrapper.wrapperId, "shuttingDown", shuttingDown));
 
             if (!shuttingDown) {
                 runningServers.values().stream()
@@ -1038,6 +1070,20 @@ public class Master {
         runningServers.remove(server.serverName);
 
         if (recover || server.isCritical) {
+            server.markFailure(recover ? "crash/recover" : "failure");
+            int failures = serverFailureCounts.merge(server.serverName, 1, Integer::sum);
+            server.failureCount = failures;
+            lifecycleOrchestrator.transition(server, ServerLifecycleState.FAILED, server.lastFailureReason);
+            incidentReportService.createIncident(this, server, server.lastFailureReason);
+            if (failures >= FAILURE_QUARANTINE_THRESHOLD) {
+                server.quarantined = true;
+                lifecycleOrchestrator.transition(server, ServerLifecycleState.QUARANTINED,
+                        "failure threshold reached: " + failures);
+                eventTimelineService.publish("SERVER_QUARANTINED", "server:" + server.serverName, "CRITICAL",
+                        "Server quarantined after repeated failures",
+                        Map.of("server", server.serverName, "failures", failures));
+                return;
+            }
             transferPlayersFromFailedServer(server);
             autoScalingManager.replaceFailedServer(server);
         }
@@ -1123,6 +1169,16 @@ public class Master {
         if (shuttingDown) {
             return;
         }
+        if (serverFailureCounts.getOrDefault(serverName, 0) >= FAILURE_QUARANTINE_THRESHOLD) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Start blockiert: " + serverName +
+                    " ist nach wiederholten Fehlern in Quarantaene");
+            eventTimelineService.publish("SERVER_START_BLOCKED", "server:" + serverName, "CRITICAL",
+                    "Start blocked by crash quarantine", Map.of("server", serverName, "group", groupName));
+            restartInProgress.remove(serverName);
+            restartRetryCounts.remove(serverName);
+            return;
+        }
         WrapperConnection bestWrapper = loadBalancerManager.getBestWrapperForServer(groupName);
 
         if (bestWrapper == null) {
@@ -1144,6 +1200,8 @@ public class Master {
                 configManager.getRamForGroup(groupName)
         );
         instance.port = assignedPort;
+        lifecycleOrchestrator.transition(instance, ServerLifecycleState.QUEUED, "start requested");
+        lifecycleOrchestrator.transition(instance, ServerLifecycleState.PREPARING, "wrapper selected");
 
         runningServers.put(serverName, instance);
 
@@ -1155,6 +1213,7 @@ public class Master {
         command.port = assignedPort;  // Port wird jetzt korrekt gesetzt!
 
         bestWrapper.connection.sendTCP(command);
+        lifecycleOrchestrator.transition(instance, ServerLifecycleState.STARTING, "start command sent");
         monitoringService.publishEvent("SERVER_START", Map.of(
                 "server", serverName,
                 "group", groupName,
@@ -1177,7 +1236,7 @@ public class Master {
         if (!isProxyGroup(instance.groupName)) {
             syncBackendRouteToProxies(instance, false);
         }
-
+        lifecycleOrchestrator.transition(instance, ServerLifecycleState.DRAINING, "graceful stop requested");
         WrapperConnection wrapper = getWrapperById(instance.wrapperId);
         if (wrapper != null) {
             Message.ServerCommand command = new Message.ServerCommand();
@@ -1190,7 +1249,7 @@ public class Master {
                     "wrapper", wrapper.wrapperId,
                     "mode", "graceful"
             ));
-            instance.status = "STOPPING";
+            lifecycleOrchestrator.transition(instance, ServerLifecycleState.STOPPING, "stop command sent");
             return;
         }
         Integer releasedPort = serverPorts.remove(serverName);
@@ -1210,7 +1269,7 @@ public class Master {
         if (!isProxyGroup(instance.groupName)) {
             syncBackendRouteToProxies(instance, false);
         }
-
+        lifecycleOrchestrator.transition(instance, ServerLifecycleState.STOPPING, "force stop requested");
         WrapperConnection wrapper = getWrapperById(instance.wrapperId);
         if (wrapper != null) {
             Message.ServerCommand command = new Message.ServerCommand();
@@ -1223,7 +1282,7 @@ public class Master {
                     "wrapper", wrapper.wrapperId,
                     "mode", "force"
             ));
-            instance.status = "STOPPING";
+            lifecycleOrchestrator.transition(instance, ServerLifecycleState.STOPPING, "force stop command sent");
             return;
         }
         Integer releasedPort = serverPorts.remove(serverName);
@@ -1318,6 +1377,10 @@ public class Master {
     public MonitoringService getMonitoringService() { return monitoringService; }
     public LoadBalancerManager getLoadBalancerManager() { return loadBalancerManager; }
     public PlayerQueueManager getPlayerQueueManager() { return playerQueueManager; }
+    public EventTimelineService getEventTimelineService() { return eventTimelineService; }
+    public ServerLifecycleOrchestrator getLifecycleOrchestrator() { return lifecycleOrchestrator; }
+    public IncidentReportService getIncidentReportService() { return incidentReportService; }
+    public BackupManager getBackupManager() { return backupManager; }
     public Map<String, ServerInstance> getRunningServers() { return runningServers; }
     public Map<Integer, WrapperConnection> getConnectedWrappers() { return connectedWrappers; }
     public String getMasterId() { return masterId; }
@@ -1352,6 +1415,10 @@ public class Master {
 
     public void syncPermissionsForPlayer(String playerUuid) {
         permissionSyncService.syncPlayerPermissions(playerUuid);
+    }
+
+    public de.kallifabio.cloud.master.permissions.PermissionProfile buildPermissionProfile(String playerUuid) {
+        return permissionSyncService.buildProfile(playerUuid);
     }
 
     public void reloadConfiguration(String trigger) {
@@ -1420,3 +1487,6 @@ public class Master {
         }
     }
 }
+
+
+

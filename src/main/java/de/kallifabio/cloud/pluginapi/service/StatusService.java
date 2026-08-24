@@ -3,6 +3,7 @@ package de.kallifabio.cloud.pluginapi.service;
 import com.google.gson.JsonObject;
 import de.kallifabio.cloud.pluginapi.CloudApiClient;
 import de.kallifabio.cloud.pluginapi.model.CloudHealthInfo;
+import de.kallifabio.cloud.pluginapi.model.CloudReadinessInfo;
 import de.kallifabio.cloud.pluginapi.model.CloudStatusSummary;
 
 public final class StatusService {
@@ -15,6 +16,10 @@ public final class StatusService {
 
     public CloudHealthInfo health() {
         return CloudHealthInfo.from(client.get("/api/v1/health"));
+    }
+
+    public CloudReadinessInfo readiness() {
+        return CloudReadinessInfo.from(client.get("/api/v1/readiness"));
     }
 
     public JsonObject status() {

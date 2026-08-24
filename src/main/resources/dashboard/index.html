@@ -1,4 +1,4 @@
-﻿
+
         <!DOCTYPE html>
         <html lang='en'>
         <head>
@@ -650,6 +650,7 @@
                         <span id='authState' class='rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-amber-200'>Not authenticated</span>
                         <span id='roleState' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Role: -</span>
                         <span id='wsState' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>WS: disconnected</span>
+                        <span id='readinessState' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Readiness: -</span>
                         <span id='lastUpdate' class='rounded-full border border-slate-700 px-3 py-1 text-slate-300'>Last update: -</span>
                         <label class='inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-slate-300'>
                             <span>Auto refresh</span>
@@ -842,6 +843,44 @@
                             <button id='btnConfigSet' class='rounded-lg border border-slate-700 px-2 py-2 text-xs hover:border-emerald-400 disabled:opacity-30'>Set Config</button>
                         </div>
                     </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='mb-3 flex items-center justify-between gap-2'>
+                            <div>
+                                <h2 class='font-semibold'>Ops Report</h2>
+                                <p class='text-[11px] text-slate-400'>One-click support snapshot.</p>
+                            </div>
+                            <span id='opsReportBadge' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>not loaded</span>
+                        </div>
+                        <div class='grid grid-cols-2 gap-2 text-xs'>
+                            <button id='btnLoadOpsReport' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400'>Load report</button>
+                            <button id='btnExportOpsReport' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-sky-400'>Export report</button>
+                            <button id='btnLoadAudit' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-amber-400'>Recent audit</button>
+                            <button id='btnCopyOpsSummary' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400'>Copy summary</button>
+                        </div>
+                        <div id='opsReportSummary' class='mt-3 space-y-2 text-xs text-slate-300'></div>
+                    </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-3'>
+                        <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
+                            <div>
+                                <h2 class='font-semibold'>Server-side Log Search</h2>
+                                <p class='text-[11px] text-slate-400'>Searches the current central log on the API side.</p>
+                            </div>
+                            <span id='logSearchMeta' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>-</span>
+                        </div>
+                        <div class='grid gap-2 text-xs md:grid-cols-[minmax(0,1fr)_140px_110px_120px]'>
+                            <input id='serverLogSearchQuery' type='text' placeholder='Search text, e.g. Lobby-1, ERROR, requestId...' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <select id='serverLogSearchLevel' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                <option value='all'>ALL</option>
+                                <option value='INFO'>INFO</option>
+                                <option value='WARN'>WARN</option>
+                                <option value='ERROR'>ERROR</option>
+                                <option value='DEBUG'>DEBUG</option>
+                            </select>
+                            <input id='serverLogSearchLimit' type='number' min='10' max='1000' value='120' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <button id='btnServerLogSearch' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400'>Search logs</button>
+                        </div>
+                        <pre id='serverLogSearchBox' class='mt-3 h-52 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
+                    </div>
                     <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-2'>
                         <div class='mb-3 flex items-center justify-between'>
                             <h2 class='font-semibold'>Recent Logs</h2>
@@ -930,6 +969,30 @@
                     </div>
                     <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-3'>
                         <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
+                            <div>
+                                <h2 class='font-semibold'>Platform Ops Toolkit</h2>
+                                <p class='text-[11px] text-slate-400'>Backups, incidents, lifecycle timeline and firewall reachability.</p>
+                            </div>
+                            <div class='flex flex-wrap gap-2 text-xs'>
+                                <button id='btnCreateBackup' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-emerald-400 disabled:opacity-30'>Create backup</button>
+                                <button id='btnListBackups' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-cyan-400'>Backups</button>
+                                <button id='btnListIncidents' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-amber-400'>Incidents</button>
+                                <button id='btnLifecycleTimeline' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-violet-400'>Lifecycle</button>
+                                <button id='btnEventTimeline' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-sky-400'>Events</button>
+                                <button id='btnFirewallCheck' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-rose-400'>Firewall check</button>
+                            </div>
+                        </div>
+                        <div class='grid gap-2 text-xs md:grid-cols-[minmax(0,1fr)_160px]'>
+                            <input id='backupNameInput' type='text' placeholder='Backup name (e.g. before-update)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <label class='inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-slate-300'>
+                                <input id='backupIncludeLogs' type='checkbox' class='h-3.5 w-3.5'>
+                                <span>include logs</span>
+                            </label>
+                        </div>
+                        <pre id='platformOpsOutputBox' class='mt-3 h-64 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
+                    </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-3'>
+                        <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
                             <h2 class='font-semibold'>API Debug & Export</h2>
                             <div class='flex gap-2'>
                                 <button id='btnExportOverview' class='rounded-lg border border-slate-700 px-3 py-1 text-xs hover:border-sky-400'>Export overview JSON</button>
@@ -966,6 +1029,99 @@
                             <span id='consoleMeta' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>-</span>
                         </div>
                         <pre id='consoleTailBox' class='h-[520px] overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
+                    </div>
+                </section>
+                <section id='serverDetailSection' data-page='server-detail' class='dashboard-page hidden space-y-4'>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='flex flex-wrap items-start justify-between gap-3'>
+                            <div>
+                                <div class='text-xs uppercase tracking-[0.22em] text-cyan-300'>Server Detail</div>
+                                <h2 id='serverDetailTitle' class='mt-1 text-2xl font-semibold'>-</h2>
+                                <p id='serverDetailSubtitle' class='text-sm text-slate-400'>Live metrics, logs, actions and managed files.</p>
+                            </div>
+                            <div class='flex flex-wrap gap-2 text-xs'>
+                                <a href='/dashboard/servers' data-page-link='servers' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-cyan-400'>Back to servers</a>
+                                <button id='btnServerDetailRefresh' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-cyan-400'>Refresh</button>
+                            </div>
+                        </div>
+                        <div id='serverDetailMetrics' class='mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4'></div>
+                    </div>
+                    <div class='grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]'>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
+                                <h3 class='font-semibold'>Recent Logs</h3>
+                                <span id='serverDetailLogMeta' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>-</span>
+                            </div>
+                            <pre id='serverDetailLogs' class='h-80 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
+                        </div>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h3 class='mb-3 font-semibold'>Quick Actions</h3>
+                            <div class='grid gap-2 text-xs sm:grid-cols-2 xl:grid-cols-1'>
+                                <button id='btnServerDetailRestart' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-cyan-400'>Restart server</button>
+                                <button id='btnServerDetailStop' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-rose-400'>Stop server</button>
+                                <button id='btnServerDetailStartLike' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-emerald-400'>Prepare start-like form</button>
+                                <button id='btnServerDetailOpenConsole' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-violet-400'>Open console page</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
+                            <div>
+                                <h3 class='font-semibold'>Managed Server Files</h3>
+                                <p class='text-xs text-slate-400'>Sandboxed to this server directory.</p>
+                            </div>
+                            <div id='serverFilePathBadge' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>/</div>
+                        </div>
+                        <div class='grid gap-4 lg:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)]'>
+                            <div>
+                                <div class='mb-2 grid grid-cols-[1fr_auto_auto] gap-2 text-xs'>
+                                    <input id='serverFilePathInput' type='text' placeholder='path/to/file.yml' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                    <button id='btnServerFilesList' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-cyan-400'>List</button>
+                                    <button id='btnServerFileUp' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-cyan-400'>Up</button>
+                                </div>
+                                <div id='serverFilesBox' class='max-h-96 overflow-auto rounded-xl border border-slate-800 bg-slate-950/60 p-2 text-xs'></div>
+                            </div>
+                            <div>
+                                <div class='mb-2 flex flex-wrap items-center justify-between gap-2 text-xs'>
+                                    <span id='serverFileEditorMeta' class='text-slate-400'>No file selected</span>
+                                    <div class='flex gap-2'>
+                                        <button id='btnServerFileRead' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-cyan-400'>Read</button>
+                                        <button id='btnServerFileSave' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-emerald-400'>Save</button>
+                                        <button id='btnServerFileMkdir' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-amber-400'>Mkdir</button>
+                                    </div>
+                                </div>
+                                <textarea id='serverFileEditor' spellcheck='false' class='h-96 w-full resize-y rounded-xl border border-slate-800 bg-slate-950/80 p-3 font-mono text-xs text-slate-200 outline-none focus:border-cyan-400'></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <section id='wrapperDetailSection' data-page='wrapper-detail' class='dashboard-page hidden space-y-4'>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='flex flex-wrap items-start justify-between gap-3'>
+                            <div>
+                                <div class='text-xs uppercase tracking-[0.22em] text-emerald-300'>Wrapper Detail</div>
+                                <h2 id='wrapperDetailTitle' class='mt-1 text-2xl font-semibold'>-</h2>
+                                <p id='wrapperDetailSubtitle' class='text-sm text-slate-400'>Capacity, running servers and wrapper-scoped operations.</p>
+                            </div>
+                            <div class='flex flex-wrap gap-2 text-xs'>
+                                <a href='/dashboard/servers' data-page-link='servers' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-cyan-400'>Back to servers</a>
+                                <button id='btnWrapperDetailRefresh' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-cyan-400'>Refresh</button>
+                                <button id='btnWrapperDetailDrain' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-amber-400'>Toggle drain</button>
+                            </div>
+                        </div>
+                        <div id='wrapperDetailMetrics' class='mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4'></div>
+                    </div>
+                    <div class='grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.75fr)]'>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h3 class='mb-3 font-semibold'>Running Servers On Wrapper</h3>
+                            <div id='wrapperDetailServers' class='grid gap-2 md:grid-cols-2'></div>
+                        </div>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h3 class='mb-3 font-semibold'>Wrapper File View</h3>
+                            <p class='mb-2 text-xs text-slate-400'>Read-only overview of managed local server folders.</p>
+                            <button id='btnWrapperFilesList' class='mb-2 rounded-lg border border-slate-700 px-3 py-2 text-xs hover:border-cyan-400'>List managed server roots</button>
+                            <div id='wrapperFilesBox' class='max-h-96 overflow-auto rounded-xl border border-slate-800 bg-slate-950/60 p-2 text-xs'></div>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -1014,6 +1170,10 @@
                     overview: null,
                     diagnostics: null,
                     capacity: null,
+                    readiness: null,
+                    opsReport: null,
+                    audit: { lines: [] },
+                    logSearch: { lines: [] },
                     logs: { lines: [] },
                     metricsHistory: [],
                     refreshInFlight: false,
@@ -1023,7 +1183,10 @@
                     autoRefreshPaused: false,
                     selectedServers: new Set(),
                     autoRefreshTickHandle: null,
-                    drawerServerName: null
+                    drawerServerName: null,
+                    routeServerName: '',
+                    routeWrapperId: '',
+                    serverFilePath: ''
                 };
                 const apiKeyInput = document.getElementById('apiKey');
                 apiKeyInput.value = state.apiKey;
@@ -1064,6 +1227,17 @@
                 function getCurrentPage() {
                     const path = (window.location.pathname || '/dashboard').replace(/\/+$/, '');
                     const parts = path.split('/').filter(Boolean);
+                    state.routeServerName = '';
+                    state.routeWrapperId = '';
+                    const dashboardIndex = parts.findIndex(part => part.toLowerCase() === 'dashboard');
+                    if (dashboardIndex >= 0 && parts[dashboardIndex + 1] && parts[dashboardIndex + 1].toLowerCase() === 'server') {
+                        state.routeServerName = decodeURIComponent(parts.slice(dashboardIndex + 2).join('/'));
+                        return 'server-detail';
+                    }
+                    if (dashboardIndex >= 0 && parts[dashboardIndex + 1] && parts[dashboardIndex + 1].toLowerCase() === 'wrapper') {
+                        state.routeWrapperId = decodeURIComponent(parts.slice(dashboardIndex + 2).join('/'));
+                        return 'wrapper-detail';
+                    }
                     const last = parts.length ? parts[parts.length - 1].toLowerCase() : 'dashboard';
                     const known = new Set(['overview', 'servers', 'monitoring', 'operations', 'setup', 'advanced', 'console']);
                     if (known.has(last)) return last;
@@ -1098,6 +1272,17 @@
                     } else {
                         stopConsolePolling();
                     }
+                    if (current === 'server-detail') {
+                        renderServerDetailPage();
+                    }
+                    if (current === 'wrapper-detail') {
+                        renderWrapperDetailPage();
+                    }
+                }
+
+                function navigateDashboard(path) {
+                    window.history.pushState({}, '', path);
+                    applyDashboardPage();
                 }
 
 
@@ -1270,6 +1455,181 @@
                     document.getElementById('serverDrawerBackdrop').classList.add('hidden');
                     document.getElementById('serverDrawer').setAttribute('aria-hidden', 'true');
                     document.body.classList.remove('mobile-nav-open');
+                }
+
+                function metricCard(label, value, tone = 'cyan') {
+                    const tones = {
+                        cyan: 'border-cyan-500/30 bg-cyan-950/20 text-cyan-200',
+                        emerald: 'border-emerald-500/30 bg-emerald-950/20 text-emerald-200',
+                        amber: 'border-amber-500/30 bg-amber-950/20 text-amber-200',
+                        rose: 'border-rose-500/30 bg-rose-950/20 text-rose-200',
+                        slate: 'border-slate-700 bg-slate-950/50 text-slate-200'
+                    };
+                    return `<div class='rounded-xl border ${tones[tone] || tones.slate} p-3'>
+                        <div class='text-[11px] uppercase tracking-wide opacity-70'>${escapeHtml(label)}</div>
+                        <div class='mt-1 text-lg font-semibold'>${escapeHtml(value)}</div>
+                    </div>`;
+                }
+
+                function renderServerDetailPage() {
+                    const name = state.routeServerName || '';
+                    const server = getServerByName(name);
+                    document.getElementById('serverDetailTitle').textContent = name || '-';
+                    if (!server) {
+                        document.getElementById('serverDetailSubtitle').textContent = 'Server not found in current live overview.';
+                        document.getElementById('serverDetailMetrics').innerHTML = metricCard('State', 'Not found', 'rose');
+                        document.getElementById('serverDetailLogs').textContent = '';
+                        document.getElementById('serverFilesBox').innerHTML = "<p class='text-slate-400'>No server selected.</p>";
+                        return;
+                    }
+                    const status = String(server.status || '-');
+                    const statusTone = status.toUpperCase() === 'ONLINE' ? 'emerald' : (status.toUpperCase().includes('FAIL') ? 'rose' : 'amber');
+                    document.getElementById('serverDetailSubtitle').textContent =
+                        `${server.groupName || '-'} on ${server.wrapperId || '-'} | port ${server.port || '-'}`;
+                    document.getElementById('serverDetailMetrics').innerHTML = [
+                        metricCard('Status', status, statusTone),
+                        metricCard('Players', `${server.playerCount || 0}/${server.maxPlayers || 0}`, 'cyan'),
+                        metricCard('TPS', Number(server.tps || 0).toFixed(2), Number(server.tps || 0) >= 18 ? 'emerald' : 'amber'),
+                        metricCard('CPU', Number(server.cpuUsage || 0).toFixed(1) + '%', Number(server.cpuUsage || 0) >= 90 ? 'rose' : 'slate'),
+                        metricCard('RAM', Number(server.memoryUsage || 0).toFixed(1) + '%', Number(server.memoryUsage || 0) >= 90 ? 'rose' : 'slate'),
+                        metricCard('Wrapper', server.wrapperId || '-', 'slate'),
+                        metricCard('Port', String(server.port || '-'), 'slate'),
+                        metricCard('Group', server.groupName || '-', 'slate')
+                    ].join('');
+                    const lines = getServerRelatedLogs(server.serverName);
+                    document.getElementById('serverDetailLogMeta').textContent = `${lines.length} matching lines`;
+                    document.getElementById('serverDetailLogs').textContent = lines.length ? lines.join('\n') : 'No server-specific logs yet.';
+                    if (!document.getElementById('serverFilesBox').dataset.loadedFor || document.getElementById('serverFilesBox').dataset.loadedFor !== server.serverName) {
+                        state.serverFilePath = '';
+                        loadServerFiles('').catch(() => {});
+                    }
+                }
+
+                function getWrapperById(wrapperId) {
+                    const wrappers = (state.overview && state.overview.wrappers) ? state.overview.wrappers : [];
+                    return wrappers.find(w => String(w.wrapperId || '') === String(wrapperId || '')) || null;
+                }
+
+                function renderWrapperDetailPage() {
+                    const wrapperId = state.routeWrapperId || '';
+                    const wrapper = getWrapperById(wrapperId);
+                    document.getElementById('wrapperDetailTitle').textContent = wrapperId || '-';
+                    if (!wrapper) {
+                        document.getElementById('wrapperDetailSubtitle').textContent = 'Wrapper not found in current live overview.';
+                        document.getElementById('wrapperDetailMetrics').innerHTML = metricCard('State', 'Not found', 'rose');
+                        document.getElementById('wrapperDetailServers').innerHTML = '';
+                        return;
+                    }
+                    const usedPct = wrapper.maxMemory > 0 ? Math.round(((wrapper.maxMemory - wrapper.availableMemory) / wrapper.maxMemory) * 100) : 0;
+                    document.getElementById('wrapperDetailSubtitle').textContent = `${wrapper.hostname || '-'} | ${wrapper.draining ? 'draining' : 'accepting new servers'}`;
+                    document.getElementById('wrapperDetailMetrics').innerHTML = [
+                        metricCard('CPU', Number(wrapper.cpuUsage || 0).toFixed(1) + '%', Number(wrapper.cpuUsage || 0) >= 90 ? 'rose' : 'emerald'),
+                        metricCard('RAM Used', usedPct + '%', usedPct >= 90 ? 'rose' : 'cyan'),
+                        metricCard('Available RAM', (wrapper.availableMemory || 0) + 'MB', 'slate'),
+                        metricCard('Active Servers', String(wrapper.activeServers || 0), 'slate'),
+                        metricCard('Drain', wrapper.draining ? 'ON' : 'OFF', wrapper.draining ? 'amber' : 'emerald'),
+                        metricCard('Connected', Math.round((wrapper.connected || 0) / 1000) + 's', 'slate')
+                    ].join('');
+                    const servers = ((state.overview && state.overview.servers) || []).filter(s => String(s.wrapperId || '') === wrapperId);
+                    document.getElementById('wrapperDetailServers').innerHTML = servers.map(server => `
+                        <div class='rounded-xl border border-slate-800 bg-slate-950/60 p-3'>
+                            <div class='flex items-center justify-between gap-2'>
+                                <button data-action='open-server-page' data-server='${escapeHtml(server.serverName)}' class='font-semibold hover:text-cyan-300'>${escapeHtml(server.serverName)}</button>
+                                <span class='rounded-full px-2 py-1 text-[11px] ${statusClass(server.status)}'>${escapeHtml(server.status)}</span>
+                            </div>
+                            <div class='mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-400'>
+                                <div>Group: ${escapeHtml(server.groupName)}</div>
+                                <div>Port: ${server.port || '-'}</div>
+                                <div>Players: ${server.playerCount || 0}/${server.maxPlayers || 0}</div>
+                                <div>TPS: ${Number(server.tps || 0).toFixed(1)}</div>
+                            </div>
+                        </div>`).join('') || "<p class='text-slate-400'>No servers on this wrapper.</p>";
+                }
+
+                async function loadServerFiles(path = state.serverFilePath || '') {
+                    const server = getServerByName(state.routeServerName);
+                    if (!server) return;
+                    state.serverFilePath = path || '';
+                    document.getElementById('serverFilePathInput').value = state.serverFilePath;
+                    document.getElementById('serverFilePathBadge').textContent = '/' + state.serverFilePath;
+                    const payload = await apiGet('/api/v1/files/list?scope=server&serverName='
+                        + encodeURIComponent(server.serverName)
+                        + '&groupName=' + encodeURIComponent(server.groupName || '')
+                        + '&path=' + encodeURIComponent(state.serverFilePath));
+                    const box = document.getElementById('serverFilesBox');
+                    box.dataset.loadedFor = server.serverName;
+                    const parent = state.serverFilePath.split('/').filter(Boolean).slice(0, -1).join('/');
+                    const up = state.serverFilePath
+                        ? `<button data-action='server-file-open-dir' data-path='${escapeHtml(parent)}' class='w-full rounded-lg border border-slate-800 px-2 py-2 text-left hover:border-cyan-400'>..</button>`
+                        : '';
+                    box.innerHTML = up + (payload.entries || []).map(entry => {
+                        const icon = entry.directory ? 'fa-folder' : 'fa-file-lines';
+                        const action = entry.directory ? 'server-file-open-dir' : 'server-file-select';
+                        return `<button data-action='${action}' data-path='${escapeHtml(entry.path)}' class='mb-1 flex w-full items-center justify-between gap-2 rounded-lg border border-slate-800 px-2 py-2 text-left hover:border-cyan-400'>
+                            <span><i class='fa-solid ${icon} mr-2 text-cyan-300'></i>${escapeHtml(entry.name)}</span>
+                            <span class='text-[10px] text-slate-500'>${entry.directory ? 'dir' : formatBytes(entry.size || 0)}</span>
+                        </button>`;
+                    }).join('') || "<p class='text-slate-400'>No files.</p>";
+                }
+
+                async function readServerFile(path = document.getElementById('serverFilePathInput').value || state.serverFilePath) {
+                    const server = getServerByName(state.routeServerName);
+                    if (!server || !path) return;
+                    const payload = await apiGet('/api/v1/files/read?scope=server&serverName='
+                        + encodeURIComponent(server.serverName)
+                        + '&groupName=' + encodeURIComponent(server.groupName || '')
+                        + '&path=' + encodeURIComponent(path));
+                    state.serverFilePath = path;
+                    document.getElementById('serverFilePathInput').value = path;
+                    document.getElementById('serverFileEditor').value = payload.content || '';
+                    document.getElementById('serverFileEditorMeta').textContent = `${path} | ${formatBytes(payload.size || 0)}`;
+                }
+
+                async function saveServerFile() {
+                    const server = getServerByName(state.routeServerName);
+                    const path = document.getElementById('serverFilePathInput').value.trim();
+                    if (!server || !path) {
+                        showToast('warning', 'File path required');
+                        return;
+                    }
+                    await apiPost('/api/v1/files/write', {
+                        scope: 'server',
+                        serverName: server.serverName,
+                        groupName: server.groupName || '',
+                        path,
+                        content: document.getElementById('serverFileEditor').value
+                    });
+                    showToast('success', 'File saved', path);
+                    await loadServerFiles(path.split('/').filter(Boolean).slice(0, -1).join('/'));
+                }
+
+                async function mkdirServerFilePath() {
+                    const server = getServerByName(state.routeServerName);
+                    const path = document.getElementById('serverFilePathInput').value.trim();
+                    if (!server || !path) {
+                        showToast('warning', 'Directory path required');
+                        return;
+                    }
+                    await apiPost('/api/v1/files/mkdir', { scope: 'server', serverName: server.serverName, groupName: server.groupName || '', path });
+                    showToast('success', 'Directory created', path);
+                    await loadServerFiles(path.split('/').filter(Boolean).slice(0, -1).join('/'));
+                }
+
+                async function loadWrapperFiles() {
+                    const wrapperId = state.routeWrapperId || '';
+                    const payload = await apiGet('/api/v1/files/list?scope=wrapper&wrapperId=' + encodeURIComponent(wrapperId));
+                    document.getElementById('wrapperFilesBox').innerHTML = (payload.entries || []).map(entry => `
+                        <div class='mb-1 flex items-center justify-between rounded-lg border border-slate-800 px-2 py-2'>
+                            <span><i class='fa-solid ${entry.directory ? 'fa-folder' : 'fa-file-lines'} mr-2 text-emerald-300'></i>${escapeHtml(entry.name)}</span>
+                            <span class='text-[10px] text-slate-500'>${entry.directory ? 'dir' : formatBytes(entry.size || 0)}</span>
+                        </div>`).join('') || "<p class='text-slate-400'>No managed files visible.</p>";
+                }
+
+                function formatBytes(bytes) {
+                    const value = Number(bytes || 0);
+                    if (value < 1024) return value + ' B';
+                    if (value < 1024 * 1024) return (value / 1024).toFixed(1) + ' KB';
+                    return (value / 1024 / 1024).toFixed(1) + ' MB';
                 }
                 function drawMetricsPlaceholder(message) {
                     const canvas = document.getElementById('metricsCanvas');
@@ -1481,6 +1841,7 @@
                         setPageLoadingState(true);
                         const results = await Promise.allSettled([
                             apiGet('/api/v1/dashboard/overview'),
+                            apiGet('/api/v1/readiness'),
                             apiGet('/api/v1/system/diagnostics'),
                             apiGet('/api/v1/system/capacity'),
                             apiGet('/api/v1/alerts'),
@@ -1499,26 +1860,29 @@
                         }
                         const valueOr = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
                         const overview = valueOr(0, state.overview);
-                        const diagnostics = valueOr(1, state.diagnostics);
-                        const capacity = valueOr(2, state.capacity);
-                        const alerts = valueOr(3, { active: [] });
-                        const logs = valueOr(4, state.logs || { lines: [] });
-                        const setup = valueOr(5, { summary: {}, groups: [] });
-                        const clusterInfo = valueOr(6, {});
-                        const clusterNodes = valueOr(7, { nodes: [] });
-                        const policies = valueOr(8, {});
-                        const metricHistory = valueOr(9, { history: state.metricsHistory || [] });
+                        const readiness = valueOr(1, state.readiness);
+                        const diagnostics = valueOr(2, state.diagnostics);
+                        const capacity = valueOr(3, state.capacity);
+                        const alerts = valueOr(4, { active: [] });
+                        const logs = valueOr(5, state.logs || { lines: [] });
+                        const setup = valueOr(6, { summary: {}, groups: [] });
+                        const clusterInfo = valueOr(7, {});
+                        const clusterNodes = valueOr(8, { nodes: [] });
+                        const policies = valueOr(9, {});
+                        const metricHistory = valueOr(10, { history: state.metricsHistory || [] });
                         if (failed.length > 0) {
-                            const names = ['overview', 'diagnostics', 'capacity', 'alerts', 'logs', 'setup', 'cluster', 'nodes', 'policies', 'metrics'];
+                            const names = ['overview', 'readiness', 'diagnostics', 'capacity', 'alerts', 'logs', 'setup', 'cluster', 'nodes', 'policies', 'metrics'];
                             const failedNames = failed.map(item => names[item.index]).join(', ');
                             showToast('warning', 'Partial refresh', failedNames + ' failed, using available cached data.');
                         }
                         state.overview = overview;
+                        state.readiness = readiness;
                         state.diagnostics = diagnostics;
                         state.capacity = capacity;
                         state.logs = logs;
                         state.metricsHistory = metricHistory.history || [];
                         renderOverview(overview);
+                        renderReadiness(readiness);
                         renderDiagnostics(diagnostics);
                         renderCapacityPlanner(capacity);
                         renderAlerts(alerts);
@@ -1530,6 +1894,8 @@
                         renderMetricsTrend(state.metricsHistory);
                         renderMonitoringInsights(overview);
                         if (state.drawerServerName) renderServerDrawer();
+                        if (getCurrentPage() === 'server-detail') renderServerDetailPage();
+                        if (getCurrentPage() === 'wrapper-detail') renderWrapperDetailPage();
                         state.lastAutoRefreshAt = Date.now();
                         updateAutoRefreshCountdown();
                     } finally {
@@ -1625,6 +1991,29 @@
                     updateAutoRefreshCountdown();
                     refresh().catch(() => {});
                 }
+
+                function renderReadiness(data) {
+                    const el = document.getElementById('readinessState');
+                    if (!el) return;
+                    if (!data) {
+                        el.textContent = 'Readiness: unknown';
+                        el.className = 'rounded-full border border-slate-700 px-3 py-1 text-slate-300';
+                        return;
+                    }
+                    const ready = Boolean(data.ready);
+                    const components = data.components || {};
+                    const componentText = [
+                        components.master ? 'M' : 'm',
+                        components.api ? 'A' : 'a',
+                        components.websocket ? 'W' : 'w',
+                        components.healthyWrapper ? 'R' : 'r'
+                    ].join('');
+                    el.textContent = `${ready ? 'READY' : 'DEGRADED'} | ${data.diagnosticsState || 'UNKNOWN'} | ${componentText}`;
+                    el.className = ready
+                        ? 'rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-emerald-200'
+                        : 'rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-amber-200';
+                }
+
                 function renderOverview(data) {
                     document.getElementById('runningServers').textContent = data.runningServers || 0;
                     document.getElementById('connectedWrappers').textContent = data.connectedWrappers || 0;
@@ -1640,7 +2029,9 @@
                         return `
                             <tr>
                                 <td class='px-2 py-2'><input type='checkbox' data-server-select='${escapeHtml(server.serverName)}' ${state.selectedServers.has(String(server.serverName || '')) ? 'checked' : ''} class='h-3.5 w-3.5'></td>
-                                <td class='px-2 py-2 font-medium'>${escapeHtml(server.serverName)}</td>
+                                <td class='px-2 py-2 font-medium'>
+                                    <button data-action='open-server-page' data-server='${escapeHtml(server.serverName)}' class='text-left hover:text-cyan-300'>${escapeHtml(server.serverName)}</button>
+                                </td>
                                 <td class='px-2 py-2 text-slate-300'>${escapeHtml(server.groupName)}</td>
                                 <td class='px-2 py-2'><span class='rounded-full px-2 py-1 text-xs ${statusClass(server.status)}'>${escapeHtml(server.status)}</span></td>
                                 <td class='px-2 py-2'>${server.playerCount}/${server.maxPlayers}</td>
@@ -1648,6 +2039,7 @@
                                 <td class='px-2 py-2 text-slate-400'>${escapeHtml(server.wrapperId)}</td>
                                 <td class='px-2 py-2'>
                                     <div class='flex gap-1'>
+                                        <button data-action='open-server-page' data-server='${escapeHtml(server.serverName)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-violet-400'>details</button>
                                         <button ${disabled} data-action='start-like' data-group='${escapeHtml(server.groupName)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-emerald-400 disabled:opacity-30'>start like</button>
                                         <button ${disabled} data-action='restart-server' data-server='${escapeHtml(server.serverName)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-cyan-400 disabled:opacity-30'>restart</button>
                                         <button ${disabled} data-action='stop-server' data-server='${escapeHtml(server.serverName)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-rose-400 disabled:opacity-30'>stop</button>
@@ -1674,7 +2066,8 @@
                             <div class='font-medium'>${escapeHtml(wrapper.wrapperId)}</div>
                             <div class='text-xs text-slate-400'>${escapeHtml(wrapper.hostname)}</div>
                             <div class='mt-1 text-xs'>CPU ${Number(wrapper.cpuUsage || 0).toFixed(1)}% | RAM ${usedPct}% | Servers ${wrapper.activeServers}${drain}</div>
-                            <div class='mt-2'>
+                            <div class='mt-2 flex flex-wrap gap-2'>
+                                <button data-action='open-wrapper-page' data-wrapper='${escapeHtml(wrapper.wrapperId)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-cyan-400'>details</button>
                                 <button ${disabled} data-action='toggle-wrapper-drain' data-wrapper='${escapeHtml(wrapper.wrapperId)}' data-draining='${wrapper.draining ? 'false' : 'true'}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-amber-400 disabled:opacity-30'>${drainLabel}</button>
                             </div>
                         </div>`;
@@ -2183,6 +2576,146 @@
                     downloadText('logs-export.txt', lines.join('\n'));
                 }
 
+                async function loadOpsReport() {
+                    const report = await apiGet('/api/v1/system/report');
+                    state.opsReport = report;
+                    renderOpsReport(report);
+                    showToast('success', 'Ops report loaded', reportStatusLine(report));
+                }
+
+                function renderOpsReport(report) {
+                    const badge = document.getElementById('opsReportBadge');
+                    const box = document.getElementById('opsReportSummary');
+                    if (!report) {
+                        badge.textContent = 'not loaded';
+                        box.innerHTML = '';
+                        return;
+                    }
+                    const readiness = report.readiness || {};
+                    const diagnostics = report.diagnostics || {};
+                    const overview = report.overview || {};
+                    const logStats = report.logStats || {};
+                    const ready = Boolean(readiness.ready);
+                    badge.textContent = ready ? 'READY' : 'DEGRADED';
+                    badge.className = ready
+                        ? 'rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200'
+                        : 'rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs text-amber-200';
+                    box.innerHTML = `
+                        <div class='rounded-xl border border-slate-800 bg-slate-950/60 p-3'>
+                            <div class='font-semibold'>${escapeHtml(reportStatusLine(report))}</div>
+                            <div class='mt-1 text-[11px] text-slate-400'>Generated: ${new Date(report.generatedAt || Date.now()).toLocaleString()}</div>
+                        </div>
+                        <div class='grid grid-cols-2 gap-2'>
+                            <div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2'>Servers<br><b>${overview.runningServers || 0}</b></div>
+                            <div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2'>Wrappers<br><b>${overview.connectedWrappers || 0}</b></div>
+                            <div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2'>Issues<br><b>${(diagnostics.issues || []).length}</b></div>
+                            <div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2'>Errors<br><b>${logStats.error || 0}</b></div>
+                        </div>`;
+                }
+
+                function reportStatusLine(report) {
+                    const readiness = report && report.readiness ? report.readiness : {};
+                    const diagnostics = report && report.diagnostics ? report.diagnostics : {};
+                    return `${readiness.status || 'UNKNOWN'} | ${diagnostics.state || 'UNKNOWN'} | score ${diagnostics.score ?? '-'}`;
+                }
+
+                function exportOpsReportJson() {
+                    if (!state.opsReport) {
+                        showToast('info', 'No ops report', 'Load the report first.');
+                        return;
+                    }
+                    downloadText('kallicloud-ops-report.json', JSON.stringify(state.opsReport, null, 2));
+                }
+
+                async function copyOpsSummary() {
+                    if (!state.opsReport) {
+                        await loadOpsReport();
+                    }
+                    const report = state.opsReport || {};
+                    const overview = report.overview || {};
+                    const diagnostics = report.diagnostics || {};
+                    const setup = report.setup || {};
+                    const setupSummary = setup.summary || {};
+                    const summary = [
+                        'KalliCloud Ops Summary',
+                        'Status: ' + reportStatusLine(report),
+                        'Servers: ' + (overview.runningServers || 0),
+                        'Wrappers: ' + (overview.connectedWrappers || 0),
+                        'Queue: ' + (overview.queueTotal || 0),
+                        'Issues: ' + ((diagnostics.issues || []).length),
+                        'Setup: ' + (setupSummary.groupsOk || 0) + '/' + (setupSummary.groupsTotal || 0) + ' groups ok'
+                    ].join('\n');
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(summary);
+                        showToast('success', 'Summary copied');
+                    } else {
+                        downloadText('kallicloud-summary.txt', summary);
+                        showToast('info', 'Clipboard unavailable', 'Downloaded summary instead.');
+                    }
+                }
+
+                async function loadAuditRecent() {
+                    const audit = await apiGet('/api/v1/audit/recent?limit=80');
+                    state.audit = audit;
+                    const lines = audit.lines || [];
+                    document.getElementById('serverLogSearchBox').textContent = lines.join('\n');
+                    document.getElementById('logSearchMeta').textContent = `audit | ${lines.length} lines`;
+                    showToast('success', 'Audit loaded', `${lines.length} lines`);
+                }
+
+                async function searchServerLogs() {
+                    const query = document.getElementById('serverLogSearchQuery').value.trim();
+                    const level = document.getElementById('serverLogSearchLevel').value || 'all';
+                    const limit = document.getElementById('serverLogSearchLimit').value || '120';
+                    const result = await apiGet('/api/v1/logs/search?query='
+                        + encodeURIComponent(query)
+                        + '&level=' + encodeURIComponent(level)
+                        + '&limit=' + encodeURIComponent(limit));
+                    state.logSearch = result;
+                    const lines = result.lines || [];
+                    document.getElementById('serverLogSearchBox').textContent = lines.join('\n');
+                    document.getElementById('logSearchMeta').textContent = `${result.level || level} | ${lines.length}/${result.limit || limit} lines`;
+                }
+
+                function renderPlatformOps(payload) {
+                    document.getElementById('platformOpsOutputBox').textContent = JSON.stringify(payload, null, 2);
+                }
+
+                async function createBackup() {
+                    const name = document.getElementById('backupNameInput').value.trim() || 'manual';
+                    const includeLogs = document.getElementById('backupIncludeLogs').checked;
+                    const result = await apiPost('/api/v1/backups/create', { name, includeLogs });
+                    renderPlatformOps(result);
+                    showToast('success', 'Backup created', result.backup && result.backup.name ? result.backup.name : name);
+                }
+
+                async function listBackups() {
+                    const result = await apiGet('/api/v1/backups?limit=80');
+                    renderPlatformOps(result);
+                }
+
+                async function listIncidents() {
+                    const result = await apiGet('/api/v1/incidents?limit=80');
+                    renderPlatformOps(result);
+                }
+
+                async function loadLifecycleTimeline() {
+                    const result = await apiGet('/api/v1/lifecycle?limit=160');
+                    renderPlatformOps(result);
+                }
+
+                async function loadEventTimeline() {
+                    const result = await apiGet('/api/v1/events/recent?limit=160');
+                    renderPlatformOps(result);
+                }
+
+                async function runFirewallCheck() {
+                    const result = await apiGet('/api/v1/firewall/check');
+                    renderPlatformOps(result);
+                    const failed = (result.checks || []).filter(item => !item.reachable).length;
+                    showToast(failed ? 'warning' : 'success', 'Firewall check complete', `${failed} unreachable routes`);
+                }
+
                 async function getConfigValue() {
                     const key = document.getElementById('configKey').value.trim();
                     if (!key) return;
@@ -2201,7 +2734,7 @@
 
                 function applyRoleState() {
                     const isAdmin = state.role === 'ADMIN';
-                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnStartRecommendedCapacity', 'btnConfigSet', 'btnRestartUnhealthy', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnConsoleSend', 'btnBulkRestart', 'btnBulkStop'].forEach(id => {
+                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnStartRecommendedCapacity', 'btnConfigSet', 'btnRestartUnhealthy', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnConsoleSend', 'btnBulkRestart', 'btnBulkStop', 'btnCreateBackup'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.disabled = !isAdmin;
                     });
@@ -2259,6 +2792,18 @@
                 });
                 document.getElementById('btnConfigGet').addEventListener('click', () => getConfigValue().catch(err => showToast('error', 'Config get failed', errorText(err))));
                 document.getElementById('btnConfigSet').addEventListener('click', () => setConfigValue().catch(err => showToast('error', 'Config set failed', errorText(err))));
+                document.getElementById('btnLoadOpsReport').addEventListener('click', () => loadOpsReport().catch(err => showToast('error', 'Report failed', errorText(err))));
+                document.getElementById('btnExportOpsReport').addEventListener('click', () => exportOpsReportJson());
+                document.getElementById('btnLoadAudit').addEventListener('click', () => loadAuditRecent().catch(err => showToast('error', 'Audit failed', errorText(err))));
+                document.getElementById('btnCopyOpsSummary').addEventListener('click', () => copyOpsSummary().catch(err => showToast('error', 'Copy failed', errorText(err))));
+                document.getElementById('btnServerLogSearch').addEventListener('click', () => searchServerLogs().catch(err => showToast('error', 'Log search failed', errorText(err))));
+                document.getElementById('serverLogSearchQuery').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); searchServerLogs().catch(err => showToast('error', 'Log search failed', errorText(err))); } });
+                document.getElementById('btnCreateBackup').addEventListener('click', () => createBackup().catch(err => showToast('error', 'Backup failed', errorText(err))));
+                document.getElementById('btnListBackups').addEventListener('click', () => listBackups().catch(err => showToast('error', 'Backup list failed', errorText(err))));
+                document.getElementById('btnListIncidents').addEventListener('click', () => listIncidents().catch(err => showToast('error', 'Incidents failed', errorText(err))));
+                document.getElementById('btnLifecycleTimeline').addEventListener('click', () => loadLifecycleTimeline().catch(err => showToast('error', 'Lifecycle failed', errorText(err))));
+                document.getElementById('btnEventTimeline').addEventListener('click', () => loadEventTimeline().catch(err => showToast('error', 'Events failed', errorText(err))));
+                document.getElementById('btnFirewallCheck').addEventListener('click', () => runFirewallCheck().catch(err => showToast('error', 'Firewall check failed', errorText(err))));
                 document.getElementById('btnTplDiff').addEventListener('click', () => runTemplateDiff().catch(err => showToast('error', 'Template diff failed', errorText(err))));
                 document.getElementById('btnTplVersions').addEventListener('click', () => runTemplateVersions().catch(err => showToast('error', 'Template versions failed', errorText(err))));
                 document.getElementById('btnTplRollback').addEventListener('click', () => runTemplateRollback().catch(err => showToast('error', 'Template rollback failed', errorText(err))));
@@ -2273,6 +2818,26 @@
                 document.getElementById('btnConsoleClear').addEventListener('click', () => { document.getElementById('consoleTailBox').textContent = ''; document.getElementById('consoleMeta').textContent = '-'; });
                 document.getElementById('consoleServerSelect').addEventListener('change', () => loadConsoleTail().catch(() => {}));
                 document.getElementById('consoleCommandInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); sendConsoleCommand().catch(err => showToast('error', 'Console send failed', errorText(err))); } });
+                document.getElementById('btnServerDetailRefresh').addEventListener('click', () => refresh().catch(err => showToast('error', 'Refresh failed', errorText(err))));
+                document.getElementById('btnServerDetailRestart').addEventListener('click', () => restartServer(state.routeServerName).catch(err => showToast('error', 'Restart failed', errorText(err))));
+                document.getElementById('btnServerDetailStop').addEventListener('click', () => stopServer(state.routeServerName).catch(err => showToast('error', 'Stop failed', errorText(err))));
+                document.getElementById('btnServerDetailStartLike').addEventListener('click', () => {
+                    const server = getServerByName(state.routeServerName);
+                    if (server) startLike(server.groupName || '').catch(err => showToast('error', 'Start-like failed', errorText(err)));
+                    navigateDashboard('/dashboard/servers');
+                });
+                document.getElementById('btnServerDetailOpenConsole').addEventListener('click', () => navigateDashboard('/dashboard/console'));
+                document.getElementById('btnServerFilesList').addEventListener('click', () => loadServerFiles(document.getElementById('serverFilePathInput').value).catch(err => showToast('error', 'Files failed', errorText(err))));
+                document.getElementById('btnServerFileUp').addEventListener('click', () => loadServerFiles((state.serverFilePath || '').split('/').filter(Boolean).slice(0, -1).join('/')).catch(err => showToast('error', 'Files failed', errorText(err))));
+                document.getElementById('btnServerFileRead').addEventListener('click', () => readServerFile().catch(err => showToast('error', 'Read failed', errorText(err))));
+                document.getElementById('btnServerFileSave').addEventListener('click', () => saveServerFile().catch(err => showToast('error', 'Save failed', errorText(err))));
+                document.getElementById('btnServerFileMkdir').addEventListener('click', () => mkdirServerFilePath().catch(err => showToast('error', 'Mkdir failed', errorText(err))));
+                document.getElementById('btnWrapperDetailRefresh').addEventListener('click', () => refresh().catch(err => showToast('error', 'Refresh failed', errorText(err))));
+                document.getElementById('btnWrapperDetailDrain').addEventListener('click', () => {
+                    const wrapper = getWrapperById(state.routeWrapperId);
+                    if (wrapper) toggleWrapperDrain(wrapper.wrapperId, !wrapper.draining).catch(err => showToast('error', 'Drain failed', errorText(err)));
+                });
+                document.getElementById('btnWrapperFilesList').addEventListener('click', () => loadWrapperFiles().catch(err => showToast('error', 'Wrapper files failed', errorText(err))));
                 document.getElementById('serverFilter').addEventListener('input', () => {
                     persistUiPreference('cloud_ui_server_filter', document.getElementById('serverFilter').value);
                     if (state.overview) renderOverview(state.overview);
@@ -2350,6 +2915,22 @@
                         if (action === 'toggle-wrapper-drain') {
                             const nextDraining = (button.dataset.draining || '').toLowerCase() === 'true';
                             await toggleWrapperDrain(button.dataset.wrapper || '', nextDraining);
+                            return;
+                        }
+                        if (action === 'open-server-page') {
+                            navigateDashboard('/dashboard/server/' + encodeURIComponent(button.dataset.server || ''));
+                            return;
+                        }
+                        if (action === 'open-wrapper-page') {
+                            navigateDashboard('/dashboard/wrapper/' + encodeURIComponent(button.dataset.wrapper || ''));
+                            return;
+                        }
+                        if (action === 'server-file-open-dir') {
+                            await loadServerFiles(button.dataset.path || '');
+                            return;
+                        }
+                        if (action === 'server-file-select') {
+                            await readServerFile(button.dataset.path || '');
                         }
                     };
 
@@ -2392,6 +2973,7 @@
                         closeMobileNav();
                     }
                 });
+                window.addEventListener('popstate', () => applyDashboardPage());
                 window.addEventListener('keydown', (ev) => {
                     if (ev.key === 'Escape') {
                         closeServerDrawer();
@@ -2406,6 +2988,7 @@
         </body>
         </html>
         
+
 
 
 

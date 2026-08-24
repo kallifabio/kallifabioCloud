@@ -157,6 +157,8 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.API.AllowedOrigins", "*");
             masterConfigData.set("CloudMaster.API.AdminKey", java.util.UUID.randomUUID().toString());
             masterConfigData.set("CloudMaster.API.DashboardKey", java.util.UUID.randomUUID().toString());
+            masterConfigData.set("CloudMaster.API.OwnerKey", "");
+            masterConfigData.set("CloudMaster.API.OperatorKey", "");
             masterConfigData.set("CloudMaster.API.TLS.Enabled", false);
             masterConfigData.set("CloudMaster.API.TLS.KeystorePath", "config/tls/keystore.p12");
             masterConfigData.set("CloudMaster.API.TLS.KeystorePassword", "");
@@ -716,6 +718,14 @@ public class ConfigManager {
         }
         if (masterConfigData.getString("CloudMaster.API.DashboardKey", "").isBlank()) {
             masterConfigData.set("CloudMaster.API.DashboardKey", java.util.UUID.randomUUID().toString());
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.API.OwnerKey")) {
+            masterConfigData.set("CloudMaster.API.OwnerKey", "");
+            changed = true;
+        }
+        if (!masterConfigData.contains("CloudMaster.API.OperatorKey")) {
+            masterConfigData.set("CloudMaster.API.OperatorKey", "");
             changed = true;
         }
         if (changed) {

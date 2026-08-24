@@ -51,6 +51,12 @@ Antwort (Beispiel):
 - Zweck: Service-Health
 - Rolle: öffentlich
 
+### `GET /api/v1/readiness`
+- Zweck: Betriebsbereitschaft der Cloud mit Komponentenstatus
+- Rolle: öffentlich
+- Liefert `ready`, `status`, `components`, `diagnosticsState` und `recommendedHttpStatus`
+- Hinweis: Der Endpoint liefert bewusst JSON `200`, damit Dashboard und externe Tools den DEGRADED-Zustand voll auswerten koennen.
+
 ### `GET /api/v1/status`
 - Zweck: Cloud-Master Status
 - Rolle: `VIEWER`
@@ -93,6 +99,83 @@ Antwort (Beispiel):
   ]
 }
 ```
+
+### `GET /api/v1/system/report`
+- Zweck: Vollstaendiger Operations-Snapshot fuer Support, Dashboard-Export und externe Tools
+- Rolle: `VIEWER`
+- Kombiniert `health`, `readiness`, `overview`, `diagnostics`, `capacity`, `setup`, `logStats` und `recentAudit`
+- Hinweis: Wenn die API ohne Master-Testkontext laeuft, bleiben masterabhaengige Felder leer und `masterAvailable=false`
+
+### `GET /api/v1/logs/search`
+- Zweck: Serverseitige Suche in den aktuellen zentralen Cloud-Logs
+- Rolle: `VIEWER`
+- Query Parameter:
+  - `query`: Suchtext
+  - `level`: `all`, `INFO`, `WARN`, `ERROR`, `DEBUG`
+  - `limit`: 10 bis 1000
+
+Beispiel:
+```bash
+curl -H "X-API-Key: <KEY>" "http://<host>:8081/api/v1/logs/search?query=Lobby-1&level=ERROR&limit=100"
+```
+
+### `GET /api/v1/audit/recent`
+- Zweck: Letzte Audit-Eintraege fuer Admin-Aktionen und Konsolenbefehle
+- Rolle: `VIEWER`
+- Query Parameter:
+  - `limit`: 10 bis 500
+
+### `GET /api/v1/events/recent`
+- Zweck: Live Event Timeline fuer Server, Wrapper, Incidents, Backups und Rollouts
+- Rolle: `VIEWER`
+- Query Parameter: `limit`, `type`, `severity`
+
+### `GET /api/v1/lifecycle`
+- Zweck: Server Lifecycle State-Machine und Transition-Historie
+- Rolle: `VIEWER`
+- Query Parameter: `serverName` optional, `limit`
+
+### `GET /api/v1/incidents`
+- Zweck: Listet automatisch erzeugte Incident Reports nach Crash/Failure
+- Rolle: `VIEWER`
+
+### `GET /api/v1/backups`
+- Zweck: Listet vorhandene Backup-ZIP-Snapshots
+- Rolle: `VIEWER`
+
+### `POST /api/v1/backups/create`
+- Zweck: Erstellt Backup von `config`, `templates`, `templates_backup`, `templates_test`, `data` und optional `logs`
+- Rolle: `OPERATOR`
+- Body:
+```json
+{
+  "name": "before-update",
+  "includeLogs": false
+}
+```
+
+### `POST /api/v1/backups/restore-staging`
+- Zweck: Entpackt ein Backup sicher nach `restore_staging/...`
+- Rolle: `ADMIN`
+- Hinweis: Bewusst kein direkter Live-Overwrite, damit Restore vor Anwendung pruefbar bleibt.
+
+### `POST /api/v1/rolling/restart`
+- Zweck: Rolling Restart fuer eine Group oder alle laufenden Server
+- Rolle: `OPERATOR`
+- Body:
+```json
+{
+  "groupName": "Lobby",
+  "delaySeconds": 15
+}
+```
+
+### `GET /api/v1/firewall/check`
+- Zweck: TCP-Erreichbarkeit laufender Serverrouten pruefen
+- Rolle: `VIEWER`
+
+### `GET /openapi.yml`
+- Zweck: OpenAPI Einstiegspunkt fuer REST-Tools/Swagger
 
 ## Server Management
 

@@ -8,6 +8,8 @@
 package de.kallifabio.cloud.api;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -22,6 +24,7 @@ import de.kallifabio.cloud.master.Master;
 import de.kallifabio.cloud.master.ServerInstance;
 import de.kallifabio.cloud.master.capacity.CapacityPlannerService;
 import de.kallifabio.cloud.master.permissions.PermissionGroup;
+import de.kallifabio.cloud.master.permissions.PermissionProfile;
 import de.kallifabio.cloud.setup.SetupValidator;
 
 import java.io.IOException;
@@ -32,11 +35,13 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.KeyStore;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 
@@ -45,6 +50,7 @@ public class CloudHttpServer {
     private HttpServer server;
     private LiveWebSocketServer liveWebSocketServer;
     private final Gson gson;
+    private final long startedAt = System.currentTimeMillis();
     private volatile String cachedDashboardHtml;
     private static final int DEFAULT_PORT = 8081;
     private static final int DEFAULT_WS_PORT = 8090;
@@ -62,6 +68,8 @@ public class CloudHttpServer {
     private static final long BLOCK_DURATION_MS = 60 * 1000L;
     private static final long WS_TICKET_TTL_MS = 2 * 60 * 1000L;
     private static final long RATE_LIMIT_CLEANUP_INTERVAL_MS = 60 * 1000L;
+    private static final long MAX_FILE_READ_BYTES = 512L * 1024L;
+    private static final long MAX_FILE_WRITE_BYTES = 1024L * 1024L;
     private final Deque<Map<String, Object>> metricHistory = new ArrayDeque<>();
     private boolean tlsEnabled = false;
     private int port = DEFAULT_PORT;
@@ -95,12 +103,30 @@ public class CloudHttpServer {
             configuredDashboard = UUID.randomUUID().toString();
         }
 
+        String configuredOwner = Master.getInstance() != null
+                ? Master.getInstance().getConfigManager().getMaster("CloudMaster.API.OwnerKey")
+                : null;
+        configuredOwner = sanitizeApiKey(configuredOwner);
+
+        String configuredOperator = Master.getInstance() != null
+                ? Master.getInstance().getConfigManager().getMaster("CloudMaster.API.OperatorKey")
+                : null;
+        configuredOperator = sanitizeApiKey(configuredOperator);
+
         apiKeys.put("admin", configuredAdmin);
         apiKeys.put("dashboard", configuredDashboard);
+        if (configuredOwner != null && !configuredOwner.isBlank()) {
+            apiKeys.put("owner", configuredOwner);
+            apiKeyRoles.put(configuredOwner, "OWNER");
+        }
+        if (configuredOperator != null && !configuredOperator.isBlank()) {
+            apiKeys.put("operator", configuredOperator);
+            apiKeyRoles.put(configuredOperator, "OPERATOR");
+        }
         apiKeyRoles.put(configuredAdmin, "ADMIN");
         apiKeyRoles.put(configuredDashboard, "VIEWER");
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " API Keys loaded (admin + dashboard)");
+                " API Keys loaded (owner/operator/admin/dashboard)");
     }
 
     private void startServer() throws IOException {
@@ -171,6 +197,7 @@ public class CloudHttpServer {
     private void setupEndpoints() {
         // Health & Status
         registerContext("/api/v1/health", this::handleHealth);
+        registerContext("/api/v1/readiness", this::handleReadiness);
         registerContext("/api/v1/auth/me", this::handleAuthMe);
         registerContext("/api/v1/auth/debug", this::handleAuthDebug);
         registerContext("/api/v1/auth/rotate", this::handleRotateKey);
@@ -178,6 +205,16 @@ public class CloudHttpServer {
         registerContext("/api/v1/dashboard/overview", this::handleDashboardOverview);
         registerContext("/api/v1/system/diagnostics", this::handleSystemDiagnostics);
         registerContext("/api/v1/system/capacity", this::handleSystemCapacityPlanner);
+        registerContext("/api/v1/system/report", this::handleSystemReport);
+        registerContext("/api/v1/events/recent", this::handleEventsRecent);
+        registerContext("/api/v1/lifecycle", this::handleLifecycle);
+        registerContext("/api/v1/incidents", this::handleIncidents);
+        registerContext("/api/v1/backups", this::handleBackups);
+        registerContext("/api/v1/backups/create", this::handleBackupCreate);
+        registerContext("/api/v1/backups/restore-staging", this::handleBackupRestoreStaging);
+        registerContext("/api/v1/rolling/restart", this::handleRollingRestart);
+        registerContext("/api/v1/firewall/check", this::handleFirewallCheck);
+        registerContext("/openapi.yml", this::handleOpenApiSpec);
 
         // Cluster Management
         registerContext("/api/v1/cluster/info", this::handleClusterInfo);
@@ -213,6 +250,15 @@ public class CloudHttpServer {
         registerContext("/api/v1/permissions/group", this::handlePermissionGroup);
         registerContext("/api/v1/permissions/assign", this::handlePermissionAssign);
         registerContext("/api/v1/permissions/temp", this::handleTempPermission);
+        registerContext("/api/v1/permissions/profile", this::handlePermissionProfile);
+        registerContext("/api/v1/permissions/check", this::handlePermissionCheck);
+
+        // Safe managed file browser
+        registerContext("/api/v1/files/list", this::handleFileList);
+        registerContext("/api/v1/files/read", this::handleFileRead);
+        registerContext("/api/v1/files/write", this::handleFileWrite);
+        registerContext("/api/v1/files/mkdir", this::handleFileMkdir);
+        registerContext("/api/v1/files/delete", this::handleFileDelete);
 
         // Load Balancer
         registerContext("/api/v1/loadbalancer/stats", this::handleLoadBalancerStats);
@@ -230,6 +276,8 @@ public class CloudHttpServer {
 
         // Operations
         registerContext("/api/v1/logs/recent", this::handleRecentLogs);
+        registerContext("/api/v1/logs/search", this::handleLogSearch);
+        registerContext("/api/v1/audit/recent", this::handleAuditRecent);
         registerContext("/api/v1/console/screens", this::handleConsoleScreens);
         registerContext("/api/v1/console/tail", this::handleConsoleTail);
         registerContext("/api/v1/console/send", this::handleConsoleSend);
@@ -274,13 +322,57 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
+        sendResponse(exchange, 200, buildHealthPayload());
+    }
 
+    private Map<String, Object> buildHealthPayload() {
         Map<String, Object> health = new HashMap<>();
         health.put("status", "UP");
         health.put("timestamp", System.currentTimeMillis());
         health.put("version", "1.0.2");
+        health.put("uptimeMs", System.currentTimeMillis() - startedAt);
+        health.put("apiPort", port);
+        health.put("wsPort", wsPort);
+        health.put("tls", tlsEnabled);
+        return health;
+    }
 
-        sendResponse(exchange, 200, health);
+    private void handleReadiness(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildReadinessPayload());
+    }
+
+    private Map<String, Object> buildReadinessPayload() {
+        Master master = Master.getInstance();
+        Map<String, Object> diagnostics = master == null ? Map.of() : buildSystemDiagnostics();
+        Map<String, Object> summary = diagnostics.get("summary") instanceof Map<?, ?> raw
+                ? new LinkedHashMap<>((Map<String, Object>) raw)
+                : new LinkedHashMap<>();
+        String diagnosticsState = String.valueOf(diagnostics.getOrDefault("state", "UNKNOWN"));
+        boolean masterReady = master != null;
+        boolean hasWrapper = masterReady && master.getConnectedWrappers().values().stream().anyMatch(wrapper -> wrapper.isHealthy());
+        boolean apiReady = server != null;
+        boolean wsReady = liveWebSocketServer != null;
+        boolean ready = masterReady && apiReady && wsReady && hasWrapper && !"CRITICAL".equalsIgnoreCase(diagnosticsState);
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("ready", ready);
+        payload.put("status", ready ? "READY" : "DEGRADED");
+        payload.put("timestamp", System.currentTimeMillis());
+        payload.put("uptimeMs", System.currentTimeMillis() - startedAt);
+        payload.put("components", Map.of(
+                "master", masterReady,
+                "api", apiReady,
+                "websocket", wsReady,
+                "healthyWrapper", hasWrapper
+        ));
+        payload.put("recommendedHttpStatus", ready ? 200 : 503);
+        payload.put("diagnosticsState", diagnosticsState);
+        payload.put("summary", summary);
+        return payload;
     }
 
     private void handleAuthMe(HttpExchange exchange) throws IOException {
@@ -380,9 +472,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> request = gson.fromJson(body, Map.class);
+            Map<String, Object> request = readJsonBody(exchange);
         String keyName = request != null && request.get("keyName") != null ? request.get("keyName").toString() : "dashboard";
         if (!apiKeys.containsKey(keyName)) {
             sendResponse(exchange, 400, Map.of("error", "Unknown keyName. Use admin|dashboard"));
@@ -422,6 +512,10 @@ public class CloudHttpServer {
             return;
         }
 
+        sendResponse(exchange, 200, buildDashboardOverviewPayload());
+    }
+
+    private Map<String, Object> buildDashboardOverviewPayload() {
         Master master = Master.getInstance();
         Map<String, Object> monitoring = master.getMonitoringService().getMonitoringSnapshot();
         List<Map<String, Object>> servers = new ArrayList<>();
@@ -433,6 +527,9 @@ public class CloudHttpServer {
             serverInfo.put("serverName", server.serverName);
             serverInfo.put("groupName", server.groupName);
             serverInfo.put("status", server.status);
+            serverInfo.put("lifecycleState", server.getLifecycleState().name());
+            serverInfo.put("failureCount", server.failureCount);
+            serverInfo.put("quarantined", server.quarantined);
             serverInfo.put("wrapperId", server.wrapperId);
             serverInfo.put("playerCount", effectivePlayers);
             serverInfo.put("maxPlayers", server.maxPlayers);
@@ -466,7 +563,7 @@ public class CloudHttpServer {
         payload.put("monitoring", monitoring);
         payload.put("runningServers", master.getRunningServers().size());
         payload.put("connectedWrappers", master.getConnectedWrappers().size());
-        sendResponse(exchange, 200, payload);
+        return payload;
     }
 
     private void handleStatus(HttpExchange exchange) throws IOException {
@@ -516,6 +613,225 @@ public class CloudHttpServer {
         }
 
         sendResponse(exchange, 200, buildSystemCapacityPlanner());
+    }
+
+    private void handleSystemReport(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        Master master = Master.getInstance();
+        report.put("generatedAt", System.currentTimeMillis());
+        report.put("version", "1");
+        report.put("health", buildHealthPayload());
+        report.put("readiness", buildReadinessPayload());
+        report.put("masterAvailable", master != null);
+        if (master != null) {
+            report.put("overview", buildDashboardOverviewPayload());
+            report.put("diagnostics", buildSystemDiagnostics());
+            report.put("capacity", buildSystemCapacityPlanner());
+            report.put("setup", SetupValidator.buildReport(master.getConfigManager(), false));
+        }
+        report.put("logStats", buildLogStats(readLatestLogLines(2_000)));
+        report.put("recentAudit", findLogLines("AUDIT", "INFO", 25));
+        sendResponse(exchange, 200, report);
+    }
+
+    private void handleEventsRecent(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        int limit = parseBoundedInt(query.get("limit"), 100, 10, 500);
+        Master master = Master.getInstance();
+        List<Map<String, Object>> events = master == null
+                ? List.of()
+                : master.getEventTimelineService().recent(limit, query.get("type"), query.get("severity"));
+        sendResponse(exchange, 200, Map.of("limit", limit, "count", events.size(), "events", events));
+    }
+
+    private void handleLifecycle(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        int limit = parseBoundedInt(query.get("limit"), 100, 10, 500);
+        String serverName = query.get("serverName");
+        Master master = Master.getInstance();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("serverName", serverName == null ? "" : serverName);
+        payload.put("transitions", master == null
+                ? List.of()
+                : master.getLifecycleOrchestrator().recentTransitions(serverName, limit));
+        if (master != null && (serverName == null || serverName.isBlank())) {
+            List<Map<String, Object>> servers = new ArrayList<>();
+            for (ServerInstance server : master.getRunningServers().values()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("serverName", server.serverName);
+                item.put("groupName", server.groupName);
+                item.put("status", server.status);
+                item.put("lifecycleState", server.getLifecycleState().name());
+                item.put("failureCount", server.failureCount);
+                item.put("quarantined", server.quarantined);
+                servers.add(item);
+            }
+            payload.put("servers", servers);
+        }
+        sendResponse(exchange, 200, payload);
+    }
+
+    private void handleIncidents(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        int limit = parseBoundedInt(query.get("limit"), 50, 10, 500);
+        Master master = Master.getInstance();
+        List<Map<String, Object>> incidents = master == null
+                ? List.of()
+                : master.getIncidentReportService().listIncidents(limit);
+        sendResponse(exchange, 200, Map.of("limit", limit, "count", incidents.size(), "incidents", incidents));
+    }
+
+    private void handleBackups(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        int limit = parseBoundedInt(query.get("limit"), 50, 10, 500);
+        Master master = Master.getInstance();
+        List<Map<String, Object>> backups = master == null ? List.of() : master.getBackupManager().listBackups(limit);
+        sendResponse(exchange, 200, Map.of("limit", limit, "count", backups.size(), "backups", backups));
+    }
+
+    private void handleBackupCreate(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        String name = stringValue(request.get("name"), "manual");
+        boolean includeLogs = booleanValue(request.get("includeLogs"), false);
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        sendResponse(exchange, 200, Map.of("backup", master.getBackupManager().createBackup(name, includeLogs)));
+    }
+
+    private void handleBackupRestoreStaging(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        String backupName = stringValue(request.get("backupName"), "");
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        sendResponse(exchange, 200, master.getBackupManager().restoreToStaging(backupName));
+    }
+
+    private void handleRollingRestart(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        String groupName = stringValue(request.get("groupName"), "");
+        int delaySeconds = parseBoundedInt(String.valueOf(request.getOrDefault("delaySeconds", "15")), 15, 5, 300);
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        List<String> targets = new ArrayList<>();
+        for (ServerInstance server : master.getRunningServers().values()) {
+            if (groupName.isBlank() || groupName.equalsIgnoreCase(server.groupName)) {
+                targets.add(server.serverName);
+            }
+        }
+        new Thread(() -> {
+            for (String serverName : targets) {
+                master.restartServer(serverName);
+                try {
+                    Thread.sleep(delaySeconds * 1000L);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }, "KalliCloud-RollingRestart").start();
+        master.getEventTimelineService().publish("ROLLING_RESTART", "api", "INFO",
+                "Rolling restart scheduled", Map.of("group", groupName, "targets", targets.size(), "delaySeconds", delaySeconds));
+        sendResponse(exchange, 202, Map.of("message", "rolling restart scheduled", "targets", targets, "delaySeconds", delaySeconds));
+    }
+
+    private void handleFirewallCheck(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        List<Map<String, Object>> checks = new ArrayList<>();
+        if (master != null) {
+            for (ServerInstance server : master.getRunningServers().values()) {
+                String host = "127.0.0.1";
+                for (var wrapper : master.getConnectedWrappers().values()) {
+                    if (wrapper.wrapperId.equalsIgnoreCase(server.wrapperId)) {
+                        host = wrapper.routeHost == null || wrapper.routeHost.isBlank() ? wrapper.hostname : wrapper.routeHost;
+                        break;
+                    }
+                }
+                checks.add(checkTcp(server.serverName, host, server.port));
+            }
+        }
+        sendResponse(exchange, 200, Map.of("checks", checks, "count", checks.size()));
     }
 
     private Map<String, Object> buildSystemCapacityPlanner() {
@@ -773,8 +1089,7 @@ public class CloudHttpServer {
         }
 
         try {
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            Map<String, Object> request = gson.fromJson(body, Map.class);
+            Map<String, Object> request = readJsonBody(exchange);
 
             String serverName = (String) request.get("serverName");
             String groupName = (String) request.get("groupName");
@@ -788,7 +1103,7 @@ public class CloudHttpServer {
             CentralLogger.audit("api", "server_start", serverName + " group=" + groupName);
             sendResponse(exchange, 200, Map.of("message", "Server start initiated", "serverName", serverName));
         } catch (Exception e) {
-            sendResponse(exchange, 500, Map.of("error", e.getMessage()));
+            sendOperationException(exchange, e);
         }
     }
 
@@ -804,8 +1119,7 @@ public class CloudHttpServer {
         }
 
         try {
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            Map<String, Object> request = gson.fromJson(body, Map.class);
+            Map<String, Object> request = readJsonBody(exchange);
 
             String serverName = (String) request.get("serverName");
 
@@ -818,7 +1132,7 @@ public class CloudHttpServer {
             CentralLogger.audit("api", "server_stop", serverName);
             sendResponse(exchange, 200, Map.of("message", "Server stop initiated", "serverName", serverName));
         } catch (Exception e) {
-            sendResponse(exchange, 500, Map.of("error", e.getMessage()));
+            sendOperationException(exchange, e);
         }
     }
 
@@ -834,8 +1148,7 @@ public class CloudHttpServer {
         }
 
         try {
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            Map<String, Object> request = gson.fromJson(body, Map.class);
+            Map<String, Object> request = readJsonBody(exchange);
 
             String serverName = (String) request.get("serverName");
 
@@ -848,7 +1161,7 @@ public class CloudHttpServer {
             CentralLogger.audit("api", "server_restart", serverName);
             sendResponse(exchange, 200, Map.of("message", "Server restart initiated", "serverName", serverName));
         } catch (Exception e) {
-            sendResponse(exchange, 500, Map.of("error", e.getMessage()));
+            sendOperationException(exchange, e);
         }
     }
 
@@ -887,8 +1200,7 @@ public class CloudHttpServer {
             return;
         }
         try {
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            Map<String, Object> request = gson.fromJson(body, Map.class);
+            Map<String, Object> request = readJsonBody(exchange);
             String wrapperId = request.get("wrapperId") == null ? null : request.get("wrapperId").toString();
             boolean draining = request.get("draining") != null && Boolean.parseBoolean(request.get("draining").toString());
             if (wrapperId == null || wrapperId.isBlank()) {
@@ -908,7 +1220,7 @@ public class CloudHttpServer {
             CentralLogger.audit("api", "wrapper_drain", wrapperId + " draining=" + draining);
             sendResponse(exchange, 200, Map.of("wrapperId", wrapperId, "draining", draining));
         } catch (Exception e) {
-            sendResponse(exchange, 500, Map.of("error", e.getMessage()));
+            sendOperationException(exchange, e);
         }
     }
 
@@ -1080,8 +1392,7 @@ public class CloudHttpServer {
         }
 
         if ("POST".equals(exchange.getRequestMethod())) {
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
             String uuid = req.get("playerUuid") == null ? null : req.get("playerUuid").toString();
             if (uuid == null || uuid.isBlank()) {
                 sendResponse(exchange, 400, Map.of("error", "playerUuid required"));
@@ -1131,8 +1442,7 @@ public class CloudHttpServer {
         }
 
         if ("POST".equals(exchange.getRequestMethod())) {
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
             String uuid = req.get("playerUuid") == null ? null : req.get("playerUuid").toString();
             if (uuid == null || !(req.get("friends") instanceof List<?> list)) {
                 sendResponse(exchange, 400, Map.of("error", "playerUuid and friends[] required"));
@@ -1168,8 +1478,7 @@ public class CloudHttpServer {
         }
 
         if ("POST".equals(exchange.getRequestMethod())) {
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
             String partyId = req.get("partyId") == null ? null : req.get("partyId").toString();
             String leader = req.get("leaderUuid") == null ? null : req.get("leaderUuid").toString();
             if (partyId == null || leader == null || !(req.get("members") instanceof List<?> list)) {
@@ -1199,9 +1508,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String partyId = req.get("partyId") == null ? null : req.get("partyId").toString();
         String targetServer = req.get("targetServer") == null ? null : req.get("targetServer").toString();
         if (partyId == null || targetServer == null) {
@@ -1231,8 +1538,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String name = req.get("name") == null ? null : req.get("name").toString();
         if (name == null || name.isBlank()) {
             sendResponse(exchange, 400, Map.of("error", "name required"));
@@ -1262,8 +1568,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String uuid = req.get("playerUuid") == null ? null : req.get("playerUuid").toString();
         String group = req.get("group") == null ? null : req.get("group").toString();
         if (uuid == null || group == null) {
@@ -1285,8 +1590,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String uuid = req.get("playerUuid") == null ? null : req.get("playerUuid").toString();
         String permission = req.get("permission") == null ? null : req.get("permission").toString();
         Number duration = (Number) req.get("durationSeconds");
@@ -1299,6 +1603,211 @@ public class CloudHttpServer {
         Master.getInstance().syncPermissionsForPlayer(uuid);
         CentralLogger.audit("api", "permission_temp", uuid + " " + permission + " until=" + expiresAt);
         sendResponse(exchange, 200, Map.of("message", "temp permission set", "expiresAt", expiresAt));
+    }
+
+    private void handlePermissionProfile(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        String playerUuid = query.get("playerUuid");
+        if (playerUuid == null || playerUuid.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "playerUuid query required"));
+            return;
+        }
+        PermissionProfile profile = Master.getInstance().buildPermissionProfile(playerUuid);
+        List<String> permissions = new ArrayList<>(profile.permissions);
+        permissions.sort(String.CASE_INSENSITIVE_ORDER);
+        sendResponse(exchange, 200, Map.of(
+                "playerUuid", profile.playerUuid,
+                "primaryGroup", profile.primaryGroup,
+                "prefix", profile.prefix,
+                "suffix", profile.suffix,
+                "permissions", permissions,
+                "permissionCount", permissions.size()
+        ));
+    }
+
+    private void handlePermissionCheck(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        String playerUuid = query.get("playerUuid");
+        String permission = query.get("permission");
+        if (playerUuid == null || playerUuid.isBlank() || permission == null || permission.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "playerUuid and permission query required"));
+            return;
+        }
+        PermissionProfile profile = Master.getInstance().buildPermissionProfile(playerUuid);
+        boolean allowed = hasCloudPermission(profile.permissions, permission);
+        sendResponse(exchange, 200, Map.of(
+                "playerUuid", playerUuid,
+                "permission", permission,
+                "allowed", allowed,
+                "primaryGroup", profile.primaryGroup,
+                "prefix", profile.prefix,
+                "suffix", profile.suffix
+        ));
+    }
+
+    private void handleFileList(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        ManagedFileTarget target = resolveManagedFileTarget(parseQueryParams(exchange.getRequestURI().getQuery()));
+        if (!Files.exists(target.target())) {
+            sendResponse(exchange, 404, Map.of("error", "path not found", "path", target.relativePath()));
+            return;
+        }
+        if (!Files.isDirectory(target.target())) {
+            sendResponse(exchange, 400, Map.of("error", "path is not a directory", "path", target.relativePath()));
+            return;
+        }
+
+        List<Map<String, Object>> entries = new ArrayList<>();
+        try (Stream<Path> stream = Files.list(target.target())) {
+            stream.sorted(Comparator
+                            .comparing((Path p) -> !Files.isDirectory(p))
+                            .thenComparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER))
+                    .limit(500)
+                    .forEach(path -> entries.add(buildFileEntry(target.root(), path)));
+        }
+
+        sendResponse(exchange, 200, Map.of(
+                "scope", target.scope(),
+                "root", target.rootLabel(),
+                "path", target.relativePath(),
+                "entries", entries,
+                "count", entries.size()
+        ));
+    }
+
+    private void handleFileRead(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        ManagedFileTarget target = resolveManagedFileTarget(parseQueryParams(exchange.getRequestURI().getQuery()));
+        if (!Files.exists(target.target())) {
+            sendResponse(exchange, 404, Map.of("error", "file not found", "path", target.relativePath()));
+            return;
+        }
+        if (Files.isDirectory(target.target())) {
+            sendResponse(exchange, 400, Map.of("error", "path is a directory", "path", target.relativePath()));
+            return;
+        }
+        long size = Files.size(target.target());
+        if (size > MAX_FILE_READ_BYTES) {
+            sendResponse(exchange, 413, Map.of(
+                    "error", "file too large for dashboard preview",
+                    "maxBytes", MAX_FILE_READ_BYTES,
+                    "size", size
+            ));
+            return;
+        }
+        String content = Files.readString(target.target(), StandardCharsets.UTF_8);
+        sendResponse(exchange, 200, Map.of(
+                "scope", target.scope(),
+                "path", target.relativePath(),
+                "size", size,
+                "content", content
+        ));
+    }
+
+    private void handleFileWrite(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        ManagedFileTarget target = resolveManagedFileTargetFromBody(request);
+        String content = request.get("content") == null ? "" : request.get("content").toString();
+        if (content.getBytes(StandardCharsets.UTF_8).length > MAX_FILE_WRITE_BYTES) {
+            sendResponse(exchange, 413, Map.of("error", "content too large", "maxBytes", MAX_FILE_WRITE_BYTES));
+            return;
+        }
+        if (Files.exists(target.target()) && Files.isDirectory(target.target())) {
+            sendResponse(exchange, 400, Map.of("error", "target is a directory", "path", target.relativePath()));
+            return;
+        }
+        Path parent = target.target().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+        Files.writeString(target.target(), content, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        CentralLogger.audit("api", "file_write", target.scope() + ":" + target.relativePath());
+        sendResponse(exchange, 200, Map.of("message", "file written", "path", target.relativePath(), "size", Files.size(target.target())));
+    }
+
+    private void handleFileMkdir(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        ManagedFileTarget target = resolveManagedFileTargetFromBody(readJsonBody(exchange));
+        Files.createDirectories(target.target());
+        CentralLogger.audit("api", "file_mkdir", target.scope() + ":" + target.relativePath());
+        sendResponse(exchange, 200, Map.of("message", "directory created", "path", target.relativePath()));
+    }
+
+    private void handleFileDelete(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        ManagedFileTarget target = resolveManagedFileTargetFromBody(readJsonBody(exchange));
+        if (target.relativePath().isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "refusing to delete managed root"));
+            return;
+        }
+        if (!Files.exists(target.target())) {
+            sendResponse(exchange, 404, Map.of("error", "path not found", "path", target.relativePath()));
+            return;
+        }
+        if (Files.isDirectory(target.target())) {
+            try (Stream<Path> children = Files.list(target.target())) {
+                if (children.findAny().isPresent()) {
+                    sendResponse(exchange, 409, Map.of("error", "directory is not empty", "path", target.relativePath()));
+                    return;
+                }
+            }
+        }
+        Files.delete(target.target());
+        CentralLogger.audit("api", "file_delete", target.scope() + ":" + target.relativePath());
+        sendResponse(exchange, 200, Map.of("message", "path deleted", "path", target.relativePath()));
     }
 
     private void handleLoadBalancerStats(HttpExchange exchange) throws IOException {
@@ -1347,9 +1856,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String groupName = req.get("groupName") == null ? null : req.get("groupName").toString();
         String parent = req.get("parentGroup") == null ? "" : req.get("parentGroup").toString();
         if (groupName == null || groupName.isBlank()) {
@@ -1376,8 +1883,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String groupName = req.get("groupName") == null ? null : req.get("groupName").toString();
         if (groupName == null || groupName.isBlank()) {
             sendResponse(exchange, 400, Map.of("error", "groupName required"));
@@ -1402,8 +1908,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String groupName = req.get("groupName") == null ? null : req.get("groupName").toString();
         String key = req.get("key") == null ? null : req.get("key").toString();
         Object value = req.get("value");
@@ -1444,8 +1949,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String group = req.get("groupName") == null ? null : req.get("groupName").toString();
         String version = req.get("version") == null ? null : req.get("version").toString();
         if (group == null || version == null) {
@@ -1491,15 +1995,48 @@ public class CloudHttpServer {
             sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
             return;
         }
-        Path today = Path.of("logs", "cloud-" + java.time.LocalDate.now() + ".log");
-        if (!Files.exists(today)) {
-            sendResponse(exchange, 200, Map.of("lines", List.of()));
+        sendResponse(exchange, 200, Map.of("lines", readLatestLogLines(300)));
+    }
+
+    private void handleLogSearch(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
             return;
         }
-        List<String> lines = Files.readAllLines(today);
-        int size = lines.size();
-        int from = Math.max(0, size - 300);
-        sendResponse(exchange, 200, Map.of("lines", lines.subList(from, size)));
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        String text = query.getOrDefault("query", "").trim();
+        String level = query.getOrDefault("level", "all").trim();
+        int limit = parseBoundedInt(query.get("limit"), 100, 10, 1000);
+        List<String> lines = findLogLines(text, level, limit);
+
+        sendResponse(exchange, 200, Map.of(
+                "query", text,
+                "level", level,
+                "limit", limit,
+                "count", lines.size(),
+                "lines", lines
+        ));
+    }
+
+    private void handleAuditRecent(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+
+        Map<String, String> query = parseQueryParams(exchange.getRequestURI().getQuery());
+        int limit = parseBoundedInt(query.get("limit"), 50, 10, 500);
+        List<String> lines = findLogLines("AUDIT", "INFO", limit);
+        sendResponse(exchange, 200, Map.of("limit", limit, "count", lines.size(), "lines", lines));
     }
 
     private void handleConsoleScreens(HttpExchange exchange) throws IOException {
@@ -1559,9 +2096,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> request = gson.fromJson(body, Map.class);
+            Map<String, Object> request = readJsonBody(exchange);
         String serverName = request != null && request.get("serverName") != null ? request.get("serverName").toString() : null;
         String command = request != null && request.get("command") != null ? request.get("command").toString() : null;
         if (serverName == null || serverName.isBlank() || command == null || command.isBlank()) {
@@ -1613,8 +2148,7 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> req = gson.fromJson(body, Map.class);
+            Map<String, Object> req = readJsonBody(exchange);
         String key = req.get("key") == null ? null : req.get("key").toString();
         String value = req.get("value") == null ? null : req.get("value").toString();
         if (key == null || value == null) {
@@ -1746,6 +2280,353 @@ public class CloudHttpServer {
         }
     }
 
+    private void handleOpenApiSpec(HttpExchange exchange) throws IOException {
+        String spec = """
+                openapi: 3.0.3
+                info:
+                  title: KalliCloud REST API
+                  version: 1.0.2
+                  description: Complete REST surface for KalliCloud master, dashboard, operations, files, permissions and monitoring.
+                servers:
+                  - url: /api/v1
+                components:
+                  securitySchemes:
+                    ApiKeyAuth:
+                      type: apiKey
+                      in: header
+                      name: X-API-Key
+                  schemas:
+                    GenericObject:
+                      type: object
+                      additionalProperties: true
+                    ErrorResponse:
+                      type: object
+                      properties:
+                        requestId: { type: string }
+                        status: { type: integer }
+                        error:
+                          type: object
+                          additionalProperties: true
+                security:
+                  - ApiKeyAuth: []
+                paths:
+                  /health:
+                    get:
+                      summary: API health
+                      security: []
+                      responses:
+                        '200': { description: OK }
+                  /readiness:
+                    get:
+                      summary: Cloud readiness
+                      security: []
+                      responses:
+                        '200': { description: Readiness payload }
+                  /auth/me:
+                    get:
+                      summary: Validate current API key and issue dashboard WS ticket
+                      responses: { '200': { description: Auth context }, '401': { description: Unauthorized } }
+                  /auth/debug:
+                    get:
+                      summary: Local-only auth diagnostics
+                      responses: { '200': { description: Auth debug payload } }
+                  /auth/rotate:
+                    post:
+                      summary: Rotate admin or dashboard API key
+                      responses: { '200': { description: Rotated key payload } }
+                  /status:
+                    get:
+                      summary: Master status summary
+                      responses: { '200': { description: Status payload } }
+                  /dashboard/overview:
+                    get:
+                      summary: Dashboard overview
+                      responses:
+                        '200': { description: Overview payload }
+                  /system/diagnostics:
+                    get:
+                      summary: System diagnostics score, issues and recommendations
+                      responses: { '200': { description: Diagnostics payload } }
+                  /system/capacity:
+                    get:
+                      summary: Capacity planner for groups and wrappers
+                      responses: { '200': { description: Capacity planner payload } }
+                  /system/report:
+                    get:
+                      summary: Full operations report
+                      responses:
+                        '200': { description: Report payload }
+                  /events/recent:
+                    get:
+                      summary: Recent event timeline
+                      responses:
+                        '200': { description: Event list }
+                  /lifecycle:
+                    get:
+                      summary: Server lifecycle transitions
+                      responses:
+                        '200': { description: Lifecycle state }
+                  /incidents:
+                    get:
+                      summary: List generated incident reports
+                      responses: { '200': { description: Incident list } }
+                  /backups:
+                    get:
+                      summary: List backups
+                      responses:
+                        '200': { description: Backup list }
+                  /backups/create:
+                    post:
+                      summary: Create backup
+                      responses:
+                        '200': { description: Backup created }
+                  /backups/restore-staging:
+                    post:
+                      summary: Restore backup into staging folder
+                      responses: { '200': { description: Restore staging payload } }
+                  /rolling/restart:
+                    post:
+                      summary: Schedule rolling restart for group or explicit targets
+                      responses: { '202': { description: Rolling restart scheduled } }
+                  /firewall/check:
+                    get:
+                      summary: TCP reachability checks for proxy/backend/API ports
+                      responses: { '200': { description: Firewall check result } }
+                  /cluster/info:
+                    get:
+                      summary: Cluster primary and node summary
+                      responses: { '200': { description: Cluster info } }
+                  /cluster/nodes:
+                    get:
+                      summary: Cluster nodes
+                      responses: { '200': { description: Cluster node list } }
+                  /servers:
+                    get:
+                      summary: List running servers
+                      responses: { '200': { description: Server list } }
+                  /servers/start:
+                    post:
+                      summary: Start a server
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              required: [serverName, groupName]
+                              properties:
+                                serverName: { type: string }
+                                groupName: { type: string }
+                      responses: { '200': { description: Start initiated } }
+                  /servers/stop:
+                    post:
+                      summary: Stop a server
+                      responses: { '200': { description: Stop initiated } }
+                  /servers/restart:
+                    post:
+                      summary: Restart a server
+                      responses: { '200': { description: Restart initiated } }
+                  /wrappers:
+                    get:
+                      summary: List connected wrappers
+                      responses: { '200': { description: Wrapper list } }
+                  /wrappers/drain:
+                    post:
+                      summary: Toggle wrapper drain state
+                      responses: { '200': { description: Drain state updated } }
+                  /metrics:
+                    get:
+                      summary: Current cloud metrics
+                      responses: { '200': { description: Metrics snapshot } }
+                  /metrics/history:
+                    get:
+                      summary: Recent metrics history
+                      responses: { '200': { description: Metrics history } }
+                  /metrics/prometheus:
+                    get:
+                      summary: Prometheus text exposition
+                      responses: { '200': { description: Prometheus metrics } }
+                  /alerts:
+                    get:
+                      summary: Active monitoring alerts
+                      responses: { '200': { description: Alert list } }
+                  /alerts/clear:
+                    post:
+                      summary: Clear active monitoring alerts
+                      responses: { '200': { description: Alerts cleared } }
+                  /scaling/policies:
+                    get:
+                      summary: List auto-scaling policies
+                      responses: { '200': { description: Scaling policies } }
+                  /scaling/trigger:
+                    post:
+                      summary: Trigger manual scaling evaluation
+                      responses: { '200': { description: Scaling triggered } }
+                  /queue/status:
+                    get:
+                      summary: Queue sizes and total queued players
+                      responses: { '200': { description: Queue status } }
+                  /player/data:
+                    get:
+                      summary: Read player data by uuid query
+                      responses: { '200': { description: Player data } }
+                    post:
+                      summary: Save player data
+                      responses: { '200': { description: Player data saved } }
+                  /player/friends:
+                    get:
+                      summary: Read friend list by uuid query
+                      responses: { '200': { description: Friend list } }
+                    post:
+                      summary: Save friend list
+                      responses: { '200': { description: Friends saved } }
+                  /player/party:
+                    get:
+                      summary: Read party members by partyId query
+                      responses: { '200': { description: Party members } }
+                    post:
+                      summary: Save party
+                      responses: { '200': { description: Party saved } }
+                  /party/switch:
+                    post:
+                      summary: Switch all party members to target server
+                      responses: { '200': { description: Party switch sent } }
+                  /permissions/group:
+                    post:
+                      summary: Create or update cloud permission group
+                      responses: { '200': { description: Permission group upserted } }
+                  /permissions/assign:
+                    post:
+                      summary: Assign player to permission group
+                      responses: { '200': { description: Permission group assigned } }
+                  /permissions/temp:
+                    post:
+                      summary: Grant temporary permission
+                      responses: { '200': { description: Temporary permission set } }
+                  /permissions/profile:
+                    get:
+                      summary: Build effective cloud permission profile
+                      parameters:
+                        - in: query
+                          name: playerUuid
+                          schema: { type: string }
+                          required: true
+                      responses: { '200': { description: Effective profile } }
+                  /permissions/check:
+                    get:
+                      summary: Check one permission against cloud profile
+                      parameters:
+                        - in: query
+                          name: playerUuid
+                          schema: { type: string }
+                          required: true
+                        - in: query
+                          name: permission
+                          schema: { type: string }
+                          required: true
+                      responses: { '200': { description: Permission decision } }
+                  /files/list:
+                    get:
+                      summary: List managed files under server/template/wrapper scope
+                      responses: { '200': { description: File entries } }
+                  /files/read:
+                    get:
+                      summary: Read a managed UTF-8 text file
+                      responses: { '200': { description: File content }, '413': { description: File too large } }
+                  /files/write:
+                    post:
+                      summary: Write a managed UTF-8 text file
+                      responses: { '200': { description: File written } }
+                  /files/mkdir:
+                    post:
+                      summary: Create managed directory
+                      responses: { '200': { description: Directory created } }
+                  /files/delete:
+                    post:
+                      summary: Delete managed file or empty directory
+                      responses: { '200': { description: Path deleted } }
+                  /loadbalancer/stats:
+                    get:
+                      summary: Load balancer statistics
+                      responses: { '200': { description: Load balancer stats } }
+                  /groups:
+                    get:
+                      summary: List server groups
+                      responses: { '200': { description: Group list } }
+                  /groups/create:
+                    post:
+                      summary: Create server group
+                      responses: { '200': { description: Group created } }
+                  /groups/delete:
+                    post:
+                      summary: Delete server group
+                      responses: { '200': { description: Group deleted } }
+                  /groups/update:
+                    post:
+                      summary: Update server group setting
+                      responses: { '200': { description: Group updated } }
+                  /templates/diff:
+                    get:
+                      summary: Diff template against backup
+                      responses: { '200': { description: Template diff } }
+                  /templates/rollback:
+                    post:
+                      summary: Roll back template version
+                      responses: { '200': { description: Template rolled back } }
+                  /templates/versions:
+                    get:
+                      summary: List template versions
+                      responses: { '200': { description: Template versions } }
+                  /logs/recent:
+                    get:
+                      summary: Recent central log lines
+                      responses: { '200': { description: Recent logs } }
+                  /logs/search:
+                    get:
+                      summary: Search central logs
+                      responses:
+                        '200': { description: Log search result }
+                  /audit/recent:
+                    get:
+                      summary: Recent audit lines
+                      responses: { '200': { description: Audit lines } }
+                  /console/screens:
+                    get:
+                      summary: List console screens
+                      responses: { '200': { description: Console screen list } }
+                  /console/tail:
+                    get:
+                      summary: Tail one server console screen
+                      responses: { '200': { description: Console tail } }
+                  /console/send:
+                    post:
+                      summary: Send command to server console
+                      responses: { '200': { description: Command sent } }
+                  /setup/report:
+                    get:
+                      summary: Setup validation report
+                      responses: { '200': { description: Setup report } }
+                  /config/get:
+                    get:
+                      summary: Read config value
+                      responses: { '200': { description: Config value } }
+                  /config/set:
+                    post:
+                      summary: Update config value
+                      responses: { '200': { description: Config updated } }
+                  /webhook/test:
+                    post:
+                      summary: Send alert webhook test
+                      responses: { '200': { description: Webhook test sent } }
+                """;
+        byte[] payload = spec.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/yaml; charset=utf-8");
+        exchange.sendResponseHeaders(200, payload.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(payload);
+        }
+    }
+
     private boolean authenticateRequest(HttpExchange exchange) {
         if (!checkRateLimit(exchange)) {
             exchange.setAttribute("authFailureStatus", 429);
@@ -1762,7 +2643,7 @@ public class CloudHttpServer {
         }
 
         String role = apiKeyRoles.getOrDefault(apiKey, "VIEWER");
-        String requiredRole = isMutatingRequest(exchange) ? "ADMIN" : "VIEWER";
+        String requiredRole = requiredRoleFor(exchange);
         boolean allowed = hasRequiredRole(role, requiredRole);
         if (!allowed) {
             exchange.setAttribute("authFailureStatus", 403);
@@ -1830,6 +2711,12 @@ public class CloudHttpServer {
         if ("admin".equalsIgnoreCase(key)) {
             return apiKeys.get("admin");
         }
+        if ("owner".equalsIgnoreCase(key)) {
+            return apiKeys.get("owner");
+        }
+        if ("operator".equalsIgnoreCase(key) || "ops".equalsIgnoreCase(key)) {
+            return apiKeys.get("operator");
+        }
         if ("dashboard".equalsIgnoreCase(key) || "viewer".equalsIgnoreCase(key)) {
             return apiKeys.get("dashboard");
         }
@@ -1860,6 +2747,23 @@ public class CloudHttpServer {
                 || path.contains("/switch") || path.contains("/rollback") || path.contains("/trigger");
     }
 
+    private String requiredRoleFor(HttpExchange exchange) {
+        if (!isMutatingRequest(exchange)) {
+            return "VIEWER";
+        }
+        String path = exchange.getRequestURI().getPath().toLowerCase(Locale.ROOT);
+        if (path.contains("/servers/")
+                || path.contains("/wrappers/drain")
+                || path.contains("/alerts/clear")
+                || path.contains("/webhook/test")
+                || path.contains("/console/send")
+                || path.contains("/rolling/restart")
+                || path.contains("/backups/create")) {
+            return "OPERATOR";
+        }
+        return "ADMIN";
+    }
+
     private boolean hasRequiredRole(String actualRole, String requiredRole) {
         int actual = roleLevel(actualRole);
         int required = roleLevel(requiredRole);
@@ -1867,7 +2771,13 @@ public class CloudHttpServer {
     }
 
     private int roleLevel(String role) {
+        if ("OWNER".equalsIgnoreCase(role)) {
+            return 4;
+        }
         if ("ADMIN".equalsIgnoreCase(role)) {
+            return 3;
+        }
+        if ("OPERATOR".equalsIgnoreCase(role)) {
             return 2;
         }
         if ("VIEWER".equalsIgnoreCase(role)) {
@@ -1982,6 +2892,247 @@ public class CloudHttpServer {
         return params;
     }
 
+    private int parseBoundedInt(String raw, int fallback, int min, int max) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Math.max(min, Math.min(max, Integer.parseInt(raw.trim())));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private String stringValue(Object value, String fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isBlank() ? fallback : text;
+    }
+
+    private boolean booleanValue(Object value, boolean fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        return Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private boolean hasCloudPermission(Set<String> grantedPermissions, String requestedPermission) {
+        if (grantedPermissions == null || requestedPermission == null || requestedPermission.isBlank()) {
+            return false;
+        }
+        String requested = requestedPermission.trim().toLowerCase(Locale.ROOT);
+        if (grantedPermissions.contains("*")) {
+            return true;
+        }
+        for (String grantedRaw : grantedPermissions) {
+            if (grantedRaw == null || grantedRaw.isBlank()) {
+                continue;
+            }
+            String granted = grantedRaw.trim().toLowerCase(Locale.ROOT);
+            if (granted.equals(requested)) {
+                return true;
+            }
+            if (granted.endsWith(".*")) {
+                String prefix = granted.substring(0, granted.length() - 1);
+                if (requested.startsWith(prefix)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private ManagedFileTarget resolveManagedFileTargetFromBody(Map<String, Object> request) {
+        Map<String, String> params = new HashMap<>();
+        for (Map.Entry<String, Object> entry : request.entrySet()) {
+            params.put(entry.getKey(), entry.getValue() == null ? "" : String.valueOf(entry.getValue()));
+        }
+        return resolveManagedFileTarget(params);
+    }
+
+    private ManagedFileTarget resolveManagedFileTarget(Map<String, String> params) {
+        String scope = stringValue(params.get("scope"), "server").toLowerCase(Locale.ROOT);
+        String serverName = stringValue(params.get("serverName"), "");
+        String groupName = stringValue(params.get("groupName"), "");
+        String wrapperId = stringValue(params.get("wrapperId"), "");
+        String rawPath = stringValue(params.get("path"), "");
+
+        Path root;
+        String rootLabel;
+        if ("template".equals(scope)) {
+            if (groupName.isBlank()) {
+                throw new IllegalArgumentException("groupName required for template file scope");
+            }
+            root = Path.of("templates", groupName);
+            rootLabel = "templates/" + groupName;
+        } else if ("wrapper".equals(scope)) {
+            if (wrapperId.isBlank()) {
+                throw new IllegalArgumentException("wrapperId required for wrapper file scope");
+            }
+            root = Path.of("servers");
+            rootLabel = "servers (wrapper " + wrapperId + ")";
+        } else {
+            scope = "server";
+            if (serverName.isBlank()) {
+                throw new IllegalArgumentException("serverName required for server file scope");
+            }
+            ServerInstance server = Master.getInstance().getRunningServers().get(serverName);
+            if (server != null && server.groupName != null && !server.groupName.isBlank()) {
+                groupName = server.groupName;
+            }
+            if (groupName.isBlank()) {
+                throw new IllegalArgumentException("groupName required when server is not running");
+            }
+            root = Path.of("servers", groupName, serverName);
+            rootLabel = "servers/" + groupName + "/" + serverName;
+        }
+
+        Path rootAbs = root.toAbsolutePath().normalize();
+        String relative = sanitizeRelativePath(rawPath);
+        Path target = relative.isBlank() ? rootAbs : rootAbs.resolve(relative).normalize();
+        if (!target.startsWith(rootAbs)) {
+            throw new SecurityException("Path traversal blocked: " + rawPath);
+        }
+        String display = rootAbs.equals(target) ? "" : rootAbs.relativize(target).toString().replace('\\', '/');
+        return new ManagedFileTarget(scope, rootLabel, rootAbs, target, display);
+    }
+
+    private String sanitizeRelativePath(String rawPath) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return "";
+        }
+        String normalized = rawPath.replace('\\', '/').trim();
+        if (normalized.indexOf('\0') >= 0) {
+            throw new SecurityException("Invalid path");
+        }
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        return normalized;
+    }
+
+    private Map<String, Object> buildFileEntry(Path root, Path path) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        boolean directory = Files.isDirectory(path);
+        entry.put("name", path.getFileName() == null ? "" : path.getFileName().toString());
+        entry.put("path", root.relativize(path.toAbsolutePath().normalize()).toString().replace('\\', '/'));
+        entry.put("directory", directory);
+        try {
+            entry.put("size", directory ? 0L : Files.size(path));
+        } catch (IOException ignored) {
+            entry.put("size", 0L);
+        }
+        try {
+            entry.put("modifiedAt", Files.getLastModifiedTime(path).toMillis());
+        } catch (IOException ignored) {
+            entry.put("modifiedAt", 0L);
+        }
+        return entry;
+    }
+
+    private record ManagedFileTarget(String scope, String rootLabel, Path root, Path target, String relativePath) {
+    }
+
+    private Map<String, Object> checkTcp(String name, String host, int port) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("name", name);
+        result.put("host", host);
+        result.put("port", port);
+        long start = System.nanoTime();
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new InetSocketAddress(host, port), 1_500);
+            result.put("reachable", true);
+        } catch (Exception e) {
+            result.put("reachable", false);
+            result.put("error", e.getMessage());
+        }
+        result.put("durationMs", (System.nanoTime() - start) / 1_000_000);
+        return result;
+    }
+
+    private List<String> readLatestLogLines(int limit) {
+        Path today = Path.of("logs", "cloud-" + java.time.LocalDate.now() + ".log");
+        if (!Files.exists(today)) {
+            return List.of();
+        }
+        try {
+            List<String> lines = Files.readAllLines(today);
+            int size = lines.size();
+            int from = Math.max(0, size - Math.max(1, limit));
+            return new ArrayList<>(lines.subList(from, size));
+        } catch (IOException e) {
+            CentralLogger.warn("API", "Unable to read recent logs: " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<String> findLogLines(String text, String level, int limit) {
+        String normalizedText = text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
+        String normalizedLevel = level == null ? "all" : level.trim().toUpperCase(Locale.ROOT);
+        List<String> source = readLatestLogLines(5_000);
+        List<String> matches = new ArrayList<>();
+
+        for (int i = source.size() - 1; i >= 0 && matches.size() < limit; i--) {
+            String line = source.get(i);
+            String upper = line.toUpperCase(Locale.ROOT);
+            if (!"ALL".equals(normalizedLevel) && !normalizedLevel.isBlank()
+                    && !upper.contains("[" + normalizedLevel + "]")
+                    && !upper.contains(normalizedLevel + ":")) {
+                continue;
+            }
+            if (!normalizedText.isBlank() && !line.toLowerCase(Locale.ROOT).contains(normalizedText)) {
+                continue;
+            }
+            matches.add(line);
+        }
+
+        Collections.reverse(matches);
+        return matches;
+    }
+
+    private Map<String, Object> buildLogStats(List<String> lines) {
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("sampleSize", lines.size());
+        stats.put("info", countLogLevel(lines, "INFO"));
+        stats.put("warn", countLogLevel(lines, "WARN"));
+        stats.put("error", countLogLevel(lines, "ERROR"));
+        stats.put("debug", countLogLevel(lines, "DEBUG"));
+        stats.put("audit", lines.stream().filter(line -> line.contains("[AUDIT]")).count());
+        stats.put("criticalMentions", lines.stream()
+                .filter(line -> line.toLowerCase(Locale.ROOT).contains("critical"))
+                .count());
+        return stats;
+    }
+
+    private long countLogLevel(List<String> lines, String level) {
+        String token = "[" + level + "]";
+        return lines.stream().filter(line -> line.contains(token)).count();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readJsonBody(HttpExchange exchange) throws IOException {
+        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
+        if (body.isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        JsonElement parsed;
+        try {
+            parsed = JsonParser.parseString(body);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid JSON body: " + e.getMessage(), e);
+        }
+        if (parsed == null || !parsed.isJsonObject()) {
+            throw new IllegalArgumentException("JSON body must be an object.");
+        }
+        Map<String, Object> map = gson.fromJson(parsed, Map.class);
+        return map == null ? new LinkedHashMap<>() : map;
+    }
+
     private boolean isMutatingPath(String method, String path) {
         if ("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method)) {
             return true;
@@ -2035,6 +3186,14 @@ public class CloudHttpServer {
             raw.put("details", details);
         }
         sendResponse(exchange, statusCode, raw);
+    }
+
+    private void sendOperationException(HttpExchange exchange, Exception e) throws IOException {
+        if (e instanceof IllegalArgumentException) {
+            sendError(exchange, 400, "BAD_REQUEST", safeErrorMessage(e), null, e);
+            return;
+        }
+        sendError(exchange, 500, "OPERATION_FAILED", safeErrorMessage(e), null, e);
     }
 
     @SuppressWarnings("unchecked")
@@ -3122,6 +4281,7 @@ public class CloudHttpServer {
         return wsPort;
     }
 }
+
 
 
 

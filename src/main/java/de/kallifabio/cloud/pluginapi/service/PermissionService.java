@@ -2,6 +2,7 @@ package de.kallifabio.cloud.pluginapi.service;
 
 import com.google.gson.JsonObject;
 import de.kallifabio.cloud.pluginapi.CloudApiClient;
+import de.kallifabio.cloud.pluginapi.model.CloudPermissionProfileInfo;
 import de.kallifabio.cloud.pluginapi.model.CloudOperationResult;
 import de.kallifabio.cloud.pluginapi.request.PermissionAssignRequest;
 import de.kallifabio.cloud.pluginapi.request.PermissionGroupUpsertRequest;
@@ -9,6 +10,7 @@ import de.kallifabio.cloud.pluginapi.request.TempPermissionRequest;
 
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 
 public final class PermissionService {
 
@@ -65,5 +67,32 @@ public final class PermissionService {
                 request.permission(),
                 request.durationSeconds()
         ));
+    }
+
+    public JsonObject profileRaw(String playerUuid) {
+        return client.get("/api/v1/permissions/profile", Map.of("playerUuid", playerUuid));
+    }
+
+    public CloudPermissionProfileInfo profile(String playerUuid) {
+        JsonObject raw = profileRaw(playerUuid);
+        List<String> permissions = new ArrayList<>();
+        if (raw.has("permissions") && raw.get("permissions").isJsonArray()) {
+            raw.getAsJsonArray("permissions").forEach(element -> permissions.add(element.getAsString()));
+        }
+        return new CloudPermissionProfileInfo(
+                raw.has("playerUuid") ? raw.get("playerUuid").getAsString() : playerUuid,
+                raw.has("primaryGroup") ? raw.get("primaryGroup").getAsString() : "default",
+                raw.has("prefix") ? raw.get("prefix").getAsString() : "",
+                raw.has("suffix") ? raw.get("suffix").getAsString() : "",
+                permissions
+        );
+    }
+
+    public boolean check(String playerUuid, String permission) {
+        JsonObject raw = client.get("/api/v1/permissions/check", Map.of(
+                "playerUuid", playerUuid,
+                "permission", permission
+        ));
+        return raw.has("allowed") && raw.get("allowed").getAsBoolean();
     }
 }

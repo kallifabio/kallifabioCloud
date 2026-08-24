@@ -7,6 +7,8 @@
 
 package de.kallifabio.cloud.master;
 
+import de.kallifabio.cloud.master.lifecycle.ServerLifecycleState;
+
 public class ServerInstance {
 
     // Basic Info
@@ -18,8 +20,10 @@ public class ServerInstance {
 
     // Status
     public String status = "STARTING";
+    private ServerLifecycleState lifecycleState = ServerLifecycleState.STARTING;
     public long startTime;
     public long lastUpdate;
+    public long lastStateChange;
 
     // Player Info
     public int playerCount = 0;
@@ -38,6 +42,10 @@ public class ServerInstance {
     // Flags
     public boolean isCritical = false;
     public boolean isTemplate = false;
+    public boolean quarantined = false;
+    public int failureCount = 0;
+    public long lastFailureAt = 0L;
+    public String lastFailureReason = "";
 
     public ServerInstance(String serverName, String groupName, String wrapperId, int allocatedRam) {
         this.serverName = serverName;
@@ -47,6 +55,7 @@ public class ServerInstance {
         this.port = -1;
         this.startTime = System.currentTimeMillis();
         this.lastUpdate = System.currentTimeMillis();
+        this.lastStateChange = System.currentTimeMillis();
     }
 
     // Convenience Methods
@@ -111,7 +120,26 @@ public class ServerInstance {
 
     public void updateStatus(String newStatus) {
         this.status = newStatus;
+        this.lifecycleState = ServerLifecycleState.fromStatus(newStatus);
+        this.lastStateChange = System.currentTimeMillis();
         this.lastUpdate = System.currentTimeMillis();
+    }
+
+    public ServerLifecycleState getLifecycleState() {
+        return lifecycleState == null ? ServerLifecycleState.fromStatus(status) : lifecycleState;
+    }
+
+    public void setLifecycleState(ServerLifecycleState lifecycleState) {
+        this.lifecycleState = lifecycleState == null ? ServerLifecycleState.fromStatus(status) : lifecycleState;
+        this.status = this.lifecycleState.name();
+        this.lastStateChange = System.currentTimeMillis();
+        this.lastUpdate = System.currentTimeMillis();
+    }
+
+    public void markFailure(String reason) {
+        failureCount++;
+        lastFailureAt = System.currentTimeMillis();
+        lastFailureReason = reason == null ? "" : reason;
     }
 
     @Override
