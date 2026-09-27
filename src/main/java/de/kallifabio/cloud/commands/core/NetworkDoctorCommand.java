@@ -2,6 +2,7 @@ package de.kallifabio.cloud.commands.core;
 
 import de.kallifabio.cloud.commands.BaseCloudCommand;
 import de.kallifabio.cloud.master.ServerInstance;
+import de.kallifabio.cloud.software.ServerSoftware;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 
@@ -57,6 +58,38 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
         Map<String, ServerInstance> running = master().getRunningServers();
         List<ServerInstance> proxies = running.values().stream().filter(s -> isProxyGroup(s.groupName)).toList();
         List<ServerInstance> backends = running.values().stream().filter(s -> !isProxyGroup(s.groupName)).toList();
+        boolean multiHostTopology = isMultiHostTopology(proxies, backends);
+
+        for (de.kallifabio.cloud.master.WrapperConnection wrapper : master().getConnectedWrappers().values()) {
+            String routeHost = wrapper.routeHost == null ? "" : wrapper.routeHost.trim();
+            if (routeHost.isBlank()) {
+                warn("[WARN] Wrapper " + wrapper.wrapperId + " hat keinen routeHost gemeldet.");
+                ok = false;
+            } else if (multiHostTopology && isLoopbackHost(routeHost)) {
+                warn("[WARN] Wrapper " + wrapper.wrapperId + " routeHost=" + routeHost +
+                        " ist loopback, obwohl Multi-Host erkannt wurde. Setze CloudWrapper.RouteHost oder KALLICLOUD_ROUTE_HOST auf die private/public IP dieses Root-Servers.");
+                ok = false;
+            } else {
+                info("[OK] Wrapper " + wrapper.wrapperId + " routeHost=" + routeHost + " hostname=" + wrapper.hostname);
+            }
+        }
+
+        if (multiHostTopology && enforceBackendBind && isLoopbackHost(expectedBackendBindAddress)) {
+            warn("[WARN] Multi-Host erkannt, aber BackendBindAddress=" + expectedBackendBindAddress +
+                    " wuerde Backends fuer andere Root-Server unereichbar machen.");
+            ok = false;
+            if (fix) {
+                master().getConfigManager().getMasterConfigData().set("CloudMaster.Network.BackendBindAddress", "auto");
+                try {
+                    master().getConfigManager().getMasterConfigData().save(master().getConfigManager().getMasterConfigFile());
+                    master().reloadConfiguration("networkdoctor:auto-backend-bind");
+                    expectedBackendBindAddress = "auto";
+                    info("[FIX] CloudMaster.Network.BackendBindAddress=auto gesetzt.");
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
 
         if (proxies.isEmpty()) {
             warn("[WARN] Kein laufender Proxy im Running-Set gefunden.");
@@ -332,6 +365,7 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
         }
 
         for (ServerInstance backend : backends) {
+            String expectedBackendBindForServer = resolveExpectedBackendBindAddress(backend, expectedBackendBindAddress);
             File propertiesFile = new File("./servers/" + backend.groupName + "/" + backend.serverName + "/server.properties");
             if (!propertiesFile.exists()) {
                 warn("[WARN] Backend " + backend.serverName + ": server.properties fehlt.");
@@ -362,11 +396,11 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                         if (!enforceBackendBind) {
                             serverIpExpected = true;
                             changed.add(line);
-                        } else if (("server-ip=" + expectedBackendBindAddress).equalsIgnoreCase(line.trim())) {
+                        } else if (("server-ip=" + expectedBackendBindForServer).equalsIgnoreCase(line.trim())) {
                             serverIpExpected = true;
                             changed.add(line);
                         } else {
-                            changed.add("server-ip=" + expectedBackendBindAddress);
+                            changed.add("server-ip=" + expectedBackendBindForServer);
                         }
                     } else {
                         changed.add(line);
@@ -376,7 +410,7 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                     changed.add("online-mode=false");
                 }
                 if (enforceBackendBind && !hasServerIp) {
-                    changed.add("server-ip=" + expectedBackendBindAddress);
+                    changed.add("server-ip=" + expectedBackendBindForServer);
                 }
                 if (!onlineModeFalse || !hasOnlineMode) {
                     warn("[WARN] Backend " + backend.serverName + ": online-mode nicht korrekt (erwartet false).");
@@ -387,10 +421,10 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                 if (enforceBackendBind) {
                     if (!serverIpExpected || !hasServerIp) {
                         warn("[WARN] Backend " + backend.serverName + ": server-ip nicht korrekt (erwartet " +
-                                expectedBackendBindAddress + ").");
+                                expectedBackendBindForServer + ").");
                         ok = false;
                     } else {
-                        info("[OK] Backend " + backend.serverName + ": server-ip=" + expectedBackendBindAddress);
+                        info("[OK] Backend " + backend.serverName + ": server-ip=" + expectedBackendBindForServer);
                     }
                 }
                 if (fix && (!onlineModeFalse || !hasOnlineMode || (enforceBackendBind && (!serverIpExpected || !hasServerIp)))) {
@@ -403,28 +437,34 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                 }
             }
 
-            File spigotYml = new File("./servers/" + backend.groupName + "/" + backend.serverName + "/spigot.yml");
-            if (!spigotYml.exists()) {
-                warn("[WARN] Backend " + backend.serverName + ": spigot.yml fehlt.");
-                ok = false;
-                continue;
-            }
-            YamlConfiguration spigot = YamlConfiguration.loadConfiguration(spigotYml);
-            boolean bungeeMode = spigot.getBoolean("settings.bungeecord", false);
-            if (!bungeeMode) {
-                warn("[WARN] Backend " + backend.serverName + ": settings.bungeecord=false");
-                ok = false;
-                if (fix) {
-                    spigot.set("settings.bungeecord", true);
-                    try {
-                        spigot.save(spigotYml);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
+            ServerSoftware software = ServerSoftware.resolve(master().getConfigManager().getSoftwareForGroup(backend.groupName), backend.groupName);
+            if (software.isSpigotLike()) {
+                File spigotYml = new File("./servers/" + backend.groupName + "/" + backend.serverName + "/spigot.yml");
+                if (!spigotYml.exists()) {
+                    warn("[WARN] Backend " + backend.serverName + ": spigot.yml fehlt.");
+                    ok = false;
+                    continue;
+                }
+                YamlConfiguration spigot = YamlConfiguration.loadConfiguration(spigotYml);
+                boolean bungeeMode = spigot.getBoolean("settings.bungeecord", false);
+                if (!bungeeMode) {
+                    warn("[WARN] Backend " + backend.serverName + ": settings.bungeecord=false");
+                    ok = false;
+                    if (fix) {
+                        spigot.set("settings.bungeecord", true);
+                        try {
+                            spigot.save(spigotYml);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                        info("[FIX] Backend " + backend.serverName + ": settings.bungeecord=true gesetzt.");
                     }
-                    info("[FIX] Backend " + backend.serverName + ": settings.bungeecord=true gesetzt.");
+                } else {
+                    info("[OK] Backend " + backend.serverName + ": settings.bungeecord=true");
                 }
             } else {
-                info("[OK] Backend " + backend.serverName + ": settings.bungeecord=true");
+                info("[OK] Backend " + backend.serverName + ": " + software.name().toLowerCase(Locale.ROOT) +
+                        " erkannt, spigot.yml-Check nicht erforderlich.");
             }
         }
 
@@ -433,6 +473,10 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
         } else {
             warn("NetworkDoctor abgeschlossen: [WARN] bitte obige Abweichungen korrigieren.");
         }
+        if (fix) {
+            master().syncNetworkRoutes();
+            info("[FIX] Live Proxy-Routen-Sync an verbundene Wrapper gesendet.");
+        }
         if (prune && !fix) {
             warn("Hinweis: --prune wurde ignoriert, weil --fix nicht aktiv war.");
         }
@@ -440,8 +484,7 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
     }
 
     private boolean isProxyGroup(String groupName) {
-        String g = groupName == null ? "" : groupName.toLowerCase(Locale.ROOT);
-        return g.contains("proxy") || g.contains("bungee") || g.contains("waterfall") || g.contains("velocity");
+        return ServerSoftware.resolve(master().getConfigManager().getSoftwareForGroup(groupName), groupName).isProxy();
     }
 
     private boolean getExpectedProxyOnlineMode() {
@@ -537,6 +580,48 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
             return "127.0.0.1";
         }
         return configured.trim();
+    }
+
+    private String resolveExpectedBackendBindAddress(ServerInstance backend, String configuredBackendBind) {
+        if (configuredBackendBind == null || configuredBackendBind.isBlank()
+                || "auto".equalsIgnoreCase(configuredBackendBind.trim())
+                || "detect".equalsIgnoreCase(configuredBackendBind.trim())) {
+            String routeHost = resolveBackendRouteHost(backend);
+            return isLoopbackHost(routeHost) ? "127.0.0.1" : "0.0.0.0";
+        }
+        if (isLoopbackHost(configuredBackendBind) && !isLoopbackHost(resolveBackendRouteHost(backend))) {
+            return "0.0.0.0";
+        }
+        return configuredBackendBind.trim();
+    }
+
+    private boolean isMultiHostTopology(List<ServerInstance> proxies, List<ServerInstance> backends) {
+        Set<String> routeHosts = new HashSet<>();
+        for (de.kallifabio.cloud.master.WrapperConnection wrapper : master().getConnectedWrappers().values()) {
+            if (wrapper.routeHost != null && !wrapper.routeHost.isBlank()) {
+                routeHosts.add(wrapper.routeHost.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        if (routeHosts.size() > 1) {
+            return true;
+        }
+        for (ServerInstance proxy : proxies) {
+            for (ServerInstance backend : backends) {
+                if (proxy.wrapperId != null && backend.wrapperId != null
+                        && !proxy.wrapperId.equalsIgnoreCase(backend.wrapperId)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isLoopbackHost(String host) {
+        if (host == null || host.isBlank()) {
+            return false;
+        }
+        String normalized = host.trim().toLowerCase(Locale.ROOT);
+        return "localhost".equals(normalized) || normalized.startsWith("127.");
     }
 
     private String extractHost(String address) {

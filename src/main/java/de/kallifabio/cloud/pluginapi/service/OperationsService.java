@@ -2,11 +2,13 @@ package de.kallifabio.cloud.pluginapi.service;
 
 import com.google.gson.JsonObject;
 import de.kallifabio.cloud.pluginapi.CloudApiClient;
+import de.kallifabio.cloud.pluginapi.core.CloudApiPaths;
 import de.kallifabio.cloud.pluginapi.model.CloudCapacityPlanInfo;
 import de.kallifabio.cloud.pluginapi.model.CloudLogSearchResult;
 import de.kallifabio.cloud.pluginapi.model.CloudOperationResult;
 import de.kallifabio.cloud.pluginapi.model.CloudRecentLogs;
 import de.kallifabio.cloud.pluginapi.model.CloudSystemDiagnosticsInfo;
+import de.kallifabio.cloud.pluginapi.model.CloudSystemDoctorInfo;
 import de.kallifabio.cloud.pluginapi.request.ConfigSetRequest;
 
 import java.util.Map;
@@ -33,6 +35,14 @@ public final class OperationsService {
 
     public JsonObject diagnostics() {
         return client.get("/api/v1/system/diagnostics");
+    }
+
+    public JsonObject systemDoctor() {
+        return client.get(CloudApiPaths.SYSTEM_DOCTOR);
+    }
+
+    public CloudSystemDoctorInfo systemDoctorModel() {
+        return CloudSystemDoctorInfo.from(systemDoctor());
     }
 
     public CloudSystemDiagnosticsInfo diagnosticsModel() {
@@ -65,6 +75,14 @@ public final class OperationsService {
         ));
     }
 
+    public JsonObject recoveryState() {
+        return client.get("/api/v1/recovery/state");
+    }
+
+    public JsonObject clearServerQuarantine(String serverName) {
+        return client.post("/api/v1/recovery/unquarantine", Map.of("serverName", serverName));
+    }
+
     public JsonObject incidents(int limit) {
         return client.get("/api/v1/incidents", Map.of("limit", String.valueOf(limit)));
     }
@@ -93,6 +111,14 @@ public final class OperationsService {
 
     public JsonObject firewallCheck() {
         return client.get("/api/v1/firewall/check");
+    }
+
+    public JsonObject motd() {
+        return client.get(CloudApiPaths.MOTD);
+    }
+
+    public JsonObject updateMotd(Map<String, Object> values) {
+        return client.post(CloudApiPaths.MOTD_UPDATE, values == null ? Map.of() : values);
     }
 
     public JsonObject searchLogs(String query, String level, int limit) {

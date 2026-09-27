@@ -1,7 +1,7 @@
 /**
  * Erstellt von Gamer_Kidd_LP | kallifabio
  * am 09.01.2026 um 21:01
- * Projektname: CloudSystemTest
+ * Projektname: KalliCloud
  * Packagename: de.kallifabio.cloud.api
  */
 
@@ -28,6 +28,7 @@ import de.kallifabio.cloud.master.capacity.CapacityPlannerService;
 import de.kallifabio.cloud.master.permissions.PermissionGroup;
 import de.kallifabio.cloud.master.permissions.PermissionProfile;
 import de.kallifabio.cloud.setup.SetupValidator;
+import de.kallifabio.cloud.setup.SystemDoctor;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,7 +43,12 @@ import java.security.KeyStore;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
@@ -51,6 +57,7 @@ public class CloudHttpServer {
 
     private HttpServer server;
     private LiveWebSocketServer liveWebSocketServer;
+    private ExecutorService httpExecutor;
     private final Gson gson;
     private final long startedAt = System.currentTimeMillis();
     private volatile String cachedDashboardHtml;
@@ -62,6 +69,7 @@ public class CloudHttpServer {
     private final Map<String, String> apiKeys = new HashMap<>();
     private final Map<String, String> apiKeyRoles = new HashMap<>();
     private final Map<String, Long> liveWsTickets = new ConcurrentHashMap<>();
+    private final Map<String, DashboardSession> dashboardSessions = new ConcurrentHashMap<>();
     private final Map<String, Deque<Long>> requestTimestampsByIp = new ConcurrentHashMap<>();
     private final Map<String, Long> blockedIps = new ConcurrentHashMap<>();
     private volatile Set<String> corsAllowedOrigins = Set.of("*");
@@ -69,10 +77,14 @@ public class CloudHttpServer {
     private static final int RATE_LIMIT_PER_MINUTE = 600;
     private static final long BLOCK_DURATION_MS = 60 * 1000L;
     private static final long WS_TICKET_TTL_MS = 2 * 60 * 1000L;
+    private static final long DASHBOARD_SESSION_TTL_MS = 30 * 60 * 1000L;
     private static final long RATE_LIMIT_CLEANUP_INTERVAL_MS = 60 * 1000L;
     private static final long MAX_FILE_READ_BYTES = 512L * 1024L;
     private static final long MAX_FILE_WRITE_BYTES = 1024L * 1024L;
+    private static final long SYSTEM_DOCTOR_CACHE_TTL_MS = 30_000L;
     private final Deque<Map<String, Object>> metricHistory = new ArrayDeque<>();
+    private volatile Map<String, Object> cachedSystemDoctorPayload;
+    private volatile long cachedSystemDoctorAt = 0L;
     private boolean tlsEnabled = false;
     private int port = DEFAULT_PORT;
     private int wsPort = DEFAULT_WS_PORT;
@@ -155,7 +167,8 @@ public class CloudHttpServer {
         }
 
         server = bindHttpServerWithFallback(port, sslContext);
-        server.setExecutor(Executors.newFixedThreadPool(10));
+        httpExecutor = createHttpExecutor();
+        server.setExecutor(httpExecutor);
 
         // API Endpoints
         setupEndpoints();
@@ -196,27 +209,55 @@ public class CloudHttpServer {
                 " Konnte WebSocket nicht starten: " + msg);
     }
 
+    private ExecutorService createHttpExecutor() {
+        int cores = Math.max(2, Runtime.getRuntime().availableProcessors());
+        int coreThreads = Math.min(8, Math.max(4, cores));
+        int maxThreads = Math.min(32, Math.max(coreThreads, cores * 2));
+        AtomicInteger counter = new AtomicInteger();
+        ThreadFactory factory = runnable -> {
+            Thread thread = new Thread(runnable, "KalliCloud-REST-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+        return new ThreadPoolExecutor(
+                coreThreads,
+                maxThreads,
+                60L,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(512),
+                factory,
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+    }
+
     private void setupEndpoints() {
         // Health & Status
         registerContext("/api/v1/health", this::handleHealth);
         registerContext("/api/v1/readiness", this::handleReadiness);
+        registerContext("/api/v1/auth/session", this::handleAuthSession);
+        registerContext("/api/v1/auth/logout", this::handleAuthLogout);
         registerContext("/api/v1/auth/me", this::handleAuthMe);
         registerContext("/api/v1/auth/debug", this::handleAuthDebug);
         registerContext("/api/v1/auth/rotate", this::handleRotateKey);
         registerContext("/api/v1/status", this::handleStatus);
         registerContext("/api/v1/dashboard/overview", this::handleDashboardOverview);
         registerContext("/api/v1/system/diagnostics", this::handleSystemDiagnostics);
+        registerContext("/api/v1/system/doctor", this::handleSystemDoctor);
         registerContext("/api/v1/system/capacity", this::handleSystemCapacityPlanner);
         registerContext("/api/v1/system/report", this::handleSystemReport);
         registerContext("/api/v1/events/recent", this::handleEventsRecent);
         registerContext("/api/v1/bungeesystem", this::handleBungeeSystem);
         registerContext("/api/v1/lifecycle", this::handleLifecycle);
+        registerContext("/api/v1/recovery/state", this::handleRecoveryState);
+        registerContext("/api/v1/recovery/unquarantine", this::handleRecoveryUnquarantine);
         registerContext("/api/v1/incidents", this::handleIncidents);
         registerContext("/api/v1/backups", this::handleBackups);
         registerContext("/api/v1/backups/create", this::handleBackupCreate);
         registerContext("/api/v1/backups/restore-staging", this::handleBackupRestoreStaging);
         registerContext("/api/v1/rolling/restart", this::handleRollingRestart);
         registerContext("/api/v1/firewall/check", this::handleFirewallCheck);
+        registerContext("/api/v1/motd", this::handleMotdStatus);
+        registerContext("/api/v1/motd/update", this::handleMotdUpdate);
         registerContext("/openapi.yml", this::handleOpenApiSpec);
 
         // Cluster Management
@@ -272,6 +313,28 @@ public class CloudHttpServer {
         registerContext("/api/v1/permissions/player", this::handlePermissionPlayerAlias);
         registerContext("/api/v1/permissions/check", this::handlePermissionCheck);
         registerContext("/api/v1/events/lobby", this::handleLobbyEvent);
+        registerContext("/api/v1/signs", this::handleSigns);
+        registerContext("/api/v1/signs/render", this::handleSignsRender);
+        registerContext("/api/v1/signs/upsert", this::handleSignUpsert);
+        registerContext("/api/v1/signs/delete", this::handleSignDelete);
+        registerContext("/api/v1/signs/layouts", this::handleSignLayouts);
+        registerContext("/api/v1/entity-selectors", this::handleEntitySelectors);
+        registerContext("/api/v1/entity-selectors/render", this::handleEntitySelectorsRender);
+        registerContext("/api/v1/entity-selectors/upsert", this::handleSignUpsert);
+        registerContext("/api/v1/entity-selectors/delete", this::handleSignDelete);
+        registerContext("/api/v1/entity-selectors/layouts", this::handleSignLayouts);
+        registerContext("/api/v1/selectors", this::handleSelectors);
+        registerContext("/api/v1/selectors/render", this::handleSelectorsRender);
+        registerContext("/api/v1/selectors/upsert", this::handleSignUpsert);
+        registerContext("/api/v1/selectors/delete", this::handleSignDelete);
+        registerContext("/api/v1/selectors/layouts", this::handleSignLayouts);
+        registerContext("/api/v1/selectors/templates", this::handleSelectorTemplates);
+        registerContext("/api/v1/selectors/preview", this::handleSelectorPreview);
+        registerContext("/api/v1/selectors/bulk", this::handleSelectorBulk);
+        registerContext("/api/v1/selectors/cleanup", this::handleSelectorCleanup);
+        registerContext("/api/v1/selectors/versions", this::handleSelectorVersions);
+        registerContext("/api/v1/selectors/rollback", this::handleSelectorRollback);
+        registerContext("/api/v1/selectors/heartbeat", this::handleSelectorHeartbeat);
 
         // Safe managed file browser
         registerContext("/api/v1/files/list", this::handleFileList);
@@ -365,6 +428,49 @@ public class CloudHttpServer {
         sendResponse(exchange, 200, buildReadinessPayload());
     }
 
+    private void handleAuthSession(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        if (!checkRateLimit(exchange)) {
+            sendResponse(exchange, 429, Map.of("error", "Rate limit exceeded"));
+            return;
+        }
+        Map<String, Object> body = readJsonBody(exchange);
+        String presented = stringValue(body.get("apiKey"), readApiKey(exchange));
+        String resolved = resolvePresentedApiKey(presented);
+        if (resolved == null || !isKnownApiKey(resolved)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        String role = apiKeyRoles.getOrDefault(resolved, "VIEWER");
+        String token = issueDashboardSession(role, getClientIp(exchange));
+        String wsTicket = issueWsTicket();
+        sendResponse(exchange, 200, Map.of(
+                "authenticated", true,
+                "role", role,
+                "sessionToken", token,
+                "expiresAt", dashboardSessions.get(token).expiresAt,
+                "expiresInMs", DASHBOARD_SESSION_TTL_MS,
+                "wsTicket", wsTicket,
+                "wsUrl", buildWsUrl(exchange)
+        ));
+    }
+
+    private void handleAuthLogout(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        String token = readBearerToken(exchange);
+        if (token != null) {
+            dashboardSessions.remove(token);
+            apiKeyRoles.remove(token);
+        }
+        sendResponse(exchange, 200, Map.of("loggedOut", true));
+    }
+
     private Map<String, Object> buildReadinessPayload() {
         Master master = Master.getInstance();
         Map<String, Object> diagnostics = master == null ? Map.of() : buildSystemDiagnostics();
@@ -402,16 +508,13 @@ public class CloudHttpServer {
         }
         String apiKey = readApiKey(exchange);
         String role = apiKeyRoles.getOrDefault(apiKey, "UNKNOWN");
-        String hostHeader = exchange.getRequestHeaders().getFirst("Host");
-        String host = (hostHeader != null && !hostHeader.isBlank())
-                ? hostHeader.split(":")[0]
-                : (exchange.getLocalAddress() != null ? exchange.getLocalAddress().getHostString() : "localhost");
-        String wsScheme = tlsEnabled ? "wss" : "ws";
         String wsTicket = issueWsTicket();
         sendResponse(exchange, 200, Map.of(
                 "authenticated", true,
                 "role", role,
-                "wsUrl", wsScheme + "://" + host + ":" + wsPort + "/live",
+                "session", apiKey != null && dashboardSessions.containsKey(apiKey),
+                "sessionExpiresAt", sessionExpiresAt(apiKey),
+                "wsUrl", buildWsUrl(exchange),
                 "wsTicket", wsTicket
         ));
     }
@@ -565,6 +668,7 @@ public class CloudHttpServer {
             Map<String, Object> w = new HashMap<>();
             w.put("wrapperId", wrapper.getWrapperId());
             w.put("hostname", wrapper.getHostname());
+            w.put("routeHost", wrapper.getRouteHost());
             w.put("activeServers", wrapper.getActiveServers());
             w.put("cpuUsage", wrapper.getCpuUsage());
             w.put("availableMemory", wrapper.getAvailableMemory());
@@ -622,6 +726,18 @@ public class CloudHttpServer {
         sendResponse(exchange, 200, buildSystemDiagnostics());
     }
 
+    private void handleSystemDoctor(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildSystemDoctorPayload());
+    }
+
     private void handleSystemCapacityPlanner(HttpExchange exchange) throws IOException {
         if (!authenticateRequest(exchange)) {
             sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
@@ -652,6 +768,7 @@ public class CloudHttpServer {
         report.put("health", buildHealthPayload());
         report.put("readiness", buildReadinessPayload());
         report.put("masterAvailable", master != null);
+        report.put("doctor", buildSystemDoctorPayload());
         if (master != null) {
             report.put("overview", buildDashboardOverviewPayload());
             report.put("diagnostics", buildSystemDiagnostics());
@@ -661,6 +778,75 @@ public class CloudHttpServer {
         report.put("logStats", buildLogStats(readLatestLogLines(2_000)));
         report.put("recentAudit", findLogLines("AUDIT", "INFO", 25));
         sendResponse(exchange, 200, report);
+    }
+
+    private Map<String, Object> buildSystemDoctorPayload() {
+        long now = System.currentTimeMillis();
+        Map<String, Object> cached = cachedSystemDoctorPayload;
+        if (cached != null && now - cachedSystemDoctorAt < SYSTEM_DOCTOR_CACHE_TTL_MS) {
+            return cached;
+        }
+
+        synchronized (this) {
+            cached = cachedSystemDoctorPayload;
+            if (cached != null && now - cachedSystemDoctorAt < SYSTEM_DOCTOR_CACHE_TTL_MS) {
+                return cached;
+            }
+            Map<String, Object> fresh = buildSystemDoctorPayloadUncached(now);
+            cachedSystemDoctorPayload = fresh;
+            cachedSystemDoctorAt = now;
+            return fresh;
+        }
+    }
+
+    private Map<String, Object> buildSystemDoctorPayloadUncached(long now) {
+        Master master = Master.getInstance();
+        if (master != null) {
+            return SystemDoctor.buildReport(master.getConfigManager());
+        }
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("state", "CRITICAL");
+        summary.put("critical", 1);
+        summary.put("warnings", 0);
+        summary.put("info", 0);
+        summary.put("findings", 1);
+        summary.put("groups", 0);
+
+        Map<String, Object> finding = new LinkedHashMap<>();
+        finding.put("severity", "CRITICAL");
+        finding.put("id", "master:unavailable");
+        finding.put("message", "Master is not available.");
+        finding.put("recommendation", "Start the Cloud master before running full system diagnostics.");
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("timestamp", now);
+        report.put("summary", summary);
+        report.put("findings", List.of(finding));
+        return report;
+    }
+
+    private Map<String, Object> buildSystemDoctorLiveSummary() {
+        Map<String, Object> doctor = buildSystemDoctorPayload();
+        Map<String, Object> summary = new LinkedHashMap<>();
+        Object rawSummary = doctor.get("summary");
+        if (rawSummary instanceof Map<?, ?> map) {
+            summary.put("state", String.valueOf(map.get("state") == null ? "UNKNOWN" : map.get("state")));
+            summary.put("critical", map.get("critical") == null ? 0 : map.get("critical"));
+            summary.put("warnings", map.get("warnings") == null ? 0 : map.get("warnings"));
+            summary.put("info", map.get("info") == null ? 0 : map.get("info"));
+            summary.put("findings", map.get("findings") == null ? 0 : map.get("findings"));
+            summary.put("groups", map.get("groups") == null ? 0 : map.get("groups"));
+        } else {
+            summary.put("state", "UNKNOWN");
+            summary.put("critical", 0);
+            summary.put("warnings", 0);
+            summary.put("info", 0);
+            summary.put("findings", 0);
+            summary.put("groups", 0);
+        }
+        summary.put("cachedAt", cachedSystemDoctorAt);
+        return summary;
     }
 
     private void handleEventsRecent(HttpExchange exchange) throws IOException {
@@ -784,6 +970,51 @@ public class CloudHttpServer {
             payload.put("servers", servers);
         }
         sendResponse(exchange, 200, payload);
+    }
+
+    private void handleRecoveryState(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        sendResponse(exchange, 200, master.getRecoveryState());
+    }
+
+    private void handleRecoveryUnquarantine(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        String serverName = stringValue(request.get("serverName"), "");
+        if (serverName.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "serverName required"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        boolean cleared = master.clearServerQuarantine(serverName);
+        sendResponse(exchange, 200, Map.of(
+                "serverName", serverName,
+                "cleared", cleared,
+                "recovery", master.getRecoveryState()
+        ));
     }
 
     private void handleIncidents(HttpExchange exchange) throws IOException {
@@ -922,6 +1153,119 @@ public class CloudHttpServer {
             }
         }
         sendResponse(exchange, 200, Map.of("checks", checks, "count", checks.size()));
+    }
+
+    private void handleMotdStatus(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildMotdPayload());
+    }
+
+    private void handleMotdUpdate(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange, "OPERATOR")) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null || master.getConfigManager() == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        setConfigIfPresent("CloudMaster.MOTD.Enabled", request.get("enabled"));
+        setConfigIfPresent("CloudMaster.MOTD.Line1", request.get("line1"));
+        setConfigIfPresent("CloudMaster.MOTD.Line2", request.get("line2"));
+        setConfigIfPresent("CloudMaster.MOTD.MaintenanceLine1", request.get("maintenanceLine1"));
+        setConfigIfPresent("CloudMaster.MOTD.MaintenanceLine2", request.get("maintenanceLine2"));
+        setConfigIfPresent("CloudMaster.MOTD.FakeSlots.Enabled", request.get("fakeSlotsEnabled"));
+        setConfigIfPresent("CloudMaster.MOTD.FakeSlots.Online",
+                request.containsKey("fakeSlotsOnline") ? request.get("fakeSlotsOnline") : request.get("fakeOnline"));
+        setConfigIfPresent("CloudMaster.MOTD.FakeSlots.Max",
+                request.containsKey("fakeSlotsMax") ? request.get("fakeSlotsMax") : request.get("fakeMax"));
+        try {
+            master.getConfigManager().getMasterConfigData().save(master.getConfigManager().getMasterConfigFile());
+            master.reloadConfiguration("api:motd-update");
+        } catch (Exception e) {
+            sendResponse(exchange, 500, Map.of("error", "Failed to save MOTD config: " + e.getMessage()));
+            return;
+        }
+        master.getEventTimelineService().publish("MOTD_UPDATED", "api", "INFO",
+                "MOTD/slots config updated", Map.of("by", "api"));
+        sendResponse(exchange, 200, buildMotdPayload());
+    }
+
+    private Map<String, Object> buildMotdPayload() {
+        Master master = Master.getInstance();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (master == null || master.getConfigManager() == null) {
+            payload.put("available", false);
+            return payload;
+        }
+        boolean enabled = booleanConfig("CloudMaster.MOTD.Enabled", true);
+        String line1 = stringConfig("CloudMaster.MOTD.Line1", "&bKalliCloud Network");
+        String line2 = stringConfig("CloudMaster.MOTD.Line2", "&7Powered by KalliCloud");
+        String maintenanceLine1 = stringConfig("CloudMaster.MOTD.MaintenanceLine1", "&cMaintenance");
+        String maintenanceLine2 = stringConfig("CloudMaster.MOTD.MaintenanceLine2", "&7Please try again later");
+        boolean fakeSlotsEnabled = booleanConfig("CloudMaster.MOTD.FakeSlots.Enabled", false);
+        int fakeOnline = intConfig("CloudMaster.MOTD.FakeSlots.Online", -1);
+        int fakeMax = intConfig("CloudMaster.MOTD.FakeSlots.Max", -1);
+        payload.put("available", true);
+        payload.put("motd", Map.of("enabled", enabled, "line1", line1, "line2", line2));
+        payload.put("maintenance", Map.of("line1", maintenanceLine1, "line2", maintenanceLine2));
+        payload.put("fakeSlots", Map.of("enabled", fakeSlotsEnabled, "online", fakeOnline, "max", fakeMax));
+        payload.put("enabled", enabled);
+        payload.put("line1", line1);
+        payload.put("line2", line2);
+        payload.put("maintenanceLine1", maintenanceLine1);
+        payload.put("maintenanceLine2", maintenanceLine2);
+        payload.put("fakeSlotsEnabled", fakeSlotsEnabled);
+        payload.put("fakeOnline", fakeOnline);
+        payload.put("fakeMax", fakeMax);
+        payload.put("actualOnline", master.getPlayerSessionManager() == null ? 0
+                : master.getPlayerSessionManager().getPlayerServerMapSnapshot().size());
+        payload.put("actualMax", master.getRunningServers().values().stream()
+                .filter(server -> !isProxyServer(server))
+                .mapToInt(server -> Math.max(0, server.maxPlayers))
+                .sum());
+        return payload;
+    }
+
+    private void setConfigIfPresent(String key, Object value) {
+        if (value == null || Master.getInstance() == null || Master.getInstance().getConfigManager() == null) {
+            return;
+        }
+        Master.getInstance().getConfigManager().getMasterConfigData().set(key, value);
+    }
+
+    private String stringConfig(String key, String fallback) {
+        try {
+            String value = Master.getInstance().getConfigManager().getMaster(key);
+            return value == null || value.isBlank() ? fallback : value;
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private boolean booleanConfig(String key, boolean fallback) {
+        return Boolean.parseBoolean(stringConfig(key, String.valueOf(fallback)));
+    }
+
+    private int intConfig(String key, int fallback) {
+        try {
+            return Integer.parseInt(stringConfig(key, String.valueOf(fallback)));
+        } catch (Exception ignored) {
+            return fallback;
+        }
     }
 
     private Map<String, Object> buildSystemCapacityPlanner() {
@@ -1159,7 +1503,7 @@ public class CloudHttpServer {
             serverInfo.put("networkMode", server.networkMode);
             serverInfo.put("diskReadBytes", server.diskReadBytes);
             serverInfo.put("diskWriteBytes", server.diskWriteBytes);  // FIX: war server.ram
-            serverInfo.put("port", server.port);  // NEU: Port hinzugefÃƒÆ’Ã‚Â¼gt
+            serverInfo.put("port", server.port);
             serverInfo.put("lastUpdate", server.lastUpdate);  // FIX: statt getStartTime()
             servers.add(serverInfo);
         });
@@ -1268,6 +1612,7 @@ public class CloudHttpServer {
             Map<String, Object> wrapperInfo = new HashMap<>();
             wrapperInfo.put("wrapperId", wrapper.getWrapperId());
             wrapperInfo.put("hostname", wrapper.getHostname());
+            wrapperInfo.put("routeHost", wrapper.getRouteHost());
             wrapperInfo.put("maxMemory", wrapper.getMaxMemory());
             wrapperInfo.put("availableMemory", wrapper.getAvailableMemory());
             wrapperInfo.put("cpuUsage", wrapper.getCpuUsage());
@@ -1460,6 +1805,373 @@ public class CloudHttpServer {
         queueStatus.put("stats", master.getPlayerQueueManager().getQueueStats());
 
         sendResponse(exchange, 200, queueStatus);
+    }
+
+    private void handleSigns(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildSignCenterPayload(false, Set.of("SIGN")));
+    }
+
+    private void handleSignsRender(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildSignCenterPayload(true, Set.of("SIGN")));
+    }
+
+    private void handleEntitySelectors(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildSignCenterPayload(false, Set.of("NPC", "MOB")));
+    }
+
+    private void handleEntitySelectorsRender(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildSignCenterPayload(true, Set.of("NPC", "MOB")));
+    }
+
+    private void handleSelectors(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildSignCenterPayload(false));
+    }
+
+    private void handleSelectorsRender(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, buildSignCenterPayload(true));
+    }
+
+    private void handleSignUpsert(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        String path = exchange.getRequestURI().getPath();
+        if (path.startsWith("/api/v1/signs")) {
+            request.put("selectorType", "SIGN");
+        } else if (path.startsWith("/api/v1/entity-selectors")) {
+            String type = stringValue(request.get("selectorType"), stringValue(request.get("type"), "NPC")).toUpperCase(Locale.ROOT);
+            if (!"NPC".equals(type) && !"MOB".equals(type)) {
+                sendResponse(exchange, 400, Map.of("error", "selectorType must be NPC or MOB for entity-selectors"));
+                return;
+            }
+            request.put("selectorType", type);
+        }
+        if (stringValue(request.get("serverName"), stringValue(request.get("server"), "")).isBlank()
+                && stringValue(request.get("groupName"), stringValue(request.get("group"), "")).isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "serverName or groupName required"));
+            return;
+        }
+        Map<String, Object> sign = master.getConfigManager().upsertCloudSign(request);
+        master.getEventTimelineService().publish("SELECTOR_UPSERT", "selector:" + sign.get("id"), "INFO",
+                "Cloud selector upserted", Map.of("selectorId", String.valueOf(sign.get("id"))));
+        CentralLogger.audit("api", "selector_upsert", String.valueOf(sign.get("id")));
+        sendResponse(exchange, 200, Map.of("selector", sign, "sign", sign, "snapshot", buildSignCenterPayload(true)));
+    }
+
+    private void handleSignDelete(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod()) && !"DELETE".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        String id;
+        if ("DELETE".equals(exchange.getRequestMethod())) {
+            id = parseQueryParams(exchange.getRequestURI().getQuery()).getOrDefault("id", "");
+        } else {
+            id = stringValue(readJsonBody(exchange).get("id"), "");
+        }
+        if (id.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "id required"));
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        Map<String, Object> existing = findSelectorForPath(master, id, path);
+        if (existing == null) {
+            sendResponse(exchange, 404, Map.of("error", "selector not found for this endpoint type", "id", id));
+            return;
+        }
+        boolean deleted = master.getConfigManager().deleteCloudSign(id);
+        master.getEventTimelineService().publish("SELECTOR_DELETE", "selector:" + id, "INFO",
+                "Cloud selector deleted", Map.of("selectorId", id, "deleted", deleted));
+        CentralLogger.audit("api", "selector_delete", id);
+        sendResponse(exchange, 200, Map.of("id", id, "deleted", deleted, "snapshot", buildSignCenterPayload(true)));
+    }
+
+    private Map<String, Object> findSelectorForPath(Master master, String id, String path) {
+        Set<String> allowedTypes = Set.of();
+        if (path.startsWith("/api/v1/signs")) {
+            allowedTypes = Set.of("SIGN");
+        } else if (path.startsWith("/api/v1/entity-selectors")) {
+            allowedTypes = Set.of("NPC", "MOB");
+        }
+        for (Map<String, Object> selector : master.getConfigManager().getCloudSigns()) {
+            if (!id.equalsIgnoreCase(stringValue(selector.get("id"), ""))) {
+                continue;
+            }
+            String type = stringValue(selector.get("selectorType"), "SIGN").toUpperCase(Locale.ROOT);
+            if (allowedTypes.isEmpty() || allowedTypes.contains(type)) {
+                return selector;
+            }
+        }
+        return null;
+    }
+
+    private void handleSignLayouts(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        if ("GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 200, Map.of(
+                    "layouts", master.getConfigManager().getSignLayouts(),
+                    "animationFrames", master.getConfigManager().getSignAnimationFrames()
+            ));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        String name = stringValue(request.get("name"), "");
+        List<String> lines = stringList(request.get("lines"));
+        if (name.isBlank() || lines.isEmpty()) {
+            sendResponse(exchange, 400, Map.of("error", "name and lines required"));
+            return;
+        }
+        boolean saved = master.getConfigManager().upsertSignLayout(name, lines);
+        master.getEventTimelineService().publish("SELECTOR_LAYOUT_UPSERT", "selector-layout:" + name, "INFO",
+                "Cloud selector layout upserted", Map.of("layout", name, "saved", saved));
+        CentralLogger.audit("api", "selector_layout_upsert", name);
+        sendResponse(exchange, 200, Map.of("saved", saved, "layouts", master.getConfigManager().getSignLayouts()));
+    }
+
+    private void handleSelectorTemplates(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        sendResponse(exchange, 200, Map.of("templates", master.getConfigManager().getSelectorTemplates()));
+    }
+
+    private void handleSelectorPreview(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        Map<String, Object> selector;
+        if ("GET".equals(exchange.getRequestMethod())) {
+            String id = parseQueryParams(exchange.getRequestURI().getQuery()).getOrDefault("id", "");
+            selector = findSelectorForPath(master, id, "/api/v1/selectors");
+            if (selector == null) {
+                sendResponse(exchange, 404, Map.of("error", "selector not found", "id", id));
+                return;
+            }
+        } else if ("POST".equals(exchange.getRequestMethod())) {
+            selector = readJsonBody(exchange);
+        } else {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        sendResponse(exchange, 200, Map.of("preview", renderSelectorPreview(master, selector)));
+    }
+
+    private void handleSelectorBulk(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange, "ADMIN")) {
+            sendResponse(exchange, 403, Map.of("error", "Forbidden"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        Map<String, Object> result = master.getConfigManager().bulkUpdateSelectors(readJsonBody(exchange));
+        master.getEventTimelineService().publish("SELECTOR_BULK", "selectors", "INFO",
+                "Selector bulk action executed", result);
+        CentralLogger.audit("api", "selector_bulk", String.valueOf(result));
+        sendResponse(exchange, 200, Map.of("result", result, "snapshot", buildSignCenterPayload(true)));
+    }
+
+    private void handleSelectorCleanup(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange, "ADMIN")) {
+            sendResponse(exchange, 403, Map.of("error", "Forbidden"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        Map<String, Object> result = master.getConfigManager().cleanupStaleSelectors(booleanValue(request.get("disableOnly"), true));
+        master.getEventTimelineService().publish("SELECTOR_CLEANUP", "selectors", "INFO",
+                "Selector cleanup executed", result);
+        CentralLogger.audit("api", "selector_cleanup", String.valueOf(result));
+        sendResponse(exchange, 200, Map.of("result", result, "snapshot", buildSignCenterPayload(true)));
+    }
+
+    private void handleSelectorVersions(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange)) {
+            sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
+            return;
+        }
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        List<String> versions = master.getConfigManager().listSelectorVersions();
+        sendResponse(exchange, 200, Map.of("versions", versions, "count", versions.size()));
+    }
+
+    private void handleSelectorRollback(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange, "ADMIN")) {
+            sendResponse(exchange, 403, Map.of("error", "Forbidden"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        String version = stringValue(readJsonBody(exchange).get("version"), "");
+        boolean rolledBack = master.getConfigManager().rollbackSelectorVersion(version);
+        CentralLogger.audit("api", "selector_rollback", version + " -> " + rolledBack);
+        sendResponse(exchange, rolledBack ? 200 : 404, Map.of(
+                "rolledBack", rolledBack,
+                "version", version,
+                "snapshot", buildSignCenterPayload(true)
+        ));
+    }
+
+    private void handleSelectorHeartbeat(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange, "OPERATOR")) {
+            sendResponse(exchange, 403, Map.of("error", "Forbidden"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        Map<String, Object> request = readJsonBody(exchange);
+        String id = stringValue(request.get("id"), "");
+        Map<String, Object> selector = findSelectorForPath(master, id, "/api/v1/selectors");
+        if (selector == null) {
+            sendResponse(exchange, 404, Map.of("error", "selector not found", "id", id));
+            return;
+        }
+        selector.put("spawned", booleanValue(request.get("spawned"), true));
+        selector.put("lastSeenAt", System.currentTimeMillis());
+        if (request.containsKey("world")) selector.put("world", stringValue(request.get("world"), "world"));
+        if (request.containsKey("x")) selector.put("x", numberValue(request.get("x"), 0));
+        if (request.containsKey("y")) selector.put("y", numberValue(request.get("y"), 0));
+        if (request.containsKey("z")) selector.put("z", numberValue(request.get("z"), 0));
+        if (request.containsKey("yaw")) selector.put("yaw", doubleValue(request.get("yaw"), 0.0));
+        if (request.containsKey("pitch")) selector.put("pitch", doubleValue(request.get("pitch"), 0.0));
+        if (request.containsKey("world") || request.containsKey("x") || request.containsKey("y") || request.containsKey("z")) {
+            selector.put("locationMode", "FIXED");
+            selector.put("autoLocation", false);
+        }
+        Map<String, Object> saved = master.getConfigManager().upsertCloudSign(selector);
+        sendResponse(exchange, 200, Map.of("selector", saved));
     }
 
     private void handleQueueJoin(HttpExchange exchange) throws IOException {
@@ -2241,6 +2953,237 @@ public class CloudHttpServer {
         return result;
     }
 
+    private Map<String, Object> buildSignCenterPayload(boolean renderLines) {
+        return buildSignCenterPayload(renderLines, Set.of());
+    }
+
+    private Map<String, Object> buildSignCenterPayload(boolean renderLines, Set<String> selectorTypes) {
+        Master master = Master.getInstance();
+        if (master == null) {
+            return Map.of("signs", List.of(), "layouts", Map.of(), "rendered", renderLines);
+        }
+        Map<String, Object> snapshot = new LinkedHashMap<>(master.getConfigManager().getSignCenterSnapshot());
+        List<Map<String, Object>> enriched = new ArrayList<>();
+        List<?> signs = (List<?>) snapshot.getOrDefault("signs", List.of());
+        int animationIndex = (int) ((System.currentTimeMillis() / 500L)
+                % Math.max(1, master.getConfigManager().getSignAnimationFrames().size()));
+        String animation = master.getConfigManager().getSignAnimationFrames().get(animationIndex);
+        for (Object rawSign : signs) {
+            if (!(rawSign instanceof Map<?, ?> signMap)) {
+                continue;
+            }
+            Map<String, Object> sign = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : signMap.entrySet()) {
+                sign.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            String selectorType = stringValue(sign.get("selectorType"), "SIGN").toUpperCase(Locale.ROOT);
+            if (selectorTypes != null && !selectorTypes.isEmpty() && !selectorTypes.contains(selectorType)) {
+                continue;
+            }
+            ServerInstance target = resolveSignTarget(master, sign);
+            sign.put("target", serverToSignTarget(target, sign));
+            Map<String, Object> health = buildSelectorHealth(master, sign, target);
+            sign.put("health", health);
+            sign.put("actionDecision", health.getOrDefault("action", "CONNECT"));
+            if (renderLines) {
+                String layout = stringValue(sign.get("layout"), "Default");
+                List<String> lines = renderSignLines(master.getConfigManager().getSignLayout(layout), sign, target, animation);
+                sign.put("lines", lines);
+                List<String> customHologram = stringList(sign.get("hologramLines"));
+                sign.put("renderedHologramLines", customHologram.isEmpty()
+                        ? lines
+                        : renderSignLines(customHologram, sign, target, animation));
+                sign.put("renderedDisplayName", renderDisplayName(sign, target, animation));
+            }
+            enriched.add(sign);
+        }
+        snapshot.put("signs", enriched);
+        snapshot.put("categories", buildSelectorCategorySummary(enriched));
+        snapshot.put("rendered", renderLines);
+        snapshot.put("generatedAt", System.currentTimeMillis());
+        return snapshot;
+    }
+
+    private ServerInstance resolveSignTarget(Master master, Map<String, Object> sign) {
+        String serverName = stringValue(sign.get("serverName"), "");
+        if (!serverName.isBlank()) {
+            ServerInstance exact = master.getRunningServers().get(serverName);
+            if (exact != null) {
+                return exact;
+            }
+        }
+        String groupName = stringValue(sign.get("groupName"), "");
+        if (groupName.isBlank()) {
+            return null;
+        }
+        return master.getRunningServers().values().stream()
+                .filter(server -> groupName.equalsIgnoreCase(server.groupName))
+                .sorted(Comparator
+                        .comparing((ServerInstance server) -> !"ONLINE".equalsIgnoreCase(server.status))
+                        .thenComparingInt(server -> server.playerCount)
+                        .thenComparing(server -> server.serverName))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Map<String, Object> serverToSignTarget(ServerInstance server, Map<String, Object> sign) {
+        Map<String, Object> target = new LinkedHashMap<>();
+        String configuredServer = stringValue(sign.get("serverName"), "");
+        String configuredGroup = stringValue(sign.get("groupName"), "");
+        target.put("serverName", server == null ? configuredServer : server.serverName);
+        target.put("groupName", server == null ? configuredGroup : server.groupName);
+        target.put("status", server == null ? "OFFLINE" : server.status);
+        target.put("online", server != null && "ONLINE".equalsIgnoreCase(server.status));
+        target.put("playersOnline", server == null ? 0 : server.playerCount);
+        target.put("maxPlayers", server == null ? 0 : server.maxPlayers);
+        target.put("tps", server == null ? 0.0 : server.tps);
+        target.put("port", server == null ? -1 : server.port);
+        target.put("wrapperId", server == null ? "" : server.wrapperId);
+        target.put("lifecycleState", server == null ? "OFFLINE" : server.getLifecycleState().name());
+        return target;
+    }
+
+    private Map<String, Object> renderSelectorPreview(Master master, Map<String, Object> selector) {
+        Map<String, Object> sign = new LinkedHashMap<>(selector);
+        if (!sign.containsKey("selectorType")) {
+            sign.put("selectorType", "SIGN");
+        }
+        ServerInstance target = resolveSignTarget(master, sign);
+        String layout = stringValue(sign.get("layout"), defaultLayoutForSelector(sign));
+        String animation = master.getConfigManager().getSignAnimationFrames().stream().findFirst().orElse("");
+        List<String> signLines = renderSignLines(master.getConfigManager().getSignLayout(layout), sign, target, animation);
+        List<String> customHologram = stringList(sign.get("hologramLines"));
+        Map<String, Object> preview = new LinkedHashMap<>(sign);
+        preview.put("target", serverToSignTarget(target, sign));
+        preview.put("health", buildSelectorHealth(master, sign, target));
+        preview.put("lines", signLines);
+        preview.put("renderedHologramLines", customHologram.isEmpty()
+                ? signLines
+                : renderSignLines(customHologram, sign, target, animation));
+        preview.put("renderedDisplayName", renderDisplayName(sign, target, animation));
+        return preview;
+    }
+
+    private Map<String, Object> buildSelectorHealth(Master master, Map<String, Object> sign, ServerInstance target) {
+        Map<String, Object> health = new LinkedHashMap<>();
+        boolean enabled = Boolean.parseBoolean(String.valueOf(sign.getOrDefault("enabled", true)));
+        String serverName = stringValue(sign.get("serverName"), "");
+        String groupName = stringValue(sign.get("groupName"), "");
+        boolean hasGroup = groupName.isBlank() || master.getConfigManager().getAllServerGroups().stream().anyMatch(groupName::equalsIgnoreCase);
+        boolean maintenance = !groupName.isBlank() && master.getConfigManager().isMaintenanceMode(groupName);
+        boolean full = target != null && target.maxPlayers > 0 && target.playerCount >= target.maxPlayers;
+        boolean online = target != null && "ONLINE".equalsIgnoreCase(target.status);
+        String status = "OK";
+        String action = "CONNECT";
+        List<String> issues = new ArrayList<>();
+        if (!enabled) {
+            status = "DISABLED";
+            action = "DISABLED";
+            issues.add("selector disabled");
+        } else if (!hasGroup) {
+            status = "MISSING_GROUP";
+            action = "DISABLED";
+            issues.add("target group missing");
+        } else if (!serverName.isBlank() && target == null) {
+            status = "TARGET_OFFLINE";
+            action = stringValue(sign.get("fallbackGroup"), "").isBlank() ? "QUEUE" : "FALLBACK";
+            issues.add("target server offline");
+        } else if (target == null) {
+            status = "NO_TARGET";
+            action = "QUEUE";
+            issues.add("no live target available");
+        } else if (maintenance) {
+            status = "MAINTENANCE";
+            action = "DISABLED";
+            issues.add("target group in maintenance");
+        } else if (!online) {
+            status = "TARGET_NOT_READY";
+            action = "QUEUE";
+            issues.add("target not online");
+        } else if (full) {
+            status = "FULL";
+            action = Boolean.parseBoolean(String.valueOf(sign.getOrDefault("queueOnFull", true))) ? "QUEUE" : "FALLBACK";
+            issues.add("target full");
+        }
+        health.put("status", status);
+        health.put("action", action);
+        health.put("ok", "OK".equals(status));
+        health.put("issues", issues);
+        health.put("maintenance", maintenance);
+        health.put("full", full);
+        health.put("permissionRequired", !stringValue(sign.get("permission"), "").isBlank());
+        return health;
+    }
+
+    private Map<String, Object> buildSelectorCategorySummary(List<Map<String, Object>> selectors) {
+        Map<String, Integer> counts = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (Map<String, Object> selector : selectors) {
+            String category = stringValue(selector.get("category"), "General");
+            counts.put(category, counts.getOrDefault(category, 0) + 1);
+        }
+        return new LinkedHashMap<>(counts);
+    }
+
+    private String defaultLayoutForSelector(Map<String, Object> selector) {
+        String type = stringValue(selector.get("selectorType"), "SIGN");
+        if ("NPC".equalsIgnoreCase(type)) return "Npc";
+        if ("MOB".equalsIgnoreCase(type)) return "Mob";
+        return "Default";
+    }
+
+    private String renderDisplayName(Map<String, Object> sign, ServerInstance target, String animation) {
+        String displayName = stringValue(sign.get("displayName"), "");
+        if (displayName.isBlank()) {
+            String selectorType = stringValue(sign.get("selectorType"), "SIGN");
+            String targetName = target == null
+                    ? stringValue(sign.get("serverName"), stringValue(sign.get("groupName"), "Selector"))
+                    : target.serverName;
+            displayName = "SIGN".equalsIgnoreCase(selectorType) ? targetName : "&a" + targetName;
+        }
+        return renderSignLines(List.of(displayName), sign, target, animation).get(0);
+    }
+
+    private List<String> renderSignLines(List<String> templateLines, Map<String, Object> sign, ServerInstance target, String animation) {
+        List<String> lines = new ArrayList<>();
+        Map<String, String> placeholders = new LinkedHashMap<>();
+        placeholders.put("{id}", stringValue(sign.get("id"), ""));
+        placeholders.put("{world}", stringValue(sign.get("world"), "world"));
+        placeholders.put("{selector_type}", stringValue(sign.get("selectorType"), "SIGN"));
+        placeholders.put("{entity_type}", stringValue(sign.get("entityType"), ""));
+        placeholders.put("{display_name}", stringValue(sign.get("displayName"), ""));
+        placeholders.put("{category}", stringValue(sign.get("category"), "General"));
+        placeholders.put("{permission}", stringValue(sign.get("permission"), ""));
+        placeholders.put("{region}", stringValue(sign.get("region"), "GLOBAL"));
+        placeholders.put("{action}", stringValue(sign.get("actionDecision"), "CONNECT"));
+        if (sign.get("health") instanceof Map<?, ?> health) {
+            placeholders.put("{health}", stringValue(health.get("status"), "UNKNOWN"));
+        } else {
+            placeholders.put("{health}", "UNKNOWN");
+        }
+        placeholders.put("{server_name}", target == null ? stringValue(sign.get("serverName"), "") : target.serverName);
+        placeholders.put("{server}", placeholders.get("{server_name}"));
+        placeholders.put("{group}", target == null ? stringValue(sign.get("groupName"), "") : target.groupName);
+        placeholders.put("{status}", target == null ? "OFFLINE" : target.status);
+        placeholders.put("{players_online}", String.valueOf(target == null ? 0 : target.playerCount));
+        placeholders.put("{max_players}", String.valueOf(target == null ? 0 : target.maxPlayers));
+        placeholders.put("{players}", (target == null ? 0 : target.playerCount) + "/" + (target == null ? 0 : target.maxPlayers));
+        placeholders.put("{tps}", String.format(Locale.ROOT, "%.1f", target == null ? 0.0 : target.tps));
+        placeholders.put("{port}", String.valueOf(target == null ? -1 : target.port));
+        placeholders.put("{wrapper}", target == null ? "" : target.wrapperId);
+        placeholders.put("{animation}", animation == null ? "" : animation);
+        for (String line : templateLines) {
+            String rendered = line == null ? "" : line;
+            for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+                rendered = rendered.replace(entry.getKey(), entry.getValue());
+            }
+            lines.add(rendered);
+        }
+        while (lines.size() < 4) {
+            lines.add("");
+        }
+        return lines.subList(0, 4);
+    }
+
     private void publishApiEvent(String type, String message) {
         Master master = Master.getInstance();
         if (master != null && master.getEventTimelineService() != null) {
@@ -2902,7 +3845,12 @@ public class CloudHttpServer {
             sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
             return;
         }
-        Map<String, Object> report = SetupValidator.buildReport(Master.getInstance().getConfigManager(), false);
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        Map<String, Object> report = SetupValidator.buildReport(master.getConfigManager(), false);
         sendResponse(exchange, 200, report);
     }
 
@@ -2917,7 +3865,12 @@ public class CloudHttpServer {
             sendResponse(exchange, 400, Map.of("error", "key query required"));
             return;
         }
-        String value = Master.getInstance().getConfigManager().getMaster(key);
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        String value = master.getConfigManager().getMaster(key);
         sendResponse(exchange, 200, Map.of("key", key, "value", value));
     }
 
@@ -2937,9 +3890,14 @@ public class CloudHttpServer {
             sendResponse(exchange, 400, Map.of("error", "key and value required"));
             return;
         }
-        Master.getInstance().getConfigManager().getMasterConfigData().set(key, value);
-        Master.getInstance().getConfigManager().getMasterConfigData().save(Master.getInstance().getConfigManager().getMasterConfigFile());
-        Master.getInstance().reloadConfiguration("api:config-set");
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        master.getConfigManager().getMasterConfigData().set(key, value);
+        master.getConfigManager().getMasterConfigData().save(master.getConfigManager().getMasterConfigFile());
+        master.reloadConfiguration("api:config-set");
         sendResponse(exchange, 200, Map.of("message", "config updated", "key", key));
     }
 
@@ -2948,7 +3906,12 @@ public class CloudHttpServer {
             sendResponse(exchange, 401, Map.of("error", "Unauthorized"));
             return;
         }
-        Master.getInstance().getMonitoringService().publishEvent(
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+        master.getMonitoringService().publishEvent(
                 "WEBHOOK_TEST",
                 Map.of("message", "Manual webhook test from API", "timestamp", System.currentTimeMillis())
         );
@@ -3036,6 +3999,16 @@ public class CloudHttpServer {
         Map<String, Object> snapshot = new HashMap<>();
         snapshot.put("type", "live_update");
         snapshot.put("timestamp", System.currentTimeMillis());
+        snapshot.put("doctor", buildSystemDoctorLiveSummary());
+        if (master == null) {
+            snapshot.put("runningServers", 0);
+            snapshot.put("connectedWrappers", 0);
+            snapshot.put("queueTotal", 0);
+            snapshot.put("masterAvailable", false);
+            snapshot.put("recentEvents", List.of());
+            return snapshot;
+        }
+        snapshot.put("masterAvailable", true);
         snapshot.put("runningServers", master.getRunningServers().size());
         snapshot.put("connectedWrappers", master.getConnectedWrappers().size());
         snapshot.put("queueTotal", master.getPlayerQueueManager().getTotalQueued());
@@ -3107,6 +4080,27 @@ public class CloudHttpServer {
                       security: []
                       responses:
                         '200': { description: Readiness payload }
+                  /auth/session:
+                    post:
+                      summary: Create short-lived dashboard session from API key
+                      security: []
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              required: [apiKey]
+                              properties:
+                                apiKey: { type: string }
+                      responses:
+                        '200': { description: Session token and websocket ticket }
+                        '401': { description: Unauthorized }
+                  /auth/logout:
+                    post:
+                      summary: Revoke current dashboard session
+                      responses:
+                        '200': { description: Logout result }
                   /auth/me:
                     get:
                       summary: Validate current API key and issue dashboard WS ticket
@@ -3132,6 +4126,10 @@ public class CloudHttpServer {
                     get:
                       summary: System diagnostics score, issues and recommendations
                       responses: { '200': { description: Diagnostics payload } }
+                  /system/doctor:
+                    get:
+                      summary: Deep configuration doctor for ports, groups, network, monitoring and recovery
+                      responses: { '200': { description: System doctor report } }
                   /system/capacity:
                     get:
                       summary: Capacity planner for groups and wrappers
@@ -3146,6 +4144,110 @@ public class CloudHttpServer {
                       summary: Recent event timeline
                       responses:
                         '200': { description: Event list }
+                  /signs:
+                    get:
+                      summary: Central cloud sign registry with layouts, filtered to selectorType SIGN
+                      responses: { '200': { description: Sign center snapshot } }
+                  /signs/render:
+                    get:
+                      summary: Render registered signs with live server status placeholders, filtered to selectorType SIGN
+                      responses: { '200': { description: Rendered sign payload } }
+                  /signs/upsert:
+                    post:
+                      summary: Create or update a central cloud sign, forcing selectorType SIGN
+                      responses: { '200': { description: Sign saved } }
+                  /signs/delete:
+                    post:
+                      summary: Delete a central cloud sign by id
+                      responses: { '200': { description: Sign deleted } }
+                  /signs/layouts:
+                    get:
+                      summary: List central sign layouts
+                      responses: { '200': { description: Sign layout map } }
+                    post:
+                      summary: Create or update a central sign layout
+                      responses: { '200': { description: Sign layout saved } }
+                  /entity-selectors:
+                    get:
+                      summary: Central NPC and mob selector registry
+                      responses: { '200': { description: Entity selector center snapshot } }
+                  /entity-selectors/render:
+                    get:
+                      summary: Render NPC and mob selectors with live server status placeholders
+                      responses: { '200': { description: Rendered entity selector payload } }
+                  /entity-selectors/upsert:
+                    post:
+                      summary: Create or update a central NPC or mob selector
+                      responses: { '200': { description: Entity selector saved } }
+                  /entity-selectors/delete:
+                    post:
+                      summary: Delete a central NPC or mob selector by id
+                      responses: { '200': { description: Entity selector deleted } }
+                  /entity-selectors/layouts:
+                    get:
+                      summary: List central entity selector layouts
+                      responses: { '200': { description: Entity selector layout map } }
+                    post:
+                      summary: Create or update a central entity selector layout
+                      responses: { '200': { description: Entity selector layout saved } }
+                  /selectors:
+                    get:
+                      summary: Central selector registry for signs, NPCs and mobs
+                      responses: { '200': { description: Selector center snapshot } }
+                  /selectors/render:
+                    get:
+                      summary: Render signs, NPCs and mobs with live server status placeholders
+                      responses: { '200': { description: Rendered selector payload } }
+                  /selectors/upsert:
+                    post:
+                      summary: Create or update a central selector
+                      responses: { '200': { description: Selector saved } }
+                  /selectors/delete:
+                    post:
+                      summary: Delete a central selector by id
+                      responses: { '200': { description: Selector deleted } }
+                  /selectors/layouts:
+                    get:
+                      summary: List central selector layouts
+                      responses: { '200': { description: Selector layout map } }
+                    post:
+                      summary: Create or update a central selector layout
+                      responses: { '200': { description: Selector layout saved } }
+                  /selectors/templates:
+                    get:
+                      summary: List selector presets for signs, NPCs and mobs
+                      responses: { '200': { description: Selector template map } }
+                  /selectors/preview:
+                    get:
+                      summary: Render preview for one saved selector by id
+                      parameters:
+                        - in: query
+                          name: id
+                          schema: { type: string }
+                      responses: { '200': { description: Selector preview payload } }
+                    post:
+                      summary: Render preview for a selector draft
+                      responses: { '200': { description: Selector preview payload } }
+                  /selectors/bulk:
+                    post:
+                      summary: Bulk update selector state, layout or permissions
+                      responses: { '200': { description: Bulk selector result } }
+                  /selectors/cleanup:
+                    post:
+                      summary: Disable or delete stale selectors whose target no longer exists
+                      responses: { '200': { description: Selector cleanup result } }
+                  /selectors/versions:
+                    get:
+                      summary: List selector registry versions
+                      responses: { '200': { description: Selector version list } }
+                  /selectors/rollback:
+                    post:
+                      summary: Roll back selector registry to a previous version file
+                      responses: { '200': { description: Selector rollback result } }
+                  /selectors/heartbeat:
+                    post:
+                      summary: Report spawned selector health/location from a Lobby or Spigot plugin
+                      responses: { '200': { description: Selector heartbeat result } }
                   /bungeesystem:
                     get:
                       summary: BungeeSystem proxy-layer overview with proxies, punishments, clans and live events
@@ -3156,6 +4258,25 @@ public class CloudHttpServer {
                       summary: Server lifecycle transitions
                       responses:
                         '200': { description: Lifecycle state }
+                  /recovery/state:
+                    get:
+                      summary: Recovery, restart-lock and crash-quarantine state
+                      responses:
+                        '200': { description: Recovery state payload }
+                  /recovery/unquarantine:
+                    post:
+                      summary: Clear crash quarantine and failure counters for one server
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              required: [serverName]
+                              properties:
+                                serverName: { type: string, example: Lobby-1 }
+                      responses:
+                        '200': { description: Quarantine cleared payload }
                   /incidents:
                     get:
                       summary: List generated incident reports
@@ -3182,6 +4303,29 @@ public class CloudHttpServer {
                     get:
                       summary: TCP reachability checks for proxy/backend/API ports
                       responses: { '200': { description: Firewall check result } }
+                  /motd:
+                    get:
+                      summary: Network MOTD and slot display configuration
+                      responses: { '200': { description: MOTD payload } }
+                  /motd/update:
+                    post:
+                      summary: Update network MOTD and optional fake slot display
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              properties:
+                                enabled: { type: boolean }
+                                line1: { type: string }
+                                line2: { type: string }
+                                maintenanceLine1: { type: string }
+                                maintenanceLine2: { type: string }
+                                fakeSlotsEnabled: { type: boolean }
+                                fakeSlotsOnline: { type: integer }
+                                fakeSlotsMax: { type: integer }
+                      responses: { '200': { description: Updated MOTD payload } }
                   /cluster/info:
                     get:
                       summary: Cluster primary and node summary
@@ -3518,6 +4662,30 @@ public class CloudHttpServer {
         return allowed;
     }
 
+    private boolean authenticateRequest(HttpExchange exchange, String requiredRole) {
+        if (!checkRateLimit(exchange)) {
+            exchange.setAttribute("authFailureStatus", 429);
+            exchange.setAttribute("authFailureCode", "RATE_LIMITED");
+            exchange.setAttribute("authFailureMessage", "Rate limit exceeded. Try again later.");
+            return false;
+        }
+        String apiKey = readApiKey(exchange);
+        if (apiKey == null || !isKnownApiKey(apiKey)) {
+            exchange.setAttribute("authFailureStatus", 401);
+            exchange.setAttribute("authFailureCode", "UNAUTHORIZED");
+            exchange.setAttribute("authFailureMessage", "Missing or invalid API key.");
+            return false;
+        }
+        String role = apiKeyRoles.getOrDefault(apiKey, "VIEWER");
+        boolean allowed = hasRequiredRole(role, requiredRole == null || requiredRole.isBlank() ? "VIEWER" : requiredRole);
+        if (!allowed) {
+            exchange.setAttribute("authFailureStatus", 403);
+            exchange.setAttribute("authFailureCode", "FORBIDDEN");
+            exchange.setAttribute("authFailureMessage", "Role " + role + " is not allowed for this request.");
+        }
+        return allowed;
+    }
+
     private String readApiKey(HttpExchange exchange) {
         String authHeader = exchange.getRequestHeaders().getFirst("X-API-Key");
         String resolved = resolvePresentedApiKey(authHeader);
@@ -3534,7 +4702,19 @@ public class CloudHttpServer {
 
     private boolean isKnownApiKey(String key) {
         String sanitized = sanitizeApiKey(key);
-        return sanitized != null && apiKeyRoles.containsKey(sanitized);
+        if (sanitized == null) {
+            return false;
+        }
+        DashboardSession session = dashboardSessions.get(sanitized);
+        if (session != null) {
+            if (session.expiresAt < System.currentTimeMillis()) {
+                dashboardSessions.remove(sanitized);
+                apiKeyRoles.remove(sanitized);
+                return false;
+            }
+            return true;
+        }
+        return apiKeyRoles.containsKey(sanitized);
     }
 
     private boolean isValidLiveToken(String token) {
@@ -3560,6 +4740,49 @@ public class CloudHttpServer {
         String ticket = UUID.randomUUID().toString().replace("-", "");
         liveWsTickets.put(ticket, now + WS_TICKET_TTL_MS);
         return ticket;
+    }
+
+    private String issueDashboardSession(String role, String clientIp) {
+        cleanupDashboardSessions();
+        String token = "kcs_" + UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "");
+        DashboardSession session = new DashboardSession(role == null ? "VIEWER" : role, clientIp,
+                System.currentTimeMillis() + DASHBOARD_SESSION_TTL_MS);
+        dashboardSessions.put(token, session);
+        apiKeyRoles.put(token, session.role);
+        return token;
+    }
+
+    private void cleanupDashboardSessions() {
+        long now = System.currentTimeMillis();
+        dashboardSessions.entrySet().removeIf(entry -> {
+            boolean expired = entry.getValue().expiresAt < now;
+            if (expired) {
+                apiKeyRoles.remove(entry.getKey());
+            }
+            return expired;
+        });
+    }
+
+    private long sessionExpiresAt(String token) {
+        DashboardSession session = token == null ? null : dashboardSessions.get(token);
+        return session == null ? 0L : session.expiresAt;
+    }
+
+    private String readBearerToken(HttpExchange exchange) {
+        String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            return null;
+        }
+        return sanitizeApiKey(authorization.substring(7));
+    }
+
+    private String buildWsUrl(HttpExchange exchange) {
+        String hostHeader = exchange.getRequestHeaders().getFirst("Host");
+        String host = (hostHeader != null && !hostHeader.isBlank())
+                ? hostHeader.split(":")[0]
+                : (exchange.getLocalAddress() != null ? exchange.getLocalAddress().getHostString() : "localhost");
+        String wsScheme = tlsEnabled ? "wss" : "ws";
+        return wsScheme + "://" + host + ":" + wsPort + "/live";
     }
 
     private String resolvePresentedApiKey(String raw) {
@@ -4013,6 +5236,17 @@ public class CloudHttpServer {
         }
         try {
             return value == null ? fallback : Integer.parseInt(String.valueOf(value));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private double doubleValue(Object value, double fallback) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        try {
+            return value == null ? fallback : Double.parseDouble(String.valueOf(value));
         } catch (Exception ignored) {
             return fallback;
         }
@@ -5200,6 +6434,10 @@ public class CloudHttpServer {
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " HTTP-Server gestoppt");
         }
+        if (httpExecutor != null) {
+            httpExecutor.shutdownNow();
+            httpExecutor = null;
+        }
     }
 
     public int getPort() {
@@ -5208,6 +6446,18 @@ public class CloudHttpServer {
 
     public int getWsPort() {
         return wsPort;
+    }
+
+    private static final class DashboardSession {
+        private final String role;
+        private final String clientIp;
+        private final long expiresAt;
+
+        private DashboardSession(String role, String clientIp, long expiresAt) {
+            this.role = role;
+            this.clientIp = clientIp;
+            this.expiresAt = expiresAt;
+        }
     }
 }
 

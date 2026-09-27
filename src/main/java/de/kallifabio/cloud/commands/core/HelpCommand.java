@@ -43,7 +43,7 @@ public class HelpCommand extends BaseCloudCommand {
 
         List<String> categoryOrder = Arrays.asList(
                 "Core", "Console", "Server", "Wrapper", "Groups", "Scaling", "Templates",
-                "Queue", "Permissions", "Social", "Monitoring", "Other"
+                "Selectors", "Queue", "Permissions", "Social", "Monitoring", "Other"
         );
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.CYAN + "+------------------------------------------------------------+");
@@ -105,6 +105,7 @@ public class HelpCommand extends BaseCloudCommand {
         if (pkg.contains(".groups")) return "Groups";
         if (pkg.contains(".scaling")) return "Scaling";
         if (pkg.contains(".templates")) return "Templates";
+        if (pkg.contains(".selectors")) return "Selectors";
         if (pkg.contains(".queue")) return "Queue";
         if (pkg.contains(".permissions")) return "Permissions";
         if (pkg.contains(".social")) return "Social";

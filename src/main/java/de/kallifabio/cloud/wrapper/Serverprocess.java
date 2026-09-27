@@ -12,6 +12,7 @@ import de.kallifabio.cloud.libs.Message;
 import de.kallifabio.cloud.config.ConfigManager;
 import de.kallifabio.cloud.libs.console.ConsoleScreenManager;
 import de.kallifabio.cloud.libs.logging.CentralLogger;
+import de.kallifabio.cloud.software.ServerSoftware;
 import oshi.SystemInfo;
 import oshi.software.os.OSProcess;
 import org.bukkit.configuration.ConfigurationSection;
@@ -45,6 +46,7 @@ public class Serverprocess {
     private int port;
     private final Wrapper wrapper;
     private final ConfigManager configManager;
+    private final ServerSoftware software;
 
     private Process process;
     private BufferedWriter processInput;
@@ -93,6 +95,7 @@ public class Serverprocess {
         this.port = port;
         this.wrapper = wrapper;
         this.configManager = new ConfigManager();
+        this.software = ServerSoftware.resolve(configManager.getSoftwareForGroup(groupName), groupName);
         this.allocatedMemory = configManager.getRamForGroup(groupName);
         this.maxPlayers = configManager.getMaxPlayersForGroup(groupName);
     }
@@ -127,32 +130,14 @@ public class Serverprocess {
         updateServerProperties(serverDir, port);
         configureNetworkFiles(serverDir);
 
-        // Get JAR file (resolved via preflight/candidate lookup)
-        String jarFile = getJarFileName();
-        ensureServerJar(serverDir, jarFile);
+        // Resolve launch command (JAR or modloader argfile)
+        LaunchPlan launchPlan = resolveLaunchPlan(serverDir);
 
         // Create server screen
         ConsoleScreenManager.createServerScreen(serverName);
 
         // Start the server process
-        ProcessBuilder processBuilder = new ProcessBuilder(
-                "java",
-                "-Xmx" + allocatedMemory + "M",
-                "-Xms" + (allocatedMemory / 2) + "M",
-                "-XX:+UseG1GC",
-                "-XX:+ParallelRefProcEnabled",
-                "-XX:MaxGCPauseMillis=200",
-                "-XX:+UnlockExperimentalVMOptions",
-                "-XX:+DisableExplicitGC",
-                "-XX:G1NewSizePercent=30",
-                "-XX:G1MaxNewSizePercent=40",
-                "-XX:G1HeapRegionSize=8M",
-                "-XX:G1ReservePercent=20",
-                "-XX:G1HeapWastePercent=5",
-                "-jar",
-                jarFile,
-                "--nogui"
-        );
+        ProcessBuilder processBuilder = new ProcessBuilder(launchPlan.command);
 
         processBuilder.directory(serverDir);
         processBuilder.redirectErrorStream(true);
@@ -222,6 +207,9 @@ public class Serverprocess {
         }
 
         String expectedJar = getJarFileName();
+        if (findModernModloaderArgs(serverDir) != null) {
+            return false;
+        }
         File primaryJar = new File(serverDir, expectedJar);
         if (primaryJar.exists()) {
             return false;
@@ -240,7 +228,7 @@ public class Serverprocess {
 
     private void runStartupPreflight(File serverDir) throws IOException {
         ensureTemplateDirectories();
-        ensureServerJar(serverDir, getJarFileName());
+        resolveLaunchPlan(serverDir);
     }
 
     private void ensureTemplateDirectories() throws IOException {
@@ -444,7 +432,12 @@ public class Serverprocess {
                 configureProxyConfig(serverDir);
                 configureProxyForwardingSecret(serverDir);
             } else {
-                configureSpigotConfig(serverDir);
+                if (software.isSpigotLike()) {
+                    configureSpigotConfig(serverDir);
+                } else {
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
+                            " Modded/Vanilla Backend erkannt (" + software.name() + ") - spigot.yml-Konfiguration übersprungen für " + serverName);
+                }
                 registerBackendInLocalProxyConfigs();
             }
         } catch (Exception e) {
@@ -453,8 +446,7 @@ public class Serverprocess {
     }
 
     private boolean isProxyGroup() {
-        String g = groupName == null ? "" : groupName.toLowerCase(Locale.ROOT);
-        return g.contains("proxy") || g.contains("bungee") || g.contains("waterfall") || g.contains("velocity");
+        return software.isProxy();
     }
 
     private void configureSpigotConfig(File serverDir) throws IOException {
@@ -605,8 +597,15 @@ public class Serverprocess {
 
     private String getBackendBindAddress() {
         String configured = configManager.getMaster("CloudMaster.Network.BackendBindAddress");
-        if (configured == null || configured.isBlank()) {
-            return "127.0.0.1";
+        String routeHost = getGameRouteHost();
+        if (configured == null || configured.isBlank() || "auto".equalsIgnoreCase(configured.trim())
+                || "detect".equalsIgnoreCase(configured.trim())) {
+            return isLoopbackHost(routeHost) ? "127.0.0.1" : "0.0.0.0";
+        }
+        if (isLoopbackHost(configured) && !isLoopbackHost(routeHost)) {
+            CentralLogger.warn("NetworkConfig", "BackendBindAddress ist loopback, RouteHost ist remote (" +
+                    routeHost + ") - nutze automatisch 0.0.0.0 für " + serverName);
+            return "0.0.0.0";
         }
         return configured.trim();
     }
@@ -706,24 +705,117 @@ public class Serverprocess {
     }
 
     private boolean isProxyGroupName(String group) {
-        String g = group == null ? "" : group.toLowerCase(Locale.ROOT);
-        return g.contains("proxy") || g.contains("bungee") || g.contains("waterfall") || g.contains("velocity");
+        return ServerSoftware.resolve(configManager.getSoftwareForGroup(group), group).isProxy();
     }
 
     private String getGameRouteHost() {
+        if (wrapper != null && wrapper.getRouteHost() != null && !wrapper.getRouteHost().isBlank()) {
+            return wrapper.getRouteHost().trim();
+        }
         String configured = configManager.getMaster("CloudMaster.Network.GameHost");
-        if (configured == null || configured.isBlank()) {
+        if (configured == null || configured.isBlank() || "auto".equalsIgnoreCase(configured.trim())
+                || "detect".equalsIgnoreCase(configured.trim())) {
             return "127.0.0.1";
         }
         return configured.trim();
     }
 
-    private String getJarFileName() {
-        if (groupName.equalsIgnoreCase("Proxy")) {
-            return "bungeecord.jar";
-        } else {
-            return "spigot.jar";
+    private boolean isLoopbackHost(String host) {
+        if (host == null || host.isBlank()) {
+            return false;
         }
+        String normalized = host.trim().toLowerCase(Locale.ROOT);
+        return "localhost".equals(normalized) || normalized.startsWith("127.");
+    }
+
+    private String getJarFileName() {
+        return software.primaryJarName();
+    }
+
+    private LaunchPlan resolveLaunchPlan(File serverDir) throws IOException {
+        File modernArgs = findModernModloaderArgs(serverDir);
+        if (modernArgs != null) {
+            List<String> command = baseJavaCommand();
+            command.add("@" + serverDir.toPath().relativize(modernArgs.toPath()).toString().replace('\\', '/'));
+            command.addAll(resolveStartArgs("nogui"));
+            return new LaunchPlan(command, null, modernArgs);
+        }
+
+        String jarFile = getJarFileName();
+        ensureServerJar(serverDir, jarFile);
+        List<String> command = baseJavaCommand();
+        command.add("-jar");
+        command.add(jarFile);
+        command.addAll(resolveStartArgs("--nogui"));
+        return new LaunchPlan(command, new File(serverDir, jarFile), null);
+    }
+
+    private List<String> baseJavaCommand() {
+        List<String> command = new ArrayList<>();
+        command.add("java");
+        command.add("-Xmx" + allocatedMemory + "M");
+        command.add("-Xms" + Math.max(128, allocatedMemory / 2) + "M");
+        command.add("-XX:+UseG1GC");
+        command.add("-XX:+ParallelRefProcEnabled");
+        command.add("-XX:MaxGCPauseMillis=200");
+        command.add("-XX:+UnlockExperimentalVMOptions");
+        command.add("-XX:+DisableExplicitGC");
+        command.add("-XX:G1NewSizePercent=30");
+        command.add("-XX:G1MaxNewSizePercent=40");
+        command.add("-XX:G1HeapRegionSize=8M");
+        command.add("-XX:G1ReservePercent=20");
+        command.add("-XX:G1HeapWastePercent=5");
+        command.addAll(configManager.getJavaArgsForGroup(groupName));
+        return command;
+    }
+
+    private List<String> resolveStartArgs(String fallbackNoGuiArg) {
+        List<String> configured = configManager.getStartArgsForGroup(groupName);
+        if (configured == null || configured.isEmpty()) {
+            return List.of(fallbackNoGuiArg);
+        }
+        return configured;
+    }
+
+    private File findModernModloaderArgs(File serverDir) {
+        if (!software.supportsModernArgFile()) {
+            return null;
+        }
+        List<String> roots = software == ServerSoftware.NEOFORGE
+                ? List.of("libraries/net/neoforged/neoforge", "libraries/net/minecraftforge/forge")
+                : List.of("libraries/net/minecraftforge/forge", "libraries/net/neoforged/neoforge");
+        for (String root : roots) {
+            File rootDir = new File(serverDir, root);
+            File found = findFileByName(rootDir, "unix_args.txt");
+            if (found != null) {
+                return found;
+            }
+        }
+        File fallback = findFileByName(new File(serverDir, "libraries"), "unix_args.txt");
+        if (fallback != null) {
+            return fallback;
+        }
+        File userJvmArgs = new File(serverDir, "user_jvm_args.txt");
+        return userJvmArgs.exists() ? null : null;
+    }
+
+    private File findFileByName(File root, String fileName) {
+        if (root == null || !root.exists()) {
+            return null;
+        }
+        try (Stream<Path> paths = Files.walk(root.toPath(), 8)) {
+            return paths
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().equalsIgnoreCase(fileName))
+                    .map(Path::toFile)
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException ignored) {
+            return null;
+        }
+    }
+
+    private record LaunchPlan(List<String> command, File jarFile, File argFile) {
     }
 
     private File ensureServerJar(File serverDir, String expectedJarName) throws IOException {
@@ -775,10 +867,7 @@ public class Serverprocess {
     }
 
     private List<String> getJarCandidateNames(String expectedJarName) {
-        if ("bungeecord.jar".equalsIgnoreCase(expectedJarName)) {
-            return List.of("bungeecord.jar", "waterfall.jar", "velocity.jar", "proxy.jar");
-        }
-        return List.of("spigot.jar", "paper.jar", "purpur.jar", "server.jar");
+        return software.jarAliases();
     }
 
     private List<File> buildJarCandidates(List<File> searchDirectories, List<String> aliasNames) {

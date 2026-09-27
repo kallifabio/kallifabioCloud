@@ -4,6 +4,7 @@ import com.google.gson.JsonObject;
 import de.kallifabio.cloud.pluginapi.CloudPluginApi;
 import de.kallifabio.cloud.pluginapi.model.CloudOperationResult;
 import de.kallifabio.cloud.pluginapi.model.CloudServerInfo;
+import de.kallifabio.cloud.pluginapi.model.CloudSystemDoctorInfo;
 import de.kallifabio.cloud.pluginapi.request.ServerActionRequest;
 import de.kallifabio.cloud.pluginapi.request.ServerStartRequest;
 
@@ -27,6 +28,10 @@ public final class CloudPluginApiAsync {
 
     public CompletableFuture<JsonObject> overview() {
         return CompletableFuture.supplyAsync(() -> api.status().dashboardOverview(), executor);
+    }
+
+    public CompletableFuture<CloudSystemDoctorInfo> systemDoctor() {
+        return CompletableFuture.supplyAsync(() -> api.operations().systemDoctorModel(), executor);
     }
 
     public CompletableFuture<CloudOperationResult> start(ServerStartRequest request) {

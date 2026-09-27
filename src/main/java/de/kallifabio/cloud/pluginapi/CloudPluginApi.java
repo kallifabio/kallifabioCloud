@@ -4,6 +4,11 @@ import de.kallifabio.cloud.pluginapi.async.CloudPluginApiAsync;
 import de.kallifabio.cloud.pluginapi.game.GameModeCloudFacade;
 import de.kallifabio.cloud.pluginapi.live.CloudLiveEventListener;
 import de.kallifabio.cloud.pluginapi.live.CloudLiveWebSocketClient;
+import de.kallifabio.cloud.pluginapi.modloader.CloudModLoader;
+import de.kallifabio.cloud.pluginapi.modloader.FabricCloudApi;
+import de.kallifabio.cloud.pluginapi.modloader.ForgeCloudApi;
+import de.kallifabio.cloud.pluginapi.modloader.ModLoaderCloudFacade;
+import de.kallifabio.cloud.pluginapi.modloader.NeoForgeCloudApi;
 import de.kallifabio.cloud.pluginapi.service.*;
 
 import java.util.concurrent.Executor;
@@ -39,6 +44,10 @@ public final class CloudPluginApi implements AutoCloseable {
     private final PlayerRoutingService playerRoutingService;
     private final InsightsService insightsService;
     private final GroupCatalogService groupCatalogService;
+    private final SignService signService;
+    private final ForgeCloudApi forgeApi;
+    private final NeoForgeCloudApi neoForgeApi;
+    private final FabricCloudApi fabricApi;
 
     public CloudPluginApi(CloudApiConfig config) {
         this.client = new CloudApiClient(config);
@@ -69,6 +78,10 @@ public final class CloudPluginApi implements AutoCloseable {
         this.playerRoutingService = new PlayerRoutingService(serverService);
         this.insightsService = new InsightsService(serverService, wrapperService, queueService, alertService);
         this.groupCatalogService = new GroupCatalogService(groupService);
+        this.signService = new SignService(client);
+        this.forgeApi = new ForgeCloudApi(this);
+        this.neoForgeApi = new NeoForgeCloudApi(this);
+        this.fabricApi = new FabricCloudApi(this);
     }
 
     public static CloudPluginApi create(String baseUrl, String apiKey) {
@@ -81,6 +94,30 @@ public final class CloudPluginApi implements AutoCloseable {
 
     public GameModeCloudFacade gameModes() {
         return new GameModeCloudFacade(this);
+    }
+
+    public ModLoaderCloudFacade modLoader(CloudModLoader loader) {
+        return switch (loader) {
+            case FORGE -> forgeApi;
+            case NEOFORGE -> neoForgeApi;
+            case FABRIC -> fabricApi;
+        };
+    }
+
+    public ForgeCloudApi forge() {
+        return forgeApi;
+    }
+
+    public NeoForgeCloudApi neoForge() {
+        return neoForgeApi;
+    }
+
+    public NeoForgeCloudApi neoforge() {
+        return neoForgeApi;
+    }
+
+    public FabricCloudApi fabric() {
+        return fabricApi;
     }
 
     public CloudLiveWebSocketClient liveClient(String wsUrl, String wsToken, CloudLiveEventListener listener) {
@@ -193,6 +230,10 @@ public final class CloudPluginApi implements AutoCloseable {
 
     public GroupCatalogService groupCatalog() {
         return groupCatalogService;
+    }
+
+    public SignService signs() {
+        return signService;
     }
 
     @Override

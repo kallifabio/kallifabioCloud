@@ -9,18 +9,21 @@ import org.java_websocket.server.WebSocketServer;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Predicate;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import javax.net.ssl.SSLContext;
 
 public class LiveWebSocketServer extends WebSocketServer {
 
     private final Gson gson = new Gson();
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory());
     private Supplier<Map<String, Object>> snapshotSupplier;
     private Predicate<String> apiKeyValidator;
 
@@ -72,12 +75,24 @@ public class LiveWebSocketServer extends WebSocketServer {
     }
 
     private void broadcastSnapshot() {
-        if (snapshotSupplier == null || getConnections().isEmpty()) {
-            return;
+        try {
+            if (snapshotSupplier == null || getConnections().isEmpty()) {
+                return;
+            }
+            Map<String, Object> snapshot = snapshotSupplier.get();
+            if (snapshot == null) {
+                snapshot = new HashMap<>();
+                snapshot.put("type", "live_update");
+                snapshot.put("state", "EMPTY");
+            }
+            String payload = gson.toJson(snapshot);
+            broadcast(payload);
+        } catch (Exception ex) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("type", "live_error");
+            error.put("message", ex.getMessage() == null ? "Snapshot failed" : ex.getMessage());
+            broadcast(gson.toJson(error));
         }
-        Map<String, Object> snapshot = snapshotSupplier.get();
-        String payload = gson.toJson(snapshot);
-        broadcast(payload);
     }
 
     public void shutdown() {
@@ -117,5 +132,14 @@ public class LiveWebSocketServer extends WebSocketServer {
             }
         }
         return null;
+    }
+
+    private static ThreadFactory daemonThreadFactory() {
+        AtomicInteger counter = new AtomicInteger();
+        return runnable -> {
+            Thread thread = new Thread(runnable, "KalliCloud-LiveWS-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
     }
 }

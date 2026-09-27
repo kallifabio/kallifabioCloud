@@ -1,7 +1,7 @@
 /**
  * Erstellt von Gamer_Kidd_LP | kallifabio
  * am 03.10.2024 um 18:21
- * Projektname: CloudSystemTest
+ * Projektname: KalliCloud
  * Packagename: de.kallifabio.cloudsystem
  */
 
@@ -468,6 +468,23 @@ public class Master {
         connection.sendTCP(ack);
 
         clusterManager.notifyWrapperJoined(wrapper);
+        resyncRoutesAfterWrapperJoin(wrapper);
+    }
+
+    private void resyncRoutesAfterWrapperJoin(WrapperConnection wrapper) {
+        if (wrapper == null) {
+            return;
+        }
+        for (ServerInstance server : runningServers.values()) {
+            if (!wrapper.wrapperId.equalsIgnoreCase(server.wrapperId)) {
+                continue;
+            }
+            if (isProxyGroup(server.groupName)) {
+                syncAllBackendRoutesToProxyWrapper(wrapper.wrapperId);
+            } else {
+                syncBackendRouteToProxies(server, true);
+            }
+        }
     }
 
     private void handleWrapperHeartbeat(Connection connection, Message.WrapperHeartbeat heartbeat) {
@@ -912,6 +929,16 @@ public class Master {
         }
     }
 
+    public void syncNetworkRoutes() {
+        for (ServerInstance server : runningServers.values()) {
+            if (isProxyGroup(server.groupName)) {
+                syncAllBackendRoutesToProxyWrapper(server.wrapperId);
+            } else {
+                syncBackendRouteToProxies(server, true);
+            }
+        }
+    }
+
     private void startEnterpriseServices() {
         executorService.scheduleAtFixedRate(() -> {
             checkWrapperHealth();
@@ -1023,11 +1050,11 @@ public class Master {
         }
         long now = System.currentTimeMillis();
         connectedWrappers.values().forEach(wrapper -> {
-            if (now - wrapper.lastHeartbeat > 30000) {
+            if (now - wrapper.lastHeartbeat > getServerHeartbeatTimeoutMs()) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                         " Wrapper " + wrapper.wrapperId + " antwortet nicht - wird als offline markiert");
                 wrapper.connection.close();
-            } else if (now - wrapper.lastPong > WRAPPER_PONG_TIMEOUT_MS) {
+            } else if (now - wrapper.lastPong > getWrapperPongTimeoutMs()) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " Wrapper " + wrapper.wrapperId +
                         " hat kein Pong gesendet - Verbindung wird geprüft");
@@ -1061,12 +1088,12 @@ public class Master {
                     || isLifecycleTransitionStatus(server.status)) {
                 continue;
             }
-            if ("ONLINE".equals(server.status) && now - server.lastUpdate > SERVER_HEARTBEAT_TIMEOUT_MS) {
+            if ("ONLINE".equals(server.status) && now - server.lastUpdate > getServerHeartbeatTimeoutMs()) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " Kein Heartbeat von " + server.serverName +
                         " seit " + ((now - server.lastUpdate) / 1000) + "s - markiere als CRASHED");
                 handleServerFailure(server, true);
-            } else if ("STARTING".equals(server.status) && now - server.startTime > SERVER_STARTING_TIMEOUT_MS) {
+            } else if ("STARTING".equals(server.status) && now - server.startTime > getServerStartingTimeoutMs()) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " STARTING-Timeout bei " + server.serverName +
                         " - stoppe und starte neu");
@@ -1124,7 +1151,7 @@ public class Master {
             server.failureCount = failures;
             lifecycleOrchestrator.transition(server, ServerLifecycleState.FAILED, server.lastFailureReason);
             incidentReportService.createIncident(this, server, server.lastFailureReason);
-            if (failures >= FAILURE_QUARANTINE_THRESHOLD) {
+            if (isQuarantineBlockingEnabled() && failures >= getFailureQuarantineThreshold()) {
                 server.quarantined = true;
                 lifecycleOrchestrator.transition(server, ServerLifecycleState.QUARANTINED,
                         "failure threshold reached: " + failures);
@@ -1180,7 +1207,8 @@ public class Master {
             return;
         }
         restartRetryCounts.put(serverName, attempt);
-        if (attempt > RESTART_PORT_RETRY_LIMIT) {
+        int retryLimit = getRestartPortRetryLimit();
+        if (attempt > retryLimit) {
             restartInProgress.remove(serverName);
             restartRetryCounts.remove(serverName);
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
@@ -1203,7 +1231,7 @@ public class Master {
             long backoffSeconds = Math.min(5L, attempt);
             ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Port " + preferredPort + " ist noch belegt, Retry " +
-                    attempt + "/" + RESTART_PORT_RETRY_LIMIT + " in " + backoffSeconds + "s");
+                    attempt + "/" + retryLimit + " in " + backoffSeconds + "s");
             executorService.schedule(() ->
                             scheduleStartWithPortRetry(serverName, groupName, preferredPort, attempt + 1),
                     backoffSeconds,
@@ -1218,7 +1246,8 @@ public class Master {
         if (shuttingDown) {
             return;
         }
-        if (serverFailureCounts.getOrDefault(serverName, 0) >= FAILURE_QUARANTINE_THRESHOLD) {
+        if (isQuarantineBlockingEnabled()
+                && serverFailureCounts.getOrDefault(serverName, 0) >= getFailureQuarantineThreshold()) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Start blockiert: " + serverName +
                     " ist nach wiederholten Fehlern in Quarantaene");
@@ -1447,6 +1476,57 @@ public class Master {
     public void setPrimaryMaster(boolean primary) { this.isPrimaryMaster = primary; }
     public Set<String> getRestartInProgress() { return Set.copyOf(restartInProgress); }
     public Map<String, Integer> getRestartRetryCounts() { return new HashMap<>(restartRetryCounts); }
+    public Map<String, Integer> getServerFailureCounts() { return new HashMap<>(serverFailureCounts); }
+
+    public Map<String, Object> getRecoveryState() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("quarantineEnabled", configManager == null || configManager.isRecoveryQuarantineEnabled());
+        payload.put("autoRestartQuarantined", configManager != null && configManager.isRecoveryAutoRestartQuarantined());
+        payload.put("failureThreshold", getFailureQuarantineThreshold());
+        payload.put("serverHeartbeatTimeoutMs", getServerHeartbeatTimeoutMs());
+        payload.put("serverStartingTimeoutMs", getServerStartingTimeoutMs());
+        payload.put("wrapperPongTimeoutMs", getWrapperPongTimeoutMs());
+        payload.put("restartPortRetryLimit", getRestartPortRetryLimit());
+        payload.put("restartInProgress", new ArrayList<>(restartInProgress));
+        payload.put("restartRetryCounts", getRestartRetryCounts());
+        payload.put("failureCounts", getServerFailureCounts());
+
+        List<Map<String, Object>> quarantinedServers = new ArrayList<>();
+        for (ServerInstance server : runningServers.values()) {
+            if (server.quarantined || server.getLifecycleState() == ServerLifecycleState.QUARANTINED) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("serverName", server.serverName);
+                item.put("groupName", server.groupName);
+                item.put("wrapperId", server.wrapperId);
+                item.put("status", server.status);
+                item.put("lifecycleState", server.getLifecycleState().name());
+                item.put("failureCount", server.failureCount);
+                item.put("lastFailureReason", server.lastFailureReason);
+                item.put("port", server.port);
+                quarantinedServers.add(item);
+            }
+        }
+        payload.put("quarantinedServers", quarantinedServers);
+        return payload;
+    }
+
+    public boolean clearServerQuarantine(String serverName) {
+        if (serverName == null || serverName.isBlank()) {
+            return false;
+        }
+        serverFailureCounts.remove(serverName);
+        restartRetryCounts.remove(serverName);
+        restartInProgress.remove(serverName);
+        ServerInstance server = runningServers.get(serverName);
+        if (server != null) {
+            server.quarantined = false;
+            server.failureCount = 0;
+            lifecycleOrchestrator.transition(server, ServerLifecycleState.OFFLINE, "quarantine cleared manually");
+        }
+        eventTimelineService.publish("SERVER_UNQUARANTINED", "server:" + serverName, "INFO",
+                "Server quarantine cleared manually", Map.of("server", serverName));
+        return true;
+    }
 
     public int getFIRST_LOBBY_PORT() {
         return FIRST_LOBBY_PORT;
@@ -1470,6 +1550,31 @@ public class Master {
 
     public PlayerSessionManager getPlayerSessionManager() {
         return playerSessionManager;
+    }
+
+    private long getServerHeartbeatTimeoutMs() {
+        return configManager == null ? SERVER_HEARTBEAT_TIMEOUT_MS : configManager.getRecoveryServerHeartbeatTimeoutMs();
+    }
+
+    private long getServerStartingTimeoutMs() {
+        return configManager == null ? SERVER_STARTING_TIMEOUT_MS : configManager.getRecoveryServerStartingTimeoutMs();
+    }
+
+    private long getWrapperPongTimeoutMs() {
+        return configManager == null ? WRAPPER_PONG_TIMEOUT_MS : configManager.getRecoveryWrapperPongTimeoutMs();
+    }
+
+    private int getRestartPortRetryLimit() {
+        return configManager == null ? RESTART_PORT_RETRY_LIMIT : configManager.getRecoveryRestartPortRetryLimit();
+    }
+
+    private int getFailureQuarantineThreshold() {
+        return configManager == null ? FAILURE_QUARANTINE_THRESHOLD : configManager.getRecoveryQuarantineFailureThreshold();
+    }
+
+    private boolean isQuarantineBlockingEnabled() {
+        return configManager == null
+                || (configManager.isRecoveryQuarantineEnabled() && !configManager.isRecoveryAutoRestartQuarantined());
     }
 
     public void syncPermissionsForPlayer(String playerUuid) {

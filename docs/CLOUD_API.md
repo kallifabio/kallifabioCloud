@@ -16,6 +16,33 @@ Diese Datei ist als eigene GitHub-Dokumentation für die Cloud-API gedacht.
 
 ## Authentifizierung
 
+### `POST /api/v1/auth/session`
+- Zweck: Erstellt eine kurzlebige Dashboard-Session aus einem API-Key
+- Rolle: öffentlich mit gültigem Key
+- Hinweis: Das Dashboard speichert danach nur noch den Session-Token in `sessionStorage`, nicht dauerhaft den API-Key.
+- Body:
+```json
+{
+  "apiKey": "<KEY>"
+}
+```
+- Antwort:
+```json
+{
+  "authenticated": true,
+  "role": "ADMIN",
+  "sessionToken": "...",
+  "expiresAt": 1774910000000,
+  "expiresInMs": 1800000,
+  "wsTicket": "...",
+  "wsUrl": "ws://<host>:8090/live"
+}
+```
+
+### `POST /api/v1/auth/logout`
+- Zweck: Entfernt die aktuelle Dashboard-Session
+- Rolle: `VIEWER`
+
 ### `GET /api/v1/auth/me`
 - Zweck: Prüft API-Key und liefert Rolle + WS-Infos
 - Rolle: `VIEWER` oder `ADMIN`
@@ -130,10 +157,218 @@ curl -H "X-API-Key: <KEY>" "http://<host>:8081/api/v1/logs/search?query=Lobby-1&
 - Rolle: `VIEWER`
 - Query Parameter: `limit`, `type`, `severity`
 
+### `GET /api/v1/signs`
+- Zweck: Zentrale Cloud-Sign-Registry mit echten Schild-Selectoren, Layouts und Animation
+- Rolle: `VIEWER`
+- Hinweis: Liefert nur `selectorType=SIGN`. Fuer NPCs/Mobs nutze `/api/v1/entity-selectors`, fuer alles zusammen `/api/v1/selectors`.
+
+### `GET /api/v1/signs/render`
+- Zweck: Liefert alle aktiven Cloud-Signs inklusive fertig gerenderter Sign-Zeilen mit Live-Serverdaten
+- Rolle: `VIEWER`
+- Hinweis: Rendert nur `selectorType=SIGN`.
+- Platzhalter: `{id}`, `{world}`, `{selector_type}`, `{entity_type}`, `{display_name}`, `{server_name}`, `{server}`, `{group}`, `{status}`, `{players_online}`, `{max_players}`, `{players}`, `{tps}`, `{port}`, `{wrapper}`, `{animation}`
+
+### `POST /api/v1/signs/upsert`
+- Zweck: Erstellt oder aktualisiert ein echtes Schild zentral in `Signs.yml`
+- Rolle: `ADMIN`
+- Hinweis: Erzwingt `selectorType=SIGN`. `id`, `world`, `x`, `y`, `z` sind optional; ohne ID wird automatisch eine `sign-*` ID erzeugt, ohne Position wird `locationMode=AUTO` gespeichert.
+- Body:
+```json
+{
+  "id": "lobby-spawn-1",
+  "selectorType": "SIGN",
+  "entityType": "VILLAGER",
+  "displayName": "",
+  "world": "world",
+  "x": 10,
+  "y": 65,
+  "z": -4,
+  "yaw": 180.0,
+  "pitch": 0.0,
+  "groupName": "Lobby",
+  "layout": "Default",
+  "enabled": true
+}
+```
+
+### `POST /api/v1/signs/delete`
+- Zweck: Entfernt einen Cloud-Selector anhand der ID
+- Rolle: `ADMIN`
+- Hinweis: Loescht anhand der ID, unabhaengig vom gespeicherten Typ.
+- Body:
+```json
+{
+  "id": "lobby-spawn-1"
+}
+```
+
+### `GET /api/v1/entity-selectors`
+- Zweck: Zentrale Cloud-Registry fuer NPC- und Mob-Server-Selectoren
+- Rolle: `VIEWER`
+- Hinweis: Liefert nur `selectorType=NPC` und `selectorType=MOB`.
+
+### `GET /api/v1/entity-selectors/render`
+- Zweck: Rendert NPC-/Mob-Hologrammzeilen mit Live-Serverdaten
+- Rolle: `VIEWER`
+
+### `POST /api/v1/entity-selectors/upsert`
+- Zweck: Erstellt oder aktualisiert einen NPC- oder Mob-Server-Selector
+- Rolle: `ADMIN`
+- Hinweis: Erlaubt nur `selectorType=NPC` oder `selectorType=MOB`. `id`, `world`, `x`, `y`, `z` sind optional; ohne ID wird automatisch eine `npc-*` oder `mob-*` ID erzeugt, ohne Position wird `locationMode=AUTO` gespeichert.
+- Body:
+```json
+{
+  "id": "lobby-npc-1",
+  "selectorType": "NPC",
+  "entityType": "VILLAGER",
+  "displayName": "&aLobby Selector",
+  "world": "world",
+  "x": 10,
+  "y": 65,
+  "z": -4,
+  "yaw": 180.0,
+  "pitch": 0.0,
+  "groupName": "Lobby",
+  "layout": "Npc",
+  "enabled": true
+}
+```
+
+### `POST /api/v1/entity-selectors/delete`
+- Zweck: Entfernt einen NPC-/Mob-Selector anhand der ID
+- Rolle: `ADMIN`
+
+### `GET /api/v1/selectors`
+- Zweck: Gemeinsame Gesamtansicht fuer Signs, NPCs und Mobs
+- Rolle: `VIEWER`
+
+### `GET /api/v1/selectors/render`
+- Zweck: Gemeinsames Render-Payload fuer LobbySystem/Plugins, inklusive Signs, NPCs und Mobs
+- Rolle: `VIEWER`
+- Liefert zusaetzlich `categories`, `health`, `actionDecision`, `renderedLines` und `renderedHologramLines`.
+- `health.status` kann unter anderem `OK`, `DISABLED`, `NO_TARGET`, `TARGET_OFFLINE`, `TARGET_FULL`, `MAINTENANCE`, `NOT_SPAWNED` oder `STALE_GROUP` sein.
+
+### `GET /api/v1/selectors/templates`
+- Zweck: Liefert zentrale Selector-Presets fuer Dashboard, Setup-Commands und Plugins
+- Rolle: `VIEWER`
+- Enthaltene Standard-Presets: `LobbyNPC`, `GameMob`, `MaintenanceSign`, `QueueSign`
+
+### `GET /api/v1/selectors/preview`
+- Zweck: Rendert eine Preview fuer einen vorhandenen Selector
+- Rolle: `VIEWER`
+- Query Parameter: `id`
+
+Beispiel:
+```bash
+curl -H "X-API-Key: <KEY>" "http://<host>:8081/api/v1/selectors/preview?id=lobby-npc-1"
+```
+
+### `POST /api/v1/selectors/preview`
+- Zweck: Rendert eine Preview fuer einen noch nicht gespeicherten Selector-Draft
+- Rolle: `VIEWER`
+- Body: gleicher Aufbau wie `/api/v1/selectors/upsert`
+
+### `POST /api/v1/selectors/bulk`
+- Zweck: Fuehrt Bulk-Aktionen auf Selector-Zielen aus
+- Rolle: `ADMIN`
+- Actions: `enable`, `disable`, `layout`, `permission`
+- Filter: `groupName`, `serverName`, `selectorType`, `category`
+- Body:
+```json
+{
+  "action": "disable",
+  "groupName": "BedWars",
+  "selectorType": "NPC"
+}
+```
+
+### `POST /api/v1/selectors/cleanup`
+- Zweck: Bereinigt Selector-Ziele, deren Server/Group nicht mehr existiert
+- Rolle: `ADMIN`
+- Body:
+```json
+{
+  "disableOnly": true
+}
+```
+
+### `GET /api/v1/selectors/versions`
+- Zweck: Listet automatisch angelegte Selector-Versionen aus `config/versions/selectors`
+- Rolle: `VIEWER`
+
+### `POST /api/v1/selectors/rollback`
+- Zweck: Stellt eine alte Selector-Version wieder her
+- Rolle: `ADMIN`
+- Body:
+```json
+{
+  "version": "20260826-184000-upsert_lobby-npc-1.yml"
+}
+```
+
+### `POST /api/v1/selectors/heartbeat`
+- Zweck: Lobby-/Spigot-Plugins melden, ob ein Sign/NPC/Mob wirklich gespawnt ist
+- Rolle: `OPERATOR`
+- Body:
+```json
+{
+  "id": "lobby-npc-1",
+  "spawned": true,
+  "world": "world",
+  "x": 12,
+  "y": 65,
+  "z": -4,
+  "yaw": 180.0,
+  "pitch": 0.0
+}
+```
+
+### `GET /api/v1/signs/layouts`
+- Zweck: Listet alle zentralen Selector-/Sign-Layouts aus `SignLayout.yml`
+- Rolle: `VIEWER`
+- Alias: `GET /api/v1/selectors/layouts` und `GET /api/v1/entity-selectors/layouts`
+
+### `POST /api/v1/signs/layouts`
+- Zweck: Erstellt oder aktualisiert ein zentrales Selector-/Sign-Layout
+- Rolle: `ADMIN`
+- Alias: `POST /api/v1/selectors/layouts` und `POST /api/v1/entity-selectors/layouts`
+- Body:
+```json
+{
+  "name": "Default",
+  "lines": [
+    "&7&m--- &e{server_name} &7&m---",
+    "{status} &8{animation}",
+    "&2{players_online} &8/ &4{max_players}",
+    "&7&m--- &e{group} &7&m---"
+  ]
+}
+```
+
 ### `GET /api/v1/lifecycle`
 - Zweck: Server Lifecycle State-Machine und Transition-Historie
 - Rolle: `VIEWER`
 - Query Parameter: `serverName` optional, `limit`
+
+### `GET /api/v1/recovery/state`
+- Zweck: Zeigt Recovery-Konfiguration, Restart-Locks, Retry-Zaehler, Failure-Counter und quarantined Server
+- Rolle: `VIEWER`
+
+### `GET /api/v1/system/doctor`
+- Zweck: Tiefer Config-/Operations-Check fuer Config-Dateien, Ports, Netzwerk-Bindings, Monitoring-/Recovery-Schwellen, AutoStart und ServerGroups
+- Rolle: `VIEWER`
+- Antwort: `summary` mit State/Counts und `findings[]` mit `severity`, `id`, `message`, `recommendation`
+- Hinweis: Entspricht dem Console-Command `systemdoctor [--verbose]` und ist fuer Dashboard, externe Tools und Support-Dumps gedacht.
+
+### `POST /api/v1/recovery/unquarantine`
+- Zweck: Setzt Failure-Counter und Quarantine-State eines Servers manuell zurueck
+- Rolle: `ADMIN`
+- Body:
+```json
+{
+  "serverName": "Lobby-1"
+}
+```
 
 ### `GET /api/v1/incidents`
 - Zweck: Listet automatisch erzeugte Incident Reports nach Crash/Failure
@@ -173,6 +408,28 @@ curl -H "X-API-Key: <KEY>" "http://<host>:8081/api/v1/logs/search?query=Lobby-1&
 ### `GET /api/v1/firewall/check`
 - Zweck: TCP-Erreichbarkeit laufender Serverrouten pruefen
 - Rolle: `VIEWER`
+
+### `GET /api/v1/motd`
+- Zweck: Zentrale Netzwerk-MOTD und Slot-Anzeige fuer Proxy, Plugins und Dashboard abrufen
+- Rolle: `VIEWER`
+- Liefert `motd`, `maintenance`, `fakeSlots`, `actualOnline` und `actualMax`
+
+### `POST /api/v1/motd/update`
+- Zweck: Zentrale Netzwerk-MOTD und optionale Fake-Slots aktualisieren
+- Rolle: `OPERATOR`
+- Body:
+```json
+{
+  "enabled": true,
+  "line1": "&bKalliCloud Network",
+  "line2": "&7Powered by KalliCloud",
+  "maintenanceLine1": "&cMaintenance",
+  "maintenanceLine2": "&7Please try again later",
+  "fakeSlotsEnabled": false,
+  "fakeSlotsOnline": -1,
+  "fakeSlotsMax": -1
+}
+```
 
 ### `GET /openapi.yml`
 - Zweck: OpenAPI Einstiegspunkt fuer REST-Tools/Swagger

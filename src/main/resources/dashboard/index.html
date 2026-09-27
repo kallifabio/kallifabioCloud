@@ -541,13 +541,224 @@
                 }
                 .server-row-clickable { cursor: pointer; }
                 .server-row-clickable:hover { background: rgba(56, 189, 248, 0.08); }
+                .app-shell {
+                    min-height: 100vh;
+                    display: grid;
+                    grid-template-columns: 280px minmax(0, 1fr);
+                }
+                .dashboard-sidebar {
+                    position: sticky;
+                    top: 0;
+                    height: 100vh;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
+                    padding: 1.05rem;
+                    border-right: 1px solid var(--line);
+                    background:
+                        radial-gradient(420px 260px at 0% 0%, rgba(34, 211, 238, 0.16), transparent 62%),
+                        linear-gradient(180deg, color-mix(in oklab, var(--bg) 92%, #0f172a 8%), color-mix(in oklab, var(--bg-soft) 78%, #020617 22%));
+                    box-shadow: 16px 0 38px rgba(2, 6, 23, 0.22);
+                    overflow-y: auto;
+                }
+                .dashboard-main {
+                    min-width: 0;
+                    padding: 0.9rem 0 2rem;
+                }
+                .sidebar-brand {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.75rem;
+                    min-width: 0;
+                }
+                .sidebar-logo {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 2.35rem;
+                    width: 2.35rem;
+                    flex: 0 0 auto;
+                    border: 1px solid rgba(125, 211, 252, 0.44);
+                    border-radius: 0.9rem;
+                    background:
+                        linear-gradient(145deg, rgba(8, 47, 73, 0.92), rgba(15, 23, 42, 0.92)) padding-box,
+                        linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(59, 130, 246, 0.82)) border-box;
+                    box-shadow: 0 12px 24px rgba(14, 165, 233, 0.18);
+                }
+                .sidebar-title {
+                    color: var(--text);
+                    font-size: 0.92rem;
+                    font-weight: 800;
+                    letter-spacing: -0.03em;
+                    line-height: 1.15;
+                }
+                .sidebar-subtitle {
+                    color: var(--muted);
+                    font-size: 0.66rem;
+                    line-height: 1.2;
+                }
+                .sidebar-section-label {
+                    margin-top: 0.45rem;
+                    padding: 0 0.55rem;
+                    color: color-mix(in oklab, var(--muted) 84%, var(--text) 16%);
+                    font-size: 0.62rem;
+                    font-weight: 800;
+                    letter-spacing: 0.16em;
+                    text-transform: uppercase;
+                }
+                .sidebar-nav {
+                    display: grid;
+                    gap: 0.38rem;
+                    background: transparent !important;
+                    border: 0 !important;
+                    box-shadow: none !important;
+                }
+                .sidebar-link {
+                    width: 100%;
+                    justify-content: flex-start;
+                    border-radius: 0.9rem;
+                    padding: 0.72rem 0.82rem;
+                    font-size: 0.78rem;
+                    background: transparent;
+                    box-shadow: none;
+                }
+                .sidebar-link i {
+                    width: 1.05rem;
+                    color: color-mix(in oklab, var(--accent) 72%, var(--muted) 28%);
+                    text-align: center;
+                }
+                .sidebar-link:hover {
+                    transform: translateX(2px);
+                }
+                .sidebar-link.nav-link-active {
+                    color: #06233a !important;
+                    border-color: color-mix(in oklab, var(--accent) 62%, white 38%) !important;
+                    background: linear-gradient(135deg, #a5f3fc, #dbeafe) !important;
+                }
+                .sidebar-link.nav-link-active i {
+                    color: #075985;
+                }
+                .sidebar-status-card {
+                    margin-top: auto;
+                    border: 1px solid var(--line);
+                    border-radius: 1rem;
+                    padding: 0.85rem;
+                    background:
+                        radial-gradient(220px 120px at 0% 0%, rgba(34, 211, 238, 0.12), transparent 66%),
+                        color-mix(in oklab, var(--card) 82%, transparent 18%);
+                }
+                .sidebar-status-pill {
+                    display: inline-flex;
+                    align-items: center;
+                    border: 1px solid var(--line);
+                    border-radius: 999px;
+                    padding: 0.42rem 0.58rem;
+                    color: var(--text);
+                    background: color-mix(in oklab, var(--bg-soft) 72%, transparent 28%);
+                }
+                .sidebar-theme-button,
+                .mobile-menu-button,
+                .mobile-nav-close {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 0.5rem;
+                    border-radius: 0.85rem;
+                    border: 1px solid var(--line);
+                    padding: 0.68rem 0.8rem;
+                    font-size: 0.74rem;
+                    font-weight: 700;
+                }
+                .mobile-topbar {
+                    position: sticky;
+                    top: 0;
+                    z-index: 45;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 0.75rem;
+                    padding: 0.82rem 1rem;
+                    border-bottom: 1px solid var(--line);
+                    background: color-mix(in oklab, var(--bg) 90%, transparent 10%);
+                    backdrop-filter: blur(16px);
+                }
+                .mobile-nav-panel {
+                    top: 0;
+                    right: auto;
+                    bottom: 0;
+                    width: min(20rem, calc(100vw - 2rem));
+                    max-height: none;
+                    border-top: 0;
+                    border-right: 1px solid var(--line);
+                    border-bottom: 0;
+                    background:
+                        radial-gradient(360px 220px at 0% 0%, rgba(34, 211, 238, 0.16), transparent 64%),
+                        linear-gradient(180deg, rgba(2, 6, 23, 0.98), rgba(15, 23, 42, 0.98));
+                    box-shadow: 18px 0 42px rgba(2, 6, 23, 0.54);
+                }
+                .mobile-nav-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 0.75rem;
+                    padding: 1rem;
+                    border-bottom: 1px solid var(--line);
+                }
+                .mobile-nav-groups {
+                    display: grid;
+                    gap: 0.45rem;
+                    padding: 0.9rem;
+                }
+                .theme-light .dashboard-sidebar,
+                .theme-light .mobile-topbar {
+                    background:
+                        radial-gradient(420px 260px at 0% 0%, rgba(14, 165, 233, 0.16), transparent 62%),
+                        linear-gradient(180deg, rgba(255,255,255,0.96), rgba(238,246,255,0.94));
+                    box-shadow: 16px 0 36px rgba(148, 163, 184, 0.16);
+                }
+                .theme-light .mobile-nav-panel {
+                    background:
+                        radial-gradient(360px 220px at 0% 0%, rgba(14, 165, 233, 0.18), transparent 64%),
+                        linear-gradient(180deg, rgba(255,255,255,0.98), rgba(238,246,255,0.98));
+                }
+                .theme-light .sidebar-logo {
+                    background:
+                        linear-gradient(145deg, rgba(255,255,255,0.95), rgba(239,246,255,0.92)) padding-box,
+                        linear-gradient(135deg, rgba(14, 165, 233, 0.85), rgba(37, 99, 235, 0.62)) border-box;
+                }
+                .theme-light .sidebar-link.nav-link-active {
+                    color: #082f49 !important;
+                    background: linear-gradient(135deg, #d6f0ff, #e6efff) !important;
+                }
                 @media (max-width: 768px) {
                     .server-drawer { width: 100vw; border-left: 0; }
                 }
-                @media (min-width: 768px) {
-                    .mobile-nav-overlay, .mobile-nav-panel, .mobile-nav-quick { display: none !important; }
+                @media (max-width: 1180px) {
+                    .app-shell {
+                        grid-template-columns: 248px minmax(0, 1fr);
+                    }
+                    .dashboard-sidebar {
+                        padding: 0.9rem;
+                    }
+                    .sidebar-link {
+                        padding: 0.68rem 0.72rem;
+                    }
                 }
-                @media (max-width: 1024px) {
+                @media (max-width: 1023px) {
+                    .app-shell {
+                        display: block;
+                    }
+                    .dashboard-sidebar {
+                        display: none;
+                    }
+                    .dashboard-main {
+                        padding-top: 0;
+                    }
+                }
+                @media (min-width: 1024px) {
+                    .mobile-nav-overlay, .mobile-nav-panel, .mobile-nav-quick, .mobile-topbar { display: none !important; }
+                }
+                @media (max-width: 1023px) {
                     .nav-link { font-size: 0.7rem; padding: 0.4rem 0.74rem; }
                     .overview-info-grid { grid-template-columns: 1fr; }
                     .servers-shell { grid-template-columns: 1fr; }
@@ -616,35 +827,13 @@
                     header .w-full { flex-direction: column; }
                     #apiKey, #connectBtn { width: 100%; }
                     .mobile-nav-link { font-size: 0.8rem; }
-                    .mobile-nav-quick { padding-left: 0.7rem; padding-right: 0.7rem; gap: 0.38rem; }
-                    .mobile-quick-link { padding: 0.44rem 0.62rem; font-size: 0.69rem; }
                 }
                 @media (max-width: 420px) {
                     .nav-link { padding: 0.38rem 0.6rem; gap: 0.35rem; font-size: 0.69rem; }
                     h1.text-2xl.md\:text-3xl { font-size: 1.24rem !important; line-height: 1.25; }
                     .dashboard-page button, .dashboard-page input, .dashboard-page select { min-height: 2.2rem; }
                     #serversBody button { padding-left: 0.44rem !important; padding-right: 0.44rem !important; }
-                    nav > .mx-auto.max-w-7xl {
-                        padding-left: 0.85rem !important;
-                        padding-right: 0.85rem !important;
-                        gap: 0.45rem;
-                    }
-                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 {
-                        min-width: 0;
-                        gap: 0.5rem;
-                    }
-                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child {
-                        min-width: 0;
-                    }
-                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child > div:first-child {
-                        font-size: 0.78rem;
-                        line-height: 1.1;
-                    }
-                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child > div:last-child {
-                        font-size: 0.56rem;
-                        line-height: 1.2;
-                    }
-                    #themeToggle, #navToggle {
+                    #themeToggle, #navToggle, #mobileThemeToggle {
                         min-height: 2.3rem;
                         min-width: 2.3rem;
                         padding-left: 0.55rem !important;
@@ -652,34 +841,13 @@
                         border-radius: 0.72rem;
                     }
                     #themeToggle span,
-                    #navToggle span {
+                    #navToggle span,
+                    #mobileThemeToggle span {
                         font-size: 0.67rem;
                     }
-                    #mobileNavQuick {
-                        padding-left: 0.58rem !important;
-                        padding-right: 0.58rem !important;
-                        padding-top: 0.5rem;
-                        padding-bottom: 0.58rem;
-                        gap: 0.32rem !important;
-                    }
-                    .mobile-quick-link {
-                        min-height: 2.18rem;
-                        padding: 0.45rem 0.56rem !important;
-                        border-radius: 0.72rem;
-                        font-size: 0.66rem !important;
-                        background: color-mix(in oklab, var(--card) 85%, transparent 15%);
-                        border: 1px solid var(--line) !important;
-                    }
-                    #mobileNavQuick .mobile-quick-link i {
-                        font-size: 0.66rem !important;
-                    }
-                    #mobileNavQuick .mobile-quick-link span {
-                        font-size: 0.64rem;
-                        white-space: nowrap;
-                    }
-                    .theme-light .mobile-quick-link {
-                        background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(239,246,255,0.92));
-                        border-color: rgba(148, 163, 184, 0.36) !important;
+                    .mobile-topbar {
+                        padding-left: 0.72rem;
+                        padding-right: 0.72rem;
                     }
                     #mobileNav .mobile-nav-link {
                         min-height: 2.35rem;
@@ -687,45 +855,18 @@
                     }
                 }
                 @media (max-width: 360px) {
-                    nav > .mx-auto.max-w-7xl {
-                        padding-left: 0.62rem !important;
-                        padding-right: 0.62rem !important;
-                        padding-top: 0.52rem !important;
-                        padding-bottom: 0.52rem !important;
-                    }
-                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child > div:first-child {
-                        font-size: 0.72rem;
-                    }
-                    nav > .mx-auto.max-w-7xl > .flex.items-center.gap-3 > div:last-child > div:last-child {
-                        font-size: 0.52rem;
-                    }
                     #themeToggle,
-                    #navToggle {
+                    #navToggle,
+                    #mobileThemeToggle {
                         min-height: 2.1rem;
                         min-width: 2.1rem;
                         padding-left: 0.45rem !important;
                         padding-right: 0.45rem !important;
                     }
                     #themeToggle span,
-                    #navToggle span {
+                    #navToggle span,
+                    #mobileThemeToggle span {
                         font-size: 0.61rem;
-                    }
-                    #mobileNavQuick {
-                        padding-left: 0.42rem !important;
-                        padding-right: 0.42rem !important;
-                        gap: 0.26rem !important;
-                    }
-                    .mobile-quick-link {
-                        min-height: 2.05rem;
-                        padding: 0.4rem 0.46rem !important;
-                        font-size: 0.62rem !important;
-                    }
-                    #mobileNavQuick .mobile-quick-link span {
-                        font-size: 0.6rem;
-                    }
-                    #mobileNav .mx-auto.max-w-7xl.px-4.pb-3 {
-                        padding-left: 0.62rem !important;
-                        padding-right: 0.62rem !important;
                     }
                     #mobileNav .mobile-nav-link {
                         min-height: 2.2rem;
@@ -767,69 +908,101 @@
             </style>
         </head>
         <body class='min-h-screen bg-slate-950 text-slate-100'>
-            <nav class='sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur'>
-                <div class='mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 md:px-6'>
-                    <div class='flex items-center gap-3'>
-                        <div class='h-8 w-8 rounded-lg bg-gradient-to-br from-cyan-300 to-blue-500 p-[2px]'>
-                            <div class='flex h-full w-full items-center justify-center rounded-md bg-slate-900 text-xs font-bold text-cyan-300'>
+            <div id='mobileNavBackdrop' class='mobile-nav-overlay hidden lg:hidden'></div>
+            <div class='app-shell'>
+                <aside class='dashboard-sidebar'>
+                    <div class='sidebar-brand'>
+                        <div class='sidebar-logo'>
+                            <svg class='hero-icon text-cyan-300' viewBox='0 0 24 24' aria-hidden='true'>
+                                <path stroke-linecap='round' stroke-linejoin='round' d='M3.75 16.5l4.5-7.5 4.5 4.5 4.5-7.5 3 9'/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class='sidebar-title'>KalliCloud</div>
+                            <div class='sidebar-subtitle'>Operations Dashboard</div>
+                        </div>
+                    </div>
+                    <div class='sidebar-section-label'>Core</div>
+                    <nav class='sidebar-nav' aria-label='Dashboard navigation'>
+                        <a href='/dashboard/overview' data-page-link='overview' class='nav-link sidebar-link'><i class='fa-solid fa-gauge-high'></i><span>Overview</span></a>
+                        <a href='/dashboard/servers' data-page-link='servers' class='nav-link sidebar-link'><i class='fa-solid fa-server'></i><span>Servers</span></a>
+                        <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link sidebar-link'><i class='fa-solid fa-heart-pulse'></i><span>Monitoring</span></a>
+                        <a href='/dashboard/operations' data-page-link='operations' class='nav-link sidebar-link'><i class='fa-solid fa-gears'></i><span>Operations</span></a>
+                    </nav>
+                    <div class='sidebar-section-label'>Management</div>
+                    <nav class='sidebar-nav' aria-label='Management navigation'>
+                        <a href='/dashboard/setup' data-page-link='setup' class='nav-link sidebar-link'><i class='fa-solid fa-screwdriver-wrench'></i><span>Setup</span></a>
+                        <a href='/dashboard/selectors' data-page-link='signs' class='nav-link sidebar-link'><i class='fa-solid fa-sign-hanging'></i><span>Selectors</span></a>
+                        <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link sidebar-link'><i class='fa-solid fa-flask-vial'></i><span>Advanced</span></a>
+                        <a href='/dashboard/bungeesystem' data-page-link='bungeesystem' class='nav-link sidebar-link'><i class='fa-solid fa-network-wired'></i><span>BungeeSystem</span></a>
+                        <a href='/dashboard/console' data-page-link='console' class='nav-link sidebar-link'><i class='fa-solid fa-terminal'></i><span>Console</span></a>
+                    </nav>
+                    <div class='sidebar-status-card'>
+                        <div class='text-[10px] uppercase tracking-[0.18em] text-slate-400'>Session</div>
+                        <div class='mt-2 grid gap-2 text-xs'>
+                            <span id='sidebarRoleState' class='sidebar-status-pill'>Role: -</span>
+                            <span id='sidebarWsState' class='sidebar-status-pill'>WS: disconnected</span>
+                        </div>
+                    </div>
+                    <button id='themeToggle' class='sidebar-theme-button'>
+                        <i class='fa-solid fa-circle-half-stroke'></i><span>Switch Theme</span>
+                    </button>
+                </aside>
+
+                <div id='mobileNav' class='mobile-nav-panel hidden lg:hidden'>
+                    <div class='mobile-nav-header'>
+                        <div class='sidebar-brand'>
+                            <div class='sidebar-logo'>
                                 <svg class='hero-icon text-cyan-300' viewBox='0 0 24 24' aria-hidden='true'>
                                     <path stroke-linecap='round' stroke-linejoin='round' d='M3.75 16.5l4.5-7.5 4.5 4.5 4.5-7.5 3 9'/>
                                 </svg>
                             </div>
+                            <div>
+                                <div class='sidebar-title'>KalliCloud</div>
+                                <div class='sidebar-subtitle'>Menu</div>
+                            </div>
                         </div>
-                        <div>
-                            <div class='text-sm font-semibold tracking-wide'>KalliCloud</div>
-                            <div class='text-[10px] text-slate-400'>Operations Dashboard</div>
-                        </div>
+                        <button type='button' class='mobile-nav-close' data-mobile-close='true'>Close</button>
                     </div>
-                    <div class='hidden flex-1 items-center justify-center gap-2 md:flex'>
-                        <a href='/dashboard/overview' data-page-link='overview' class='nav-link'><i class='fa-solid fa-gauge-high text-[11px]'></i><span>Overview</span></a>
-                        <a href='/dashboard/servers' data-page-link='servers' class='nav-link'><i class='fa-solid fa-server text-[11px]'></i><span>Servers</span></a>
-                        <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link'><i class='fa-solid fa-heart-pulse text-[11px]'></i><span>Monitoring</span></a>
-                        <a href='/dashboard/operations' data-page-link='operations' class='nav-link'><i class='fa-solid fa-gears text-[11px]'></i><span>Operations</span></a>
-                        <a href='/dashboard/setup' data-page-link='setup' class='nav-link'><i class='fa-solid fa-screwdriver-wrench text-[11px]'></i><span>Setup</span></a>
-                        <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link'><i class='fa-solid fa-flask-vial text-[11px]'></i><span>Advanced</span></a>
-                        <a href='/dashboard/bungeesystem' data-page-link='bungeesystem' class='nav-link'><i class='fa-solid fa-network-wired text-[11px]'></i><span>Bungee</span></a>
-                        <a href='/dashboard/console' data-page-link='console' class='nav-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
-                    </div>
-                    <div class='flex items-center gap-2'>
-                        <button id='themeToggle' class='inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1 text-xs hover:border-cyan-400'>
-                            <i class='fa-solid fa-circle-half-stroke text-[11px]'></i><span>Theme</span>
-                        </button>
-                        <button id='navToggle' aria-expanded='false' class='inline-flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1 text-xs hover:border-cyan-400 md:hidden'>
-                            <svg class='hero-icon' viewBox='0 0 24 24' aria-hidden='true'>
-                                <path stroke-linecap='round' stroke-linejoin='round' d='M3.75 6.75h16.5m-16.5 5.25h16.5m-16.5 5.25h16.5'/>
-                            </svg>
-                            <span>Menu</span>
-                        </button>
+                    <div class='mobile-nav-groups'>
+                        <a href='/dashboard/overview' data-page-link='overview' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-gauge-high'></i><span>Overview</span></a>
+                        <a href='/dashboard/servers' data-page-link='servers' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-server'></i><span>Servers</span></a>
+                        <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-heart-pulse'></i><span>Monitoring</span></a>
+                        <a href='/dashboard/operations' data-page-link='operations' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-gears'></i><span>Operations</span></a>
+                        <a href='/dashboard/setup' data-page-link='setup' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-screwdriver-wrench'></i><span>Setup</span></a>
+                        <a href='/dashboard/selectors' data-page-link='signs' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-sign-hanging'></i><span>Selectors</span></a>
+                        <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-flask-vial'></i><span>Advanced</span></a>
+                        <a href='/dashboard/bungeesystem' data-page-link='bungeesystem' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-network-wired'></i><span>BungeeSystem</span></a>
+                        <a href='/dashboard/console' data-page-link='console' class='nav-link sidebar-link mobile-nav-link'><i class='fa-solid fa-terminal'></i><span>Console</span></a>
                     </div>
                 </div>
-                <div id='mobileNavQuick' class='mobile-nav-quick md:hidden'>
-                    <a href='/dashboard/overview' data-page-link='overview' class='nav-link mobile-quick-link'><i class='fa-solid fa-gauge-high text-[11px]'></i><span>Overview</span></a>
-                    <a href='/dashboard/servers' data-page-link='servers' class='nav-link mobile-quick-link'><i class='fa-solid fa-server text-[11px]'></i><span>Servers</span></a>
-                    <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link mobile-quick-link'><i class='fa-solid fa-heart-pulse text-[11px]'></i><span>Monitoring</span></a>
-                    <a href='/dashboard/operations' data-page-link='operations' class='nav-link mobile-quick-link'><i class='fa-solid fa-gears text-[11px]'></i><span>Operations</span></a>
-                    <a href='/dashboard/setup' data-page-link='setup' class='nav-link mobile-quick-link'><i class='fa-solid fa-screwdriver-wrench text-[11px]'></i><span>Setup</span></a>
-                    <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link mobile-quick-link'><i class='fa-solid fa-flask-vial text-[11px]'></i><span>Advanced</span></a>
-                    <a href='/dashboard/bungeesystem' data-page-link='bungeesystem' class='nav-link mobile-quick-link'><i class='fa-solid fa-network-wired text-[11px]'></i><span>Bungee</span></a>
-                        <a href='/dashboard/console' data-page-link='console' class='nav-link mobile-quick-link'><i class='fa-solid fa-terminal text-[11px]'></i><span>Console</span></a>
-                </div>
-                <div id='mobileNavBackdrop' class='mobile-nav-overlay hidden md:hidden'></div>
-                <div id='mobileNav' class='mobile-nav-panel hidden md:hidden'>
-                    <div class='mx-auto max-w-7xl px-4 pb-3'>
-                        <div class='grid grid-cols-1 gap-2 py-2'>
-                        <a href='/dashboard/overview' data-page-link='overview' class='nav-link mobile-nav-link'><i class='fa-solid fa-gauge-high text-[12px]'></i><span>Overview</span></a>
-                        <a href='/dashboard/servers' data-page-link='servers' class='nav-link mobile-nav-link'><i class='fa-solid fa-server text-[12px]'></i><span>Servers</span></a>
-                        <a href='/dashboard/monitoring' data-page-link='monitoring' class='nav-link mobile-nav-link'><i class='fa-solid fa-heart-pulse text-[12px]'></i><span>Monitoring</span></a>
-                        <a href='/dashboard/operations' data-page-link='operations' class='nav-link mobile-nav-link'><i class='fa-solid fa-gears text-[12px]'></i><span>Operations</span></a>
-                        <a href='/dashboard/setup' data-page-link='setup' class='nav-link mobile-nav-link'><i class='fa-solid fa-screwdriver-wrench text-[12px]'></i><span>Setup</span></a>
-                        <a href='/dashboard/advanced' data-page-link='advanced' class='nav-link mobile-nav-link'><i class='fa-solid fa-flask-vial text-[12px]'></i><span>Advanced</span></a>
-                        <a href='/dashboard/bungeesystem' data-page-link='bungeesystem' class='nav-link mobile-nav-link'><i class='fa-solid fa-network-wired text-[12px]'></i><span>Bungee</span></a>
-                        <a href='/dashboard/console' data-page-link='console' class='nav-link mobile-nav-link'><i class='fa-solid fa-terminal text-[12px]'></i><span>Console</span></a>
+
+                <main class='dashboard-main'>
+                    <div class='mobile-topbar lg:hidden'>
+                        <div class='flex items-center gap-3'>
+                            <div class='sidebar-logo h-9 w-9'>
+                                <svg class='hero-icon text-cyan-300' viewBox='0 0 24 24' aria-hidden='true'>
+                                    <path stroke-linecap='round' stroke-linejoin='round' d='M3.75 16.5l4.5-7.5 4.5 4.5 4.5-7.5 3 9'/>
+                                </svg>
+                            </div>
+                            <div>
+                                <div class='text-sm font-bold tracking-tight'>KalliCloud</div>
+                                <div class='text-[10px] text-slate-400'>Control Center</div>
+                            </div>
+                        </div>
+                        <div class='flex items-center gap-2'>
+                            <button id='mobileThemeToggle' class='mobile-menu-button' aria-label='Switch theme'>
+                                <i class='fa-solid fa-circle-half-stroke'></i>
+                                <span>Theme</span>
+                            </button>
+                            <button id='navToggle' aria-expanded='false' class='mobile-menu-button'>
+                                <svg class='hero-icon' viewBox='0 0 24 24' aria-hidden='true'>
+                                    <path stroke-linecap='round' stroke-linejoin='round' d='M3.75 6.75h16.5m-16.5 5.25h16.5m-16.5 5.25h16.5'/>
+                                </svg>
+                                <span>Menu</span>
+                            </button>
                         </div>
                     </div>
-                </div>
-            </nav>
             <div class='layout-shell mx-auto max-w-7xl p-4 md:p-6 space-y-6'>
                 <header class='rounded-2xl border border-cyan-900/60 bg-gradient-to-r from-slate-900 via-cyan-950 to-slate-900 p-6 shadow-lg shadow-cyan-900/20'>
                     <div class='flex flex-col gap-4 md:flex-row md:items-end md:justify-between'>
@@ -923,6 +1096,16 @@
                                 <div id='diagnosticsIssues' class='space-y-2 text-xs'></div>
                                 <div id='diagnosticsRecommendations' class='space-y-2 text-xs'></div>
                             </div>
+                        </article>
+                        <article class='overview-story-card rounded-2xl border border-slate-800 bg-slate-900/60 p-4 md:col-span-2'>
+                            <div class='flex flex-wrap items-center justify-between gap-2'>
+                                <div>
+                                    <h3 class='text-sm font-semibold'>System Doctor</h3>
+                                    <p id='doctorSummary' class='mt-1 text-xs text-slate-400'>Waiting for config doctor...</p>
+                                </div>
+                                <span id='doctorState' class='rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300'>doctor -</span>
+                            </div>
+                            <div id='doctorFindings' class='mt-3 grid gap-2 text-xs md:grid-cols-2'></div>
                         </article>
                     </div>
                 </section>
@@ -1150,6 +1333,64 @@
                     </div>
                     <div id='setupBox' class='grid gap-3 md:grid-cols-2 xl:grid-cols-3'></div>
                 </section>
+                <section id='signsSection' data-page='signs' class='dashboard-page space-y-4'>
+                    <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                        <div class='mb-3 flex flex-wrap items-center justify-between gap-2'>
+                            <div>
+                                <h2 class='font-semibold'>Cloud Selector Center</h2>
+                                <p class='text-[11px] text-slate-400'>Central source of truth for signs, NPC selectors, mob selectors, layouts and live status lines.</p>
+                            </div>
+                            <button id='btnRefreshSigns' class='rounded-lg border border-slate-700 px-3 py-1 text-xs hover:border-cyan-400'>Refresh selectors</button>
+                        </div>
+                        <div class='grid gap-2 text-xs md:grid-cols-4'>
+                            <input id='signIdInput' type='text' placeholder='id (optional)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <select id='selectorTemplateInput' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                <option value=''>No preset</option>
+                            </select>
+                            <select id='selectorTypeInput' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                <option value='SIGN'>Sign</option>
+                                <option value='NPC'>NPC</option>
+                                <option value='MOB'>Mob</option>
+                            </select>
+                            <input id='selectorEntityTypeInput' type='text' value='VILLAGER' placeholder='entity/player type' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='selectorDisplayNameInput' type='text' placeholder='display name / hologram title' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='signWorldInput' type='text' placeholder='world (auto)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='signCoordsInput' type='text' placeholder='x y z (auto)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='selectorRotationInput' type='text' placeholder='yaw pitch (optional)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='signTargetInput' type='text' placeholder='server or group (e.g. Lobby)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='signLayoutInput' type='text' value='Default' placeholder='layout' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='selectorCategoryInput' type='text' value='General' placeholder='category' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='selectorPermissionInput' type='text' placeholder='permission (optional)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='selectorRegionInput' type='text' value='GLOBAL' placeholder='region' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <input id='selectorSkinInput' type='text' placeholder='skin name/url or mob variant' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                            <select id='signTargetTypeInput' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                <option value='group'>Target group</option>
+                                <option value='server'>Target server</option>
+                            </select>
+                            <label class='flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-slate-300'>
+                                <input id='signAutoLocationInput' type='checkbox' checked class='accent-cyan-400'>
+                                <span>Auto location</span>
+                            </label>
+                            <button id='btnSaveSign' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-emerald-400 disabled:opacity-30'>Save selector</button>
+                            <button id='btnDeleteSign' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400 disabled:opacity-30'>Delete by id</button>
+                            <button id='btnPreviewSelector' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-cyan-400'>Preview</button>
+                            <button id='btnCleanupSelectors' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-amber-400'>Cleanup stale</button>
+                            <button id='btnBulkDisableSelectors' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-rose-400'>Bulk disable group</button>
+                            <button id='btnSelectorVersions' class='rounded-lg border border-slate-700 px-2 py-2 hover:border-violet-400'>Versions</button>
+                        </div>
+                        <pre id='selectorPreviewBox' class='mt-3 max-h-52 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'>Preview appears here.</pre>
+                    </div>
+                    <div class='grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]'>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h3 class='mb-3 text-sm font-semibold'>Registered Selectors</h3>
+                            <div id='signsBox' class='grid gap-3 md:grid-cols-2'></div>
+                        </div>
+                        <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4'>
+                            <h3 class='mb-3 text-sm font-semibold'>Layouts</h3>
+                            <div id='signLayoutsBox' class='space-y-2 text-xs'></div>
+                        </div>
+                    </div>
+                </section>
                 <section id='advancedSection' data-page='advanced' class='dashboard-page grid gap-6 lg:grid-cols-3'>
                     <div class='rounded-2xl border border-slate-800 bg-slate-900/60 p-4 lg:col-span-2'>
                         <h2 class='mb-3 font-semibold'>Template Toolbox</h2>
@@ -1187,6 +1428,7 @@
                                 <button id='btnListBackups' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-cyan-400'>Backups</button>
                                 <button id='btnListIncidents' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-amber-400'>Incidents</button>
                                 <button id='btnLifecycleTimeline' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-violet-400'>Lifecycle</button>
+                                <button id='btnRecoveryState' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-orange-400'>Recovery state</button>
                                 <button id='btnEventTimeline' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-sky-400'>Events</button>
                                 <button id='btnFirewallCheck' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-rose-400'>Firewall check</button>
                             </div>
@@ -1197,6 +1439,38 @@
                                 <input id='backupIncludeLogs' type='checkbox' class='h-3.5 w-3.5'>
                                 <span>include logs</span>
                             </label>
+                        </div>
+                        <div class='mt-2 grid gap-2 text-xs md:grid-cols-[minmax(0,1fr)_180px]'>
+                            <input id='unquarantineServerInput' type='text' placeholder='Server to unquarantine (e.g. Lobby-1)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-orange-400'>
+                            <button id='btnUnquarantineServer' class='rounded-lg border border-slate-700 px-3 py-2 hover:border-orange-400 disabled:opacity-30'>Clear quarantine</button>
+                        </div>
+                        <div class='mt-4 rounded-xl border border-slate-800 bg-slate-950/40 p-3'>
+                            <div class='mb-2 flex flex-wrap items-center justify-between gap-2'>
+                                <div>
+                                    <h3 class='text-sm font-semibold'>MOTD & Slots</h3>
+                                    <p class='text-[11px] text-slate-400'>Central network MOTD and optional fake-slot display for proxy/plugins.</p>
+                                </div>
+                                <div class='flex gap-2 text-xs'>
+                                    <button id='btnLoadMotd' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-cyan-400'>Load MOTD</button>
+                                    <button id='btnSaveMotd' class='rounded-lg border border-slate-700 px-3 py-1 hover:border-emerald-400 disabled:opacity-30'>Save MOTD</button>
+                                </div>
+                            </div>
+                            <div class='grid gap-2 text-xs md:grid-cols-2 xl:grid-cols-4'>
+                                <label class='inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-slate-300'>
+                                    <input id='motdEnabledInput' type='checkbox' class='h-3.5 w-3.5'>
+                                    <span>MOTD enabled</span>
+                                </label>
+                                <label class='inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 text-slate-300'>
+                                    <input id='fakeSlotsEnabledInput' type='checkbox' class='h-3.5 w-3.5'>
+                                    <span>Fake slots enabled</span>
+                                </label>
+                                <input id='fakeSlotsOnlineInput' type='number' placeholder='Fake online (-1 auto)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                <input id='fakeSlotsMaxInput' type='number' placeholder='Fake max (-1 auto)' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400'>
+                                <input id='motdLine1Input' type='text' placeholder='MOTD line 1' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400 md:col-span-2'>
+                                <input id='motdLine2Input' type='text' placeholder='MOTD line 2' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-cyan-400 md:col-span-2'>
+                                <input id='maintenanceMotdLine1Input' type='text' placeholder='Maintenance line 1' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-amber-400 md:col-span-2'>
+                                <input id='maintenanceMotdLine2Input' type='text' placeholder='Maintenance line 2' class='rounded-lg border border-slate-700 bg-slate-950/70 px-2 py-2 outline-none focus:border-amber-400 md:col-span-2'>
+                            </div>
                         </div>
                         <pre id='platformOpsOutputBox' class='mt-3 h-64 overflow-auto rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs text-slate-300'></pre>
                     </div>
@@ -1359,6 +1633,8 @@
                     </div>
                 </section>
             </div>
+                </main>
+            </div>
 
             <div id='serverDrawerBackdrop' class='server-drawer-backdrop hidden'></div>
             <aside id='serverDrawer' class='server-drawer hidden' aria-hidden='true'>
@@ -1397,12 +1673,15 @@
             <script>
                 const state = {
                     apiKey: sessionStorage.getItem('cloud_api_key') || '',
+                    sessionToken: sessionStorage.getItem('cloud_session_token') || '',
+                    sessionExpiresAt: Number(sessionStorage.getItem('cloud_session_expires_at') || '0'),
                     role: null,
                     ws: null,
                     wsUrl: null,
                     wsTicket: null,
                     overview: null,
                     diagnostics: null,
+                    doctor: null,
                     capacity: null,
                     readiness: null,
                     opsReport: null,
@@ -1411,6 +1690,8 @@
                     logs: { lines: [] },
                     metricsHistory: [],
                     bungeeSystem: null,
+                    signs: null,
+                    selectorTemplates: {},
                     refreshInFlight: false,
                     refreshQueued: false,
                     lastAutoRefreshAt: 0,
@@ -1455,6 +1736,12 @@
                         eyebrow: 'Setup',
                         title: 'Setup Health',
                         description: 'Validate templates, jars and group readiness before players notice broken infrastructure.'
+                    },
+                    signs: {
+                        icon: 'fa-sign-hanging',
+                        eyebrow: 'Selectors',
+                        title: 'Cloud Selector Center',
+                        description: 'Centralized sign, NPC and mob server selectors with live status rendering.'
                     },
                     advanced: {
                         icon: 'fa-flask-vial',
@@ -1536,7 +1823,8 @@
                         return 'wrapper-detail';
                     }
                     const last = parts.length ? parts[parts.length - 1].toLowerCase() : 'dashboard';
-                    const known = new Set(['overview', 'servers', 'monitoring', 'operations', 'setup', 'advanced', 'bungeesystem', 'console']);
+                    if (last === 'selectors') return 'signs';
+                    const known = new Set(['overview', 'servers', 'monitoring', 'operations', 'setup', 'signs', 'advanced', 'bungeesystem', 'console']);
                     if (known.has(last)) return last;
                     return 'overview';
                 }
@@ -1559,11 +1847,8 @@
                             link.classList.remove('nav-link-active');
                         }
                     });
-                    const mobileNav = document.getElementById('mobileNav');
-                    const navToggle = document.getElementById('navToggle');
-                    if (mobileNav && navToggle && window.innerWidth < 768) {
-                        mobileNav.classList.add('hidden');
-                        navToggle.setAttribute('aria-expanded', 'false');
+                    if (window.innerWidth < 1024) {
+                        closeMobileNav();
                     }
                     if (current === 'console') {
                         startConsolePolling();
@@ -1615,6 +1900,14 @@
                         ['fa-user-shield', roleText],
                         ['fa-bolt', wsText]
                     ].map(([icon, text]) => `<span class='context-pill'><i class='fa-solid ${icon}'></i><span>${escapeHtml(text)}</span></span>`).join('');
+                    updateSidebarSessionState();
+                }
+
+                function updateSidebarSessionState() {
+                    const role = document.getElementById('sidebarRoleState');
+                    const ws = document.getElementById('sidebarWsState');
+                    if (role) role.textContent = state.role ? 'Role: ' + state.role : 'Role: -';
+                    if (ws) ws.textContent = state.ws && state.ws.readyState === WebSocket.OPEN ? 'WS: connected' : 'WS: disconnected';
                 }
 
                 function navigateDashboard(path) {
@@ -1695,11 +1988,28 @@
                     });
                 }
 
+                function roleLevel(role) {
+                    const value = String(role || '').toUpperCase();
+                    if (value === 'OWNER') return 4;
+                    if (value === 'ADMIN') return 3;
+                    if (value === 'OPERATOR') return 2;
+                    if (value === 'VIEWER') return 1;
+                    return 0;
+                }
+
+                function canOperate() {
+                    return roleLevel(state.role) >= 2;
+                }
+
+                function canAdmin() {
+                    return roleLevel(state.role) >= 3;
+                }
+
                 function updateSelectionSummary() {
                     const count = state.selectedServers.size;
                     const label = document.getElementById('selectedServersCount');
                     if (label) label.textContent = 'Selected: ' + count;
-                    const canRun = count > 0 && state.role === 'ADMIN';
+                    const canRun = count > 0 && canOperate();
                     const restartBtn = document.getElementById('btnBulkRestart');
                     const stopBtn = document.getElementById('btnBulkStop');
                     if (restartBtn) restartBtn.disabled = !canRun;
@@ -1770,9 +2080,8 @@
                     const lines = getServerRelatedLogs(server.serverName);
                     document.getElementById('serverDrawerLogs').textContent = lines.length ? lines.join('\n') : 'No server-specific logs yet.';
 
-                    const isAdmin = state.role === 'ADMIN';
-                    document.getElementById('btnDrawerRestart').disabled = !isAdmin;
-                    document.getElementById('btnDrawerStop').disabled = !isAdmin;
+                    document.getElementById('btnDrawerRestart').disabled = !canOperate();
+                    document.getElementById('btnDrawerStop').disabled = !canOperate();
                     document.getElementById('btnDrawerStartLike').disabled = false;
                     document.getElementById('btnDrawerStartLike').setAttribute('data-group', String(server.groupName || ''));
                 }
@@ -2064,10 +2373,16 @@
                     const requestId = window.crypto && crypto.randomUUID
                         ? crypto.randomUUID().replaceAll('-', '')
                         : String(Date.now()) + String(Math.random()).slice(2);
-                    return {
-                        'X-API-Key': state.apiKey,
+                    const authToken = state.sessionToken || state.apiKey;
+                    const result = {
                         'X-Request-Id': requestId
                     };
+                    if (state.sessionToken) {
+                        result.Authorization = 'Bearer ' + state.sessionToken;
+                    } else if (authToken) {
+                        result['X-API-Key'] = authToken;
+                    }
+                    return result;
                 }
 
                 class CloudDashboardError extends Error {
@@ -2150,14 +2465,42 @@
 
                 async function authenticate() {
                     state.apiKey = apiKeyInput.value.trim();
-                    sessionStorage.setItem('cloud_api_key', state.apiKey);
-                    const auth = await apiGet('/api/v1/auth/me');
+                    const auth = await apiPost('/api/v1/auth/session', { apiKey: state.apiKey });
+                    state.sessionToken = auth.sessionToken || '';
+                    state.sessionExpiresAt = auth.expiresAt || 0;
+                    sessionStorage.setItem('cloud_session_token', state.sessionToken);
+                    sessionStorage.setItem('cloud_session_expires_at', String(state.sessionExpiresAt));
+                    sessionStorage.removeItem('cloud_api_key');
+                    state.apiKey = '';
+                    apiKeyInput.value = '';
                     state.role = auth.role;
                     state.wsUrl = auth.wsUrl;
                     state.wsTicket = auth.wsTicket || null;
                     document.getElementById('authState').textContent = 'Authenticated as ' + auth.role;
                     document.getElementById('authState').className = 'rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-emerald-200';
                     document.getElementById('roleState').textContent = 'Role: ' + auth.role;
+                    updateSidebarSessionState();
+                    applyRoleState();
+                    openWebSocket();
+                    await refresh();
+                }
+
+                async function resumeSession() {
+                    if (!state.sessionToken || (state.sessionExpiresAt && state.sessionExpiresAt < Date.now())) {
+                        state.sessionToken = '';
+                        sessionStorage.removeItem('cloud_session_token');
+                        sessionStorage.removeItem('cloud_session_expires_at');
+                        return;
+                    }
+                    const auth = await apiGet('/api/v1/auth/me');
+                    state.role = auth.role;
+                    state.wsUrl = auth.wsUrl;
+                    state.wsTicket = auth.wsTicket || null;
+                    state.sessionExpiresAt = auth.sessionExpiresAt || state.sessionExpiresAt;
+                    document.getElementById('authState').textContent = 'Authenticated as ' + auth.role;
+                    document.getElementById('authState').className = 'rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-emerald-200';
+                    document.getElementById('roleState').textContent = 'Role: ' + auth.role;
+                    updateSidebarSessionState();
                     applyRoleState();
                     openWebSocket();
                     await refresh();
@@ -2180,6 +2523,7 @@
                             apiGet('/api/v1/dashboard/overview'),
                             apiGet('/api/v1/readiness'),
                             apiGet('/api/v1/system/diagnostics'),
+                            apiGet('/api/v1/system/doctor'),
                             apiGet('/api/v1/system/capacity'),
                             apiGet('/api/v1/alerts'),
                             apiGet('/api/v1/logs/recent'),
@@ -2188,7 +2532,8 @@
                             apiGet('/api/v1/cluster/nodes'),
                             apiGet('/api/v1/scaling/policies'),
                             apiGet('/api/v1/metrics/history'),
-                            apiGet('/api/v1/bungeesystem')
+                            apiGet('/api/v1/bungeesystem'),
+                            apiGet('/api/v1/selectors/render')
                         ]);
                         const failed = results
                             .map((result, index) => ({ result, index }))
@@ -2200,34 +2545,40 @@
                         const overview = valueOr(0, state.overview);
                         const readiness = valueOr(1, state.readiness);
                         const diagnostics = valueOr(2, state.diagnostics);
-                        const capacity = valueOr(3, state.capacity);
-                        const alerts = valueOr(4, { active: [] });
-                        const logs = valueOr(5, state.logs || { lines: [] });
-                        const setup = valueOr(6, { summary: {}, groups: [] });
-                        const clusterInfo = valueOr(7, {});
-                        const clusterNodes = valueOr(8, { nodes: [] });
-                        const policies = valueOr(9, {});
-                        const metricHistory = valueOr(10, { history: state.metricsHistory || [] });
-                        const bungeeSystem = valueOr(11, state.bungeeSystem || {});
+                        const doctor = valueOr(3, state.doctor);
+                        const capacity = valueOr(4, state.capacity);
+                        const alerts = valueOr(5, { active: [] });
+                        const logs = valueOr(6, state.logs || { lines: [] });
+                        const setup = valueOr(7, { summary: {}, groups: [] });
+                        const clusterInfo = valueOr(8, {});
+                        const clusterNodes = valueOr(9, { nodes: [] });
+                        const policies = valueOr(10, {});
+                        const metricHistory = valueOr(11, { history: state.metricsHistory || [] });
+                        const bungeeSystem = valueOr(12, state.bungeeSystem || {});
+                        const signs = valueOr(13, state.signs || { signs: [], layouts: {} });
                         if (failed.length > 0) {
-                            const names = ['overview', 'readiness', 'diagnostics', 'capacity', 'alerts', 'logs', 'setup', 'cluster', 'nodes', 'policies', 'metrics', 'bungeesystem'];
+                            const names = ['overview', 'readiness', 'diagnostics', 'doctor', 'capacity', 'alerts', 'logs', 'setup', 'cluster', 'nodes', 'policies', 'metrics', 'bungeesystem', 'signs'];
                             const failedNames = failed.map(item => names[item.index]).join(', ');
                             showToast('warning', 'Partial refresh', failedNames + ' failed, using available cached data.');
                         }
                         state.overview = overview;
                         state.readiness = readiness;
                         state.diagnostics = diagnostics;
+                        state.doctor = doctor;
                         state.capacity = capacity;
                         state.logs = logs;
                         state.metricsHistory = metricHistory.history || [];
                         state.bungeeSystem = bungeeSystem;
+                        state.signs = signs;
                         renderOverview(overview);
                         renderReadiness(readiness);
                         renderDiagnostics(diagnostics);
+                        renderDoctor(doctor);
                         renderCapacityPlanner(capacity);
                         renderAlerts(alerts);
                         renderLogs(logs);
                         renderSetup(setup);
+                        renderSigns(signs);
                         renderCluster(clusterInfo);
                         renderClusterNodes(clusterNodes);
                         renderPolicies(policies);
@@ -2366,7 +2717,7 @@
                     const filteredServers = getVisibleServersFromOverview();
 
                     const serverRows = filteredServers.map(server => {
-                        const canMutate = state.role === 'ADMIN';
+                        const canMutate = canOperate();
                         const disabled = canMutate ? '' : 'disabled';
                         return `
                             <tr>
@@ -2401,12 +2752,13 @@
                     const wrappers = (data.wrappers || []).map(wrapper => {
                         const usedPct = wrapper.maxMemory > 0 ? Math.round(((wrapper.maxMemory - wrapper.availableMemory) / wrapper.maxMemory) * 100) : 0;
                         const drain = wrapper.draining ? ' | DRAINING' : '';
-                        const canMutate = state.role === 'ADMIN';
+                        const canMutate = canOperate();
                         const drainLabel = wrapper.draining ? 'undrain' : 'drain';
                         const disabled = canMutate ? '' : 'disabled';
                         return `<div class='rounded-lg border border-slate-800 bg-slate-950/60 p-3'>
                             <div class='font-medium'>${escapeHtml(wrapper.wrapperId)}</div>
                             <div class='text-xs text-slate-400'>${escapeHtml(wrapper.hostname)}</div>
+                            <div class='text-[11px] text-cyan-300/80'>route: ${escapeHtml(wrapper.routeHost || '-')}</div>
                             <div class='mt-1 text-xs'>CPU ${Number(wrapper.cpuUsage || 0).toFixed(1)}% | RAM ${usedPct}% | Servers ${wrapper.activeServers}${drain}</div>
                             <div class='mt-2 flex flex-wrap gap-2'>
                                 <button data-action='open-wrapper-page' data-wrapper='${escapeHtml(wrapper.wrapperId)}' class='rounded border border-slate-700 px-2 py-1 text-xs hover:border-cyan-400'>details</button>
@@ -2457,6 +2809,58 @@
                         `<div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-slate-300'>${escapeHtml(item)}</div>`
                     ).join('');
                     document.getElementById('diagnosticsRecommendations').innerHTML = recommendationHtml || "<div class='rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-slate-400'>No recommendations.</div>";
+                }
+
+                function renderDoctor(data) {
+                    const summaryEl = document.getElementById('doctorSummary');
+                    const stateEl = document.getElementById('doctorState');
+                    const findingsEl = document.getElementById('doctorFindings');
+                    if (!summaryEl || !stateEl || !findingsEl) return;
+                    if (!data) {
+                        summaryEl.textContent = 'Waiting for config doctor...';
+                        stateEl.textContent = 'doctor -';
+                        findingsEl.innerHTML = '';
+                        return;
+                    }
+
+                    const summary = data.summary || {};
+                    const stateText = String(summary.state || 'UNKNOWN').toUpperCase();
+                    const critical = Number(summary.critical || 0);
+                    const warnings = Number(summary.warnings || 0);
+                    const info = Number(summary.info || 0);
+                    const findings = data.findings || [];
+                    const stateClass = stateText === 'CRITICAL'
+                        ? 'border-rose-500/50 bg-rose-500/10 text-rose-200'
+                        : (stateText === 'WARNING'
+                            ? 'border-amber-500/50 bg-amber-500/10 text-amber-200'
+                            : 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200');
+
+                    stateEl.textContent = `${stateText} | ${critical} critical`;
+                    stateEl.className = `rounded-full border px-3 py-1 text-xs ${stateClass}`;
+                    summaryEl.textContent = `${critical} critical | ${warnings} warnings | ${info} info | ${summary.groups || 0} groups checked`;
+
+                    const sorted = findings.slice().sort((a, b) => {
+                        const rank = sev => sev === 'CRITICAL' ? 0 : sev === 'WARNING' ? 1 : 2;
+                        return rank(String(a.severity || 'INFO').toUpperCase()) - rank(String(b.severity || 'INFO').toUpperCase());
+                    });
+                    const html = sorted.slice(0, 6).map(finding => {
+                        const sev = String(finding.severity || 'INFO').toUpperCase();
+                        const cls = sev === 'CRITICAL'
+                            ? 'border-rose-700/50 bg-rose-950/30 text-rose-100'
+                            : (sev === 'WARNING'
+                                ? 'border-amber-700/50 bg-amber-950/30 text-amber-100'
+                                : 'border-slate-700 bg-slate-950/40 text-slate-300');
+                        return `<div class='rounded-lg border ${cls} p-2'>
+                            <div class='flex items-center justify-between gap-2'>
+                                <span class='font-semibold'>${sev}</span>
+                                <span class='text-[11px] opacity-80'>${escapeHtml(finding.id || '-')}</span>
+                            </div>
+                            <div class='mt-1'>${escapeHtml(finding.message || '-')}</div>
+                            <div class='mt-1 text-[11px] opacity-80'>${escapeHtml(finding.recommendation || '')}</div>
+                        </div>`;
+                    }).join('');
+
+                    findingsEl.innerHTML = html || "<div class='rounded-lg border border-emerald-700/40 bg-emerald-950/20 p-2 text-emerald-200 md:col-span-2'>SystemDoctor found no configuration issues.</div>";
                 }
 
                 async function runDiagnostics() {
@@ -2677,6 +3081,41 @@
                         </div>`;
                     }).join('');
                     document.getElementById('setupBox').innerHTML = cards || "<p class='text-slate-400'>No groups</p>";
+                }
+
+                function renderSigns(payload) {
+                    const signs = (payload && payload.signs) || [];
+                    const layouts = (payload && payload.layouts) || {};
+                    const signCards = signs.map(sign => {
+                        const target = sign.target || {};
+                        const lines = sign.lines || [];
+                        const status = target.status || 'OFFLINE';
+                        const selectorType = String(sign.selectorType || 'SIGN').toUpperCase();
+                        const selectorIcon = selectorType === 'NPC' ? 'fa-user-astronaut' : selectorType === 'MOB' ? 'fa-dragon' : 'fa-sign-hanging';
+                        const locationText = String(sign.locationMode || '').toUpperCase() === 'AUTO'
+                            ? 'auto location'
+                            : `${escapeHtml(sign.world)} @ ${escapeHtml(sign.x)}, ${escapeHtml(sign.y)}, ${escapeHtml(sign.z)}`;
+                        return `<button type='button' data-action='select-sign' data-sign-id='${escapeHtml(sign.id)}' class='group rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-left text-xs transition hover:border-cyan-400/70'>
+                            <div class='flex items-center justify-between gap-2'>
+                                <div class='flex items-center gap-2 font-semibold text-sm'><i class='fa-solid ${selectorIcon} text-cyan-300'></i><span>${escapeHtml(sign.id)}</span></div>
+                                <span class='rounded-full px-2 py-0.5 text-[10px] ${statusClass(status)}'>${escapeHtml(status)}</span>
+                            </div>
+                            <div class='mt-1 text-slate-400'>${escapeHtml(selectorType)} ${escapeHtml(sign.entityType || '')} | ${locationText}</div>
+                            <div class='mt-1 text-slate-400'>yaw/pitch: ${escapeHtml(sign.yaw || 0)} / ${escapeHtml(sign.pitch || 0)}</div>
+                            <div class='mt-1 text-slate-300'>target: ${escapeHtml(target.serverName || sign.serverName || sign.groupName || '-')}</div>
+                            <div class='mt-1 text-slate-300'>name: ${escapeHtml(sign.renderedDisplayName || sign.displayName || '-')}</div>
+                            <div class='mt-3 rounded-lg border border-slate-800 bg-slate-900/80 p-2 font-mono leading-5 text-slate-200'>
+                                ${(lines.length ? lines : ['','','','']).slice(0, 4).map(line => `<div>${escapeHtml(line || ' ')}</div>`).join('')}
+                            </div>
+                        </button>`;
+                    }).join('');
+                    document.getElementById('signsBox').innerHTML = signCards || "<p class='text-slate-400 text-xs'>No cloud signs registered yet.</p>";
+                    document.getElementById('signLayoutsBox').innerHTML = Object.entries(layouts).map(([name, lines]) => `
+                        <div class='rounded-xl border border-slate-800 bg-slate-950/50 p-3'>
+                            <div class='mb-2 font-semibold'>${escapeHtml(name)}</div>
+                            <div class='font-mono text-slate-300'>${(lines || []).slice(0, 4).map(line => `<div>${escapeHtml(line)}</div>`).join('')}</div>
+                        </div>
+                    `).join('') || "<p class='text-slate-400'>No layouts</p>";
                 }
 
                 function renderCluster(info) {
@@ -3049,6 +3488,191 @@
                     document.getElementById('platformOpsOutputBox').textContent = JSON.stringify(payload, null, 2);
                 }
 
+                async function refreshSigns() {
+                    const [payload, templates] = await Promise.all([
+                        apiGet('/api/v1/selectors/render'),
+                        apiGet('/api/v1/selectors/templates').catch(() => ({ templates: {} }))
+                    ]);
+                    state.signs = payload;
+                    state.selectorTemplates = templates.templates || {};
+                    renderSelectorTemplates();
+                    renderSigns(payload);
+                    showToast('success', 'Signs refreshed', `${(payload.signs || []).length} signs`);
+                }
+
+                function renderSelectorTemplates() {
+                    const select = document.getElementById('selectorTemplateInput');
+                    const current = select.value;
+                    select.innerHTML = "<option value=''>No preset</option>" + Object.keys(state.selectorTemplates || {})
+                        .map(name => `<option value='${escapeHtml(name)}'>${escapeHtml(name)}</option>`)
+                        .join('');
+                    select.value = current;
+                }
+
+                function applySelectorTemplate() {
+                    const name = document.getElementById('selectorTemplateInput').value;
+                    const tpl = (state.selectorTemplates || {})[name];
+                    if (!tpl) return;
+                    document.getElementById('selectorTypeInput').value = String(tpl.selectorType || 'SIGN').toUpperCase();
+                    document.getElementById('selectorEntityTypeInput').value = tpl.entityType || 'VILLAGER';
+                    document.getElementById('selectorDisplayNameInput').value = tpl.displayName || '';
+                    document.getElementById('signLayoutInput').value = tpl.layout || 'Default';
+                    document.getElementById('selectorCategoryInput').value = tpl.category || 'General';
+                    document.getElementById('selectorPermissionInput').value = tpl.permission || '';
+                }
+
+                function selectSign(id) {
+                    const sign = ((state.signs && state.signs.signs) || []).find(item => String(item.id || '') === String(id || ''));
+                    if (!sign) return;
+                    document.getElementById('signIdInput').value = sign.id || '';
+                    document.getElementById('selectorTypeInput').value = String(sign.selectorType || 'SIGN').toUpperCase();
+                    document.getElementById('selectorEntityTypeInput').value = sign.entityType || 'VILLAGER';
+                    document.getElementById('selectorDisplayNameInput').value = sign.displayName || '';
+                    document.getElementById('selectorTemplateInput').value = sign.selectorTemplate || '';
+                    document.getElementById('selectorCategoryInput').value = sign.category || 'General';
+                    document.getElementById('selectorPermissionInput').value = sign.permission || '';
+                    document.getElementById('selectorRegionInput').value = sign.region || 'GLOBAL';
+                    document.getElementById('selectorSkinInput').value = sign.skinName || sign.skinUrl || sign.variant || '';
+                    const autoLocation = String(sign.locationMode || '').toUpperCase() === 'AUTO' || sign.autoLocation === true;
+                    document.getElementById('signAutoLocationInput').checked = autoLocation;
+                    document.getElementById('signWorldInput').value = autoLocation ? '' : (sign.world || 'world');
+                    document.getElementById('signCoordsInput').value = autoLocation ? '' : `${sign.x || 0} ${sign.y || 0} ${sign.z || 0}`;
+                    document.getElementById('selectorRotationInput').value = `${sign.yaw || 0} ${sign.pitch || 0}`;
+                    document.getElementById('signLayoutInput').value = sign.layout || 'Default';
+                    const hasServer = !!String(sign.serverName || '').trim();
+                    document.getElementById('signTargetTypeInput').value = hasServer ? 'server' : 'group';
+                    document.getElementById('signTargetInput').value = hasServer ? sign.serverName : (sign.groupName || '');
+                }
+
+                async function saveCloudSign() {
+                    const coords = String(document.getElementById('signCoordsInput').value || '').trim().split(/[,\s]+/).filter(Boolean).map(Number);
+                    const autoLocation = document.getElementById('signAutoLocationInput').checked && coords.length < 3;
+                    if (!autoLocation && (coords.length < 3 || coords.some(Number.isNaN))) {
+                        showToast('warning', 'Invalid coordinates', 'Use: x y z');
+                        return;
+                    }
+                    const target = document.getElementById('signTargetInput').value.trim();
+                    if (!target) {
+                        showToast('warning', 'Target required', 'Use a server name or group name.');
+                        return;
+                    }
+                    const targetType = document.getElementById('signTargetTypeInput').value;
+                    const rotation = String(document.getElementById('selectorRotationInput').value || '').trim().split(/[,\s]+/).filter(Boolean).map(Number);
+                    const body = {
+                        id: document.getElementById('signIdInput').value.trim(),
+                        selectorType: document.getElementById('selectorTypeInput').value,
+                        entityType: document.getElementById('selectorEntityTypeInput').value.trim() || 'VILLAGER',
+                        displayName: document.getElementById('selectorDisplayNameInput').value.trim(),
+                        locationMode: autoLocation ? 'AUTO' : 'FIXED',
+                        autoLocation,
+                        world: autoLocation ? 'AUTO' : (document.getElementById('signWorldInput').value.trim() || 'world'),
+                        x: autoLocation ? 0 : coords[0],
+                        y: autoLocation ? 0 : coords[1],
+                        z: autoLocation ? 0 : coords[2],
+                        yaw: rotation.length > 0 && !Number.isNaN(rotation[0]) ? rotation[0] : 0,
+                        pitch: rotation.length > 1 && !Number.isNaN(rotation[1]) ? rotation[1] : 0,
+                        layout: document.getElementById('signLayoutInput').value.trim() || 'Default',
+                        selectorTemplate: document.getElementById('selectorTemplateInput').value,
+                        category: document.getElementById('selectorCategoryInput').value.trim() || 'General',
+                        permission: document.getElementById('selectorPermissionInput').value.trim(),
+                        region: document.getElementById('selectorRegionInput').value.trim() || 'GLOBAL',
+                        skinName: document.getElementById('selectorSkinInput').value.trim(),
+                        variant: document.getElementById('selectorSkinInput').value.trim(),
+                        queueOnFull: true,
+                        partyAware: true,
+                        enabled: true
+                    };
+                    if (targetType === 'server') {
+                        body.serverName = target;
+                    } else {
+                        body.groupName = target;
+                    }
+                    const result = await apiPost('/api/v1/selectors/upsert', body);
+                    state.signs = result.snapshot || await apiGet('/api/v1/selectors/render');
+                    renderSigns(state.signs);
+                    showToast('success', 'Sign saved', (result.sign && result.sign.id) || body.id || target);
+                }
+
+                function selectorDraftFromForm() {
+                    const coords = String(document.getElementById('signCoordsInput').value || '').trim().split(/[,\s]+/).filter(Boolean).map(Number);
+                    const autoLocation = document.getElementById('signAutoLocationInput').checked && coords.length < 3;
+                    const target = document.getElementById('signTargetInput').value.trim();
+                    const targetType = document.getElementById('signTargetTypeInput').value;
+                    const rotation = String(document.getElementById('selectorRotationInput').value || '').trim().split(/[,\s]+/).filter(Boolean).map(Number);
+                    const body = {
+                        id: document.getElementById('signIdInput').value.trim(),
+                        selectorType: document.getElementById('selectorTypeInput').value,
+                        entityType: document.getElementById('selectorEntityTypeInput').value.trim() || 'VILLAGER',
+                        displayName: document.getElementById('selectorDisplayNameInput').value.trim(),
+                        locationMode: autoLocation ? 'AUTO' : 'FIXED',
+                        autoLocation,
+                        world: autoLocation ? 'AUTO' : (document.getElementById('signWorldInput').value.trim() || 'world'),
+                        x: autoLocation ? 0 : coords[0],
+                        y: autoLocation ? 0 : coords[1],
+                        z: autoLocation ? 0 : coords[2],
+                        yaw: rotation.length > 0 && !Number.isNaN(rotation[0]) ? rotation[0] : 0,
+                        pitch: rotation.length > 1 && !Number.isNaN(rotation[1]) ? rotation[1] : 0,
+                        layout: document.getElementById('signLayoutInput').value.trim() || 'Default',
+                        selectorTemplate: document.getElementById('selectorTemplateInput').value,
+                        category: document.getElementById('selectorCategoryInput').value.trim() || 'General',
+                        permission: document.getElementById('selectorPermissionInput').value.trim(),
+                        region: document.getElementById('selectorRegionInput').value.trim() || 'GLOBAL',
+                        skinName: document.getElementById('selectorSkinInput').value.trim(),
+                        variant: document.getElementById('selectorSkinInput').value.trim(),
+                        queueOnFull: true,
+                        partyAware: true,
+                        enabled: true
+                    };
+                    if (targetType === 'server') body.serverName = target;
+                    else body.groupName = target;
+                    return body;
+                }
+
+                async function previewSelector() {
+                    const id = document.getElementById('signIdInput').value.trim();
+                    const payload = id
+                        ? await apiGet('/api/v1/selectors/preview?id=' + encodeURIComponent(id))
+                        : await apiPost('/api/v1/selectors/preview', selectorDraftFromForm());
+                    document.getElementById('selectorPreviewBox').textContent = JSON.stringify(payload.preview || payload, null, 2);
+                }
+
+                async function cleanupSelectors() {
+                    const result = await apiPost('/api/v1/selectors/cleanup', { disableOnly: true });
+                    state.signs = result.snapshot || await apiGet('/api/v1/selectors/render');
+                    renderSigns(state.signs);
+                    document.getElementById('selectorPreviewBox').textContent = JSON.stringify(result.result || result, null, 2);
+                    showToast('success', 'Cleanup done', JSON.stringify(result.result || {}));
+                }
+
+                async function bulkDisableSelectors() {
+                    const groupName = document.getElementById('signTargetInput').value.trim();
+                    if (!groupName) {
+                        showToast('warning', 'Group required', 'Enter a target group first.');
+                        return;
+                    }
+                    const result = await apiPost('/api/v1/selectors/bulk', { action: 'disable', groupName });
+                    state.signs = result.snapshot || await apiGet('/api/v1/selectors/render');
+                    renderSigns(state.signs);
+                    document.getElementById('selectorPreviewBox').textContent = JSON.stringify(result.result || result, null, 2);
+                }
+
+                async function loadSelectorVersions() {
+                    const result = await apiGet('/api/v1/selectors/versions');
+                    document.getElementById('selectorPreviewBox').textContent = JSON.stringify(result, null, 2);
+                }
+
+                async function deleteCloudSign() {
+                    const id = document.getElementById('signIdInput').value.trim();
+                    if (!id) {
+                        showToast('warning', 'Sign id required', 'Select a sign or enter its id.');
+                        return;
+                    }
+                    const result = await apiPost('/api/v1/selectors/delete', { id });
+                    state.signs = result.snapshot || await apiGet('/api/v1/selectors/render');
+                    renderSigns(state.signs);
+                    showToast('success', 'Sign deleted', id);
+                }
+
                 async function createBackup() {
                     const name = document.getElementById('backupNameInput').value.trim() || 'manual';
                     const includeLogs = document.getElementById('backupIncludeLogs').checked;
@@ -3072,6 +3696,25 @@
                     renderPlatformOps(result);
                 }
 
+                async function loadRecoveryState() {
+                    const result = await apiGet('/api/v1/recovery/state');
+                    renderPlatformOps(result);
+                    const quarantined = (result.quarantinedServers || []).length;
+                    showToast(quarantined ? 'warning' : 'success', 'Recovery state loaded', `${quarantined} quarantined servers`);
+                }
+
+                async function clearServerQuarantine() {
+                    const input = document.getElementById('unquarantineServerInput');
+                    const serverName = input.value.trim();
+                    if (!serverName) {
+                        showToast('warning', 'Server required', 'Enter a server name first.');
+                        return;
+                    }
+                    const result = await apiPost('/api/v1/recovery/unquarantine', { serverName });
+                    renderPlatformOps(result);
+                    showToast('success', 'Quarantine cleared', serverName);
+                }
+
                 async function loadEventTimeline() {
                     const result = await apiGet('/api/v1/events/recent?limit=160');
                     renderPlatformOps(result);
@@ -3082,6 +3725,43 @@
                     renderPlatformOps(result);
                     const failed = (result.checks || []).filter(item => !item.reachable).length;
                     showToast(failed ? 'warning' : 'success', 'Firewall check complete', `${failed} unreachable routes`);
+                }
+
+                function renderMotdForm(payload) {
+                    const motd = payload.motd || {};
+                    const maintenance = payload.maintenance || {};
+                    const fakeSlots = payload.fakeSlots || {};
+                    document.getElementById('motdEnabledInput').checked = !!motd.enabled;
+                    document.getElementById('fakeSlotsEnabledInput').checked = !!fakeSlots.enabled;
+                    document.getElementById('fakeSlotsOnlineInput').value = fakeSlots.online ?? -1;
+                    document.getElementById('fakeSlotsMaxInput').value = fakeSlots.max ?? -1;
+                    document.getElementById('motdLine1Input').value = motd.line1 || '';
+                    document.getElementById('motdLine2Input').value = motd.line2 || '';
+                    document.getElementById('maintenanceMotdLine1Input').value = maintenance.line1 || '';
+                    document.getElementById('maintenanceMotdLine2Input').value = maintenance.line2 || '';
+                    renderPlatformOps(payload);
+                }
+
+                async function loadMotdSettings() {
+                    const result = await apiGet('/api/v1/motd');
+                    renderMotdForm(result);
+                    showToast('success', 'MOTD loaded', `Actual players: ${result.actualOnline ?? 0}/${result.actualMax ?? 0}`);
+                }
+
+                async function saveMotdSettings() {
+                    const payload = {
+                        enabled: document.getElementById('motdEnabledInput').checked,
+                        line1: document.getElementById('motdLine1Input').value,
+                        line2: document.getElementById('motdLine2Input').value,
+                        maintenanceLine1: document.getElementById('maintenanceMotdLine1Input').value,
+                        maintenanceLine2: document.getElementById('maintenanceMotdLine2Input').value,
+                        fakeSlotsEnabled: document.getElementById('fakeSlotsEnabledInput').checked,
+                        fakeSlotsOnline: Number(document.getElementById('fakeSlotsOnlineInput').value || -1),
+                        fakeSlotsMax: Number(document.getElementById('fakeSlotsMaxInput').value || -1)
+                    };
+                    const result = await apiPost('/api/v1/motd/update', payload);
+                    renderMotdForm(result);
+                    showToast('success', 'MOTD saved', 'Network display settings were updated.');
                 }
 
                 async function getConfigValue() {
@@ -3101,8 +3781,13 @@
                 }
 
                 function applyRoleState() {
-                    const isAdmin = state.role === 'ADMIN';
-                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnStartRecommendedCapacity', 'btnConfigSet', 'btnRestartUnhealthy', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnConsoleSend', 'btnBulkRestart', 'btnBulkStop', 'btnCreateBackup'].forEach(id => {
+                    const isAdmin = canAdmin();
+                    const isOperator = canOperate();
+                    ['btnWebhookTest', 'btnClearAlerts', 'btnScaleEval', 'btnStartServer', 'btnStartRecommendedCapacity', 'btnRestartUnhealthy', 'btnConsoleSend', 'btnBulkRestart', 'btnBulkStop', 'btnCreateBackup', 'btnSaveMotd'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.disabled = !isOperator;
+                    });
+                    ['btnConfigSet', 'btnTplRollback', 'btnGroupCreate', 'btnGroupDelete', 'btnGroupUpdate', 'btnSaveSign', 'btnDeleteSign', 'btnCleanupSelectors', 'btnBulkDisableSelectors'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.disabled = !isAdmin;
                     });
@@ -3117,13 +3802,16 @@
                     const separator = baseUrl.includes('?') ? '&' : '?';
                     if (!state.wsTicket) {
                         document.getElementById('wsState').textContent = 'WS: no ticket';
+                        updateSidebarSessionState();
                         return;
                     }
                     const wsUrl = `${baseUrl}${separator}token=${encodeURIComponent(state.wsTicket)}`;
                     state.ws = new WebSocket(wsUrl);
                     document.getElementById('wsState').textContent = 'WS: connecting';
+                    updateSidebarSessionState();
                     state.ws.onopen = () => {
                         document.getElementById('wsState').textContent = 'WS: connected';
+                        updateSidebarSessionState();
                         updatePageContextPills();
                     };
                     state.ws.onmessage = (event) => {
@@ -3134,6 +3822,7 @@
                     };
                     state.ws.onclose = () => {
                         document.getElementById('wsState').textContent = 'WS: disconnected';
+                        updateSidebarSessionState();
                         updatePageContextPills();
                     };
                 }
@@ -3142,7 +3831,12 @@
                     document.getElementById('authState').textContent = 'Auth failed';
                     document.getElementById('authState').className = 'rounded-full border border-rose-500/40 bg-rose-500/10 px-3 py-1 text-rose-200';
                     sessionStorage.removeItem('cloud_api_key');
+                    sessionStorage.removeItem('cloud_session_token');
+                    sessionStorage.removeItem('cloud_session_expires_at');
+                    state.sessionToken = '';
                     state.wsTicket = null;
+                    state.role = null;
+                    updateSidebarSessionState();
                     showToast('error', 'Authentication failed', errorText(err) || String(err));
                     console.error(err);
                 }));
@@ -3177,8 +3871,12 @@
                 document.getElementById('btnListBackups').addEventListener('click', () => listBackups().catch(err => showToast('error', 'Backup list failed', errorText(err))));
                 document.getElementById('btnListIncidents').addEventListener('click', () => listIncidents().catch(err => showToast('error', 'Incidents failed', errorText(err))));
                 document.getElementById('btnLifecycleTimeline').addEventListener('click', () => loadLifecycleTimeline().catch(err => showToast('error', 'Lifecycle failed', errorText(err))));
+                document.getElementById('btnRecoveryState').addEventListener('click', () => loadRecoveryState().catch(err => showToast('error', 'Recovery failed', errorText(err))));
+                document.getElementById('btnUnquarantineServer').addEventListener('click', () => clearServerQuarantine().catch(err => showToast('error', 'Unquarantine failed', errorText(err))));
                 document.getElementById('btnEventTimeline').addEventListener('click', () => loadEventTimeline().catch(err => showToast('error', 'Events failed', errorText(err))));
                 document.getElementById('btnFirewallCheck').addEventListener('click', () => runFirewallCheck().catch(err => showToast('error', 'Firewall check failed', errorText(err))));
+                document.getElementById('btnLoadMotd').addEventListener('click', () => loadMotdSettings().catch(err => showToast('error', 'MOTD load failed', errorText(err))));
+                document.getElementById('btnSaveMotd').addEventListener('click', () => saveMotdSettings().catch(err => showToast('error', 'MOTD save failed', errorText(err))));
                 document.getElementById('btnTplDiff').addEventListener('click', () => runTemplateDiff().catch(err => showToast('error', 'Template diff failed', errorText(err))));
                 document.getElementById('btnTplVersions').addEventListener('click', () => runTemplateVersions().catch(err => showToast('error', 'Template versions failed', errorText(err))));
                 document.getElementById('btnTplRollback').addEventListener('click', () => runTemplateRollback().catch(err => showToast('error', 'Template rollback failed', errorText(err))));
@@ -3188,6 +3886,14 @@
                 document.getElementById('btnAuthDebug').addEventListener('click', () => runAuthDebug().catch(err => showToast('error', 'Auth debug failed', errorText(err))));
                 document.getElementById('btnExportOverview').addEventListener('click', () => exportOverviewJson());
                 document.getElementById('btnExportLogs').addEventListener('click', () => exportLogsTxt());
+                document.getElementById('btnRefreshSigns').addEventListener('click', () => refreshSigns().catch(err => showToast('error', 'Signs failed', errorText(err))));
+                document.getElementById('btnSaveSign').addEventListener('click', () => saveCloudSign().catch(err => showToast('error', 'Sign save failed', errorText(err))));
+                document.getElementById('btnDeleteSign').addEventListener('click', () => deleteCloudSign().catch(err => showToast('error', 'Sign delete failed', errorText(err))));
+                document.getElementById('selectorTemplateInput').addEventListener('change', () => applySelectorTemplate());
+                document.getElementById('btnPreviewSelector').addEventListener('click', () => previewSelector().catch(err => showToast('error', 'Selector preview failed', errorText(err))));
+                document.getElementById('btnCleanupSelectors').addEventListener('click', () => cleanupSelectors().catch(err => showToast('error', 'Selector cleanup failed', errorText(err))));
+                document.getElementById('btnBulkDisableSelectors').addEventListener('click', () => bulkDisableSelectors().catch(err => showToast('error', 'Selector bulk failed', errorText(err))));
+                document.getElementById('btnSelectorVersions').addEventListener('click', () => loadSelectorVersions().catch(err => showToast('error', 'Selector versions failed', errorText(err))));
                 document.getElementById('btnConsoleLoad').addEventListener('click', () => loadConsoleTail().catch(err => showToast('error', 'Console load failed', errorText(err))));
                 document.getElementById('btnConsoleSend').addEventListener('click', () => sendConsoleCommand().catch(err => showToast('error', 'Console send failed', errorText(err))));
                 document.getElementById('btnConsoleClear').addEventListener('click', () => { document.getElementById('consoleTailBox').textContent = ''; document.getElementById('consoleMeta').textContent = '-'; });
@@ -3227,6 +3933,8 @@
                     showToast('success', 'Auto refresh updated');
                 });
                 document.getElementById('themeToggle').addEventListener('click', () => toggleTheme());
+                const mobileThemeToggle = document.getElementById('mobileThemeToggle');
+                if (mobileThemeToggle) mobileThemeToggle.addEventListener('click', () => toggleTheme());
                 document.getElementById('serverStatusFilter').addEventListener('change', () => {
                     persistUiPreference('cloud_ui_server_status_filter', document.getElementById('serverStatusFilter').value);
                     if (state.overview) renderOverview(state.overview);
@@ -3306,6 +4014,10 @@
                         }
                         if (action === 'server-file-select') {
                             await readServerFile(button.dataset.path || '');
+                            return;
+                        }
+                        if (action === 'select-sign') {
+                            selectSign(button.dataset.signId || '');
                         }
                     };
 
@@ -3337,14 +4049,14 @@
                 if (navBackdrop) {
                     navBackdrop.addEventListener('click', closeMobileNav);
                 }
-                document.querySelectorAll('#mobileNav a, #mobileNavQuick a').forEach(el => {
+                document.querySelectorAll('#mobileNav a, #mobileNav [data-mobile-close]').forEach(el => {
                     el.addEventListener('click', () => {
                         closeMobileNav();
                     });
                 });
                 window.addEventListener('beforeunload', () => stopConsolePolling());
                 window.addEventListener('resize', () => {
-                    if (window.innerWidth >= 768) {
+                    if (window.innerWidth >= 1024) {
                         closeMobileNav();
                     }
                 });
@@ -3356,13 +4068,20 @@
                     }
                 });
 
-                if (state.apiKey) {
+                if (state.sessionToken) {
+                    resumeSession().catch(() => {
+                        sessionStorage.removeItem('cloud_session_token');
+                        sessionStorage.removeItem('cloud_session_expires_at');
+                        state.sessionToken = '';
+                    });
+                } else if (state.apiKey) {
                     authenticate().catch(() => {});
                 }
             </script>
         </body>
         </html>
         
+
 
 
 

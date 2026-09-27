@@ -12,7 +12,7 @@ public class WrapperInfoCommand extends BaseCloudCommand {
             return true;
         }
         for (WrapperConnection wrapper : master().getConnectedWrappers().values()) {
-            info(wrapper.wrapperId + " @" + wrapper.hostname + " CPU=" +
+            info(wrapper.wrapperId + " @" + wrapper.hostname + " route=" + wrapper.routeHost + " CPU=" +
                     String.format("%.1f", wrapper.cpuUsage) + "% RAM=" +
                     wrapper.availableMemory + "/" + wrapper.maxMemory + "MB servers=" +
                     wrapper.activeServers + " healthy=" + wrapper.isHealthy() +

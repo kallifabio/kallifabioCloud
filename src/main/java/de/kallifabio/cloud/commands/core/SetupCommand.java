@@ -37,7 +37,8 @@ public class SetupCommand extends BaseCloudCommand {
             @SuppressWarnings("unchecked")
             List<String> issues = (List<String>) group.get("issues");
             if (issues.isEmpty()) {
-                info("[OK] " + groupName + " | jar=" + group.get("jarFound") +
+                info("[OK] " + groupName + " | software=" + group.get("software") +
+                        " | jar=" + group.get("jarFound") +
                         " | template=" + group.get("templateExists") +
                         " | backup=" + group.get("backupTemplateExists"));
             } else {

@@ -7,6 +7,7 @@ import de.kallifabio.cloud.commands.core.ReloadConfigCommand;
 import de.kallifabio.cloud.commands.core.RestartStatusCommand;
 import de.kallifabio.cloud.commands.core.SetupCommand;
 import de.kallifabio.cloud.commands.core.StatusCommand;
+import de.kallifabio.cloud.commands.core.SystemDoctorCommand;
 import de.kallifabio.cloud.commands.console.ScreenCommand;
 import de.kallifabio.cloud.commands.console.ScreenSendCommand;
 import de.kallifabio.cloud.commands.console.ScreenTailCommand;
@@ -35,6 +36,9 @@ import de.kallifabio.cloud.commands.server.ServerInfoCommand;
 import de.kallifabio.cloud.commands.server.ServerPortCommand;
 import de.kallifabio.cloud.commands.server.StartServerCommand;
 import de.kallifabio.cloud.commands.server.StopServerCommand;
+import de.kallifabio.cloud.commands.selectors.EntitySelectorCommand;
+import de.kallifabio.cloud.commands.selectors.SelectorCommand;
+import de.kallifabio.cloud.commands.selectors.SignCommand;
 import de.kallifabio.cloud.commands.social.FriendAcceptCommand;
 import de.kallifabio.cloud.commands.social.FriendAddCommand;
 import de.kallifabio.cloud.commands.social.FriendListCommand;
@@ -83,6 +87,7 @@ public class CommandHandler {
         ReloadConfigCommand reload = new ReloadConfigCommand();
         RestartStatusCommand restartStatus = new RestartStatusCommand();
         SetupCommand setup = new SetupCommand();
+        SystemDoctorCommand systemDoctor = new SystemDoctorCommand();
         NetworkDoctorCommand networkDoctor = new NetworkDoctorCommand();
         HelpCommand help = new HelpCommand(this);
         ScreenCommand screen = new ScreenCommand();
@@ -130,6 +135,9 @@ public class CommandHandler {
         PartyRemoveCommand partyRemove = new PartyRemoveCommand();
         PartyInviteCommand partyInvite = new PartyInviteCommand();
         PartyAcceptCommand partyAccept = new PartyAcceptCommand();
+        SelectorCommand selector = new SelectorCommand();
+        SignCommand sign = new SignCommand();
+        EntitySelectorCommand entitySelector = new EntitySelectorCommand();
 
         registerWithAlias("startserver", start, "start");
         registerWithAlias("stopserver", stop, "stop");
@@ -140,6 +148,7 @@ public class CommandHandler {
         registerWithAlias("reloadconfig", reload, "reload");
         registerWithAlias("restartstatus", restartStatus, "rstatus");
         registerWithAlias("setup", setup, "setupcheck");
+        registerWithAlias("systemdoctor", systemDoctor, "doctor", "sysdoc");
         registerWithAlias("networkdoctor", networkDoctor, "netdoc");
         registerWithAlias("help", help);
         registerWithAlias("screen", screen, "screenopen");
@@ -187,6 +196,9 @@ public class CommandHandler {
         registerWithAlias("partyremove", partyRemove);
         registerWithAlias("partyinvite", partyInvite);
         registerWithAlias("partyaccept", partyAccept);
+        registerWithAlias("selector", selector, "selectors", "selectorcenter");
+        registerWithAlias("sign", sign, "signs", "cloudsign");
+        registerWithAlias("entityselector", entitySelector, "entityselectors", "npcselector", "mobselector", "npc", "mob");
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX +
                 ConsoleColors.getCurrentTime() + " Commands registriert: " + commands.size());

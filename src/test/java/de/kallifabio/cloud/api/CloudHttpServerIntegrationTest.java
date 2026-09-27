@@ -118,6 +118,17 @@ public class CloudHttpServerIntegrationTest {
     void operationsReportAndLogSearchAreAvailable() throws Exception {
         String adminKey = keyByName("admin");
 
+        HttpResponse<String> doctor = sendJson(
+                baseUrl + "/api/v1/system/doctor",
+                "GET",
+                adminKey,
+                null
+        );
+        Assertions.assertEquals(200, doctor.statusCode());
+        Map<?, ?> doctorData = GSON.fromJson(doctor.body(), Map.class);
+        Assertions.assertTrue(doctorData.containsKey("summary"));
+        Assertions.assertTrue(doctorData.containsKey("findings"));
+
         HttpResponse<String> report = sendJson(
                 baseUrl + "/api/v1/system/report",
                 "GET",
@@ -128,6 +139,7 @@ public class CloudHttpServerIntegrationTest {
         Map<?, ?> reportData = GSON.fromJson(report.body(), Map.class);
         Assertions.assertTrue(reportData.containsKey("health"));
         Assertions.assertTrue(reportData.containsKey("readiness"));
+        Assertions.assertTrue(reportData.containsKey("doctor"));
         Assertions.assertTrue(reportData.containsKey("logStats"));
 
         HttpResponse<String> search = sendJson(
@@ -164,6 +176,7 @@ public class CloudHttpServerIntegrationTest {
         HttpResponse<String> openApi = HTTP.send(openApiRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         Assertions.assertEquals(200, openApi.statusCode());
         Assertions.assertTrue(openApi.body().contains("openapi: 3.0.3"));
+        Assertions.assertTrue(openApi.body().contains("/system/doctor:"));
     }
 
     private static HttpResponse<String> sendJson(String url, String method, String apiKey, String body)

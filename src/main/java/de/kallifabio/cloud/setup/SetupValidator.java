@@ -1,6 +1,7 @@
 package de.kallifabio.cloud.setup;
 
 import de.kallifabio.cloud.config.ConfigManager;
+import de.kallifabio.cloud.software.ServerSoftware;
 
 import java.io.File;
 import java.io.IOException;
@@ -54,9 +55,10 @@ public final class SetupValidator {
         List<String> issues = new ArrayList<>();
         List<String> notes = new ArrayList<>();
 
-        boolean isProxy = isProxyGroup(groupName);
+        ServerSoftware software = ServerSoftware.resolve(configManager.getSoftwareForGroup(groupName), groupName);
+        boolean isProxy = software.isProxy();
         boolean dynamic = configManager.isDynamicGroup(groupName);
-        String expectedJar = isProxy ? "bungeecord.jar" : "spigot.jar";
+        String expectedJar = software.primaryJarName();
 
         File templateDir = resolveGroupDirectory("./templates", groupName);
         File templateTestDir = resolveGroupDirectory("./templates_test", groupName);
@@ -81,18 +83,28 @@ public final class SetupValidator {
             }
         }
 
-        List<String> jarAliases = getJarCandidateNames(expectedJar);
+        List<String> jarAliases = software.jarAliases();
         List<File> searchDirectories = getJarSearchDirectories(groupName);
         File firstFoundJar = null;
+        File firstFoundArgFile = null;
         for (File directory : searchDirectories) {
             firstFoundJar = findMatchingJarInDirectory(directory, jarAliases);
             if (firstFoundJar != null) {
                 break;
             }
         }
+        if (software.supportsModernArgFile()) {
+            for (File directory : searchDirectories) {
+                firstFoundArgFile = findModernModloaderArgs(directory);
+                if (firstFoundArgFile != null) {
+                    break;
+                }
+            }
+        }
         List<File> candidates = buildJarCandidates(searchDirectories, jarAliases);
-        if (firstFoundJar == null) {
-            issues.add("Keine passende JAR gefunden (" + String.join(", ", jarAliases) + ", case-insensitive, inkl. <name>-*.jar).");
+        if (firstFoundJar == null && firstFoundArgFile == null) {
+            String moddedHint = software.supportsModernArgFile() ? " oder moderne Forge/NeoForge unix_args.txt" : "";
+            issues.add("Keine passende JAR gefunden (" + String.join(", ", jarAliases) + moddedHint + ", case-insensitive, inkl. <name>-*.jar).");
         }
 
         if (dynamic && !templateExists && !templateTestExists && !backupTemplateExists) {
@@ -102,10 +114,12 @@ public final class SetupValidator {
         group.put("groupName", groupName);
         group.put("dynamic", dynamic);
         group.put("proxyGroup", isProxy);
+        group.put("software", software.name().toLowerCase(Locale.ROOT));
         group.put("expectedJar", expectedJar);
         group.put("jarAliases", jarAliases);
-        group.put("jarFound", firstFoundJar != null);
+        group.put("jarFound", firstFoundJar != null || firstFoundArgFile != null);
         group.put("jarPath", firstFoundJar == null ? null : firstFoundJar.getAbsolutePath());
+        group.put("argFilePath", firstFoundArgFile == null ? null : firstFoundArgFile.getAbsolutePath());
         group.put("templateDir", templateDir.getAbsolutePath());
         group.put("templateExists", templateExists);
         group.put("templateTestDir", templateTestDir.getAbsolutePath());
@@ -119,18 +133,6 @@ public final class SetupValidator {
         group.put("issues", issues);
         group.put("healthy", issues.isEmpty());
         return group;
-    }
-
-    private static boolean isProxyGroup(String groupName) {
-        String g = groupName == null ? "" : groupName.toLowerCase(Locale.ROOT);
-        return g.contains("proxy") || g.contains("bungee") || g.contains("waterfall") || g.contains("velocity");
-    }
-
-    private static List<String> getJarCandidateNames(String expectedJarName) {
-        if ("bungeecord.jar".equalsIgnoreCase(expectedJarName)) {
-            return List.of("bungeecord.jar", "waterfall.jar", "velocity.jar", "proxy.jar");
-        }
-        return List.of("spigot.jar", "paper.jar", "purpur.jar", "server.jar");
     }
 
     private static List<File> buildJarCandidates(List<File> searchDirectories, List<String> aliasNames) {
@@ -189,6 +191,22 @@ public final class SetupValidator {
             }
         }
         return null;
+    }
+
+    private static File findModernModloaderArgs(File directory) {
+        if (directory == null || !directory.exists() || !directory.isDirectory()) {
+            return null;
+        }
+        try (var paths = Files.walk(directory.toPath(), 8)) {
+            return paths
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().equalsIgnoreCase("unix_args.txt"))
+                    .map(java.nio.file.Path::toFile)
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException ignored) {
+            return null;
+        }
     }
 
     private static File resolveGroupDirectory(String baseDir, String groupName) {

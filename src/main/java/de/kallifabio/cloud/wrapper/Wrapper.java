@@ -22,8 +22,7 @@ import java.io.*;
 import java.lang.management.ManagementFactory;
 import java.lang.management.OperatingSystemMXBean;
 import java.lang.reflect.Method;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -69,7 +68,7 @@ public class Wrapper {
         this.availableMemory = calculateAvailableMemory();
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Wrapper-ID: " + wrapperId + " | usable RAM: " + maxMemory + "MB");
+                " Wrapper-ID: " + wrapperId + " | routeHost: " + routeHost + " | usable RAM: " + maxMemory + "MB");
     }
 
     public void start() {
@@ -759,11 +758,105 @@ public class Wrapper {
 
     private String detectRouteHost() {
         ConfigManager cfg = new ConfigManager();
+        String override = firstNonBlank(
+                System.getProperty("kallicloud.routeHost"),
+                System.getenv("KALLICLOUD_ROUTE_HOST"),
+                cfg.getMaster("CloudWrapper.RouteHost")
+        );
+        if (isExplicitRouteHost(override)) {
+            return override.trim();
+        }
+
         String configured = cfg.getMaster("CloudMaster.Network.GameHost");
-        if (configured != null && !configured.isBlank()) {
+        String masterHost = cfg.getMasterConnectHost();
+        if (isExplicitRouteHost(configured)) {
+            if (isLoopbackHost(configured) && !isLoopbackHost(masterHost)) {
+                String detected = detectRouteHostViaMaster(masterHost, cfg.getMasterTcpPort());
+                if (detected != null && !detected.isBlank() && !isLoopbackHost(detected)) {
+                    ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                            ConsoleColors.getCurrentTime() + " GameHost ist loopback, Master ist remote - nutze automatisch routeHost=" + detected);
+                    return detected;
+                }
+            }
             return configured.trim();
         }
+
+        String detected = detectRouteHostViaMaster(masterHost, cfg.getMasterTcpPort());
+        if (detected != null && !detected.isBlank()) {
+            return detected;
+        }
+        return detectFirstNonLoopbackAddress();
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private boolean isExplicitRouteHost(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return !"auto".equals(normalized) && !"detect".equals(normalized);
+    }
+
+    private String detectRouteHostViaMaster(String masterHost, int masterPort) {
+        if (masterHost == null || masterHost.isBlank()) {
+            return null;
+        }
+        try (DatagramSocket socket = new DatagramSocket()) {
+            socket.connect(InetAddress.getByName(masterHost.trim()), masterPort > 0 ? masterPort : 54555);
+            InetAddress local = socket.getLocalAddress();
+            if (local != null && !local.isAnyLocalAddress()) {
+                return local.getHostAddress();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private String detectFirstNonLoopbackAddress() {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = interfaces.nextElement();
+                if (!networkInterface.isUp() || networkInterface.isLoopback() || networkInterface.isVirtual()) {
+                    continue;
+                }
+                Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress address = addresses.nextElement();
+                    if (address instanceof Inet4Address && !address.isLoopbackAddress() && !address.isAnyLocalAddress()) {
+                        return address.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
         return detectMasterHost();
+    }
+
+    private boolean isLoopbackHost(String host) {
+        if (host == null || host.isBlank()) {
+            return false;
+        }
+        String normalized = host.trim().toLowerCase(Locale.ROOT);
+        if ("localhost".equals(normalized) || normalized.startsWith("127.")) {
+            return true;
+        }
+        try {
+            return InetAddress.getByName(normalized).isLoopbackAddress();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private boolean isProxyGroup(String groupName) {
@@ -887,6 +980,10 @@ public class Wrapper {
 
     public String getWrapperId() {
         return wrapperId;
+    }
+
+    public String getRouteHost() {
+        return routeHost;
     }
 
     public boolean isConnected() {

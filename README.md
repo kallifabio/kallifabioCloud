@@ -45,9 +45,11 @@ Ein modulares Minecraft-Cloudsystem mit:
 - Sicherer File-Browser für verwaltete Server-/Template-Dateien
 - Live Console im Dashboard (Screen-Auswahl, Tail, Command-Send)
 - API Key Auth mit Rollen (`VIEWER`, `OPERATOR`, `ADMIN`, `OWNER`)
+- Kurzlebige Dashboard-Sessions statt dauerhaftem API-Key im Browser
 - Key Rotation Endpoint
 - Optional TLS für REST + WSS
 - Rate Limiting
+- Zentrale MOTD-/Slots-Konfiguration fuer Proxy, Dashboard und Plugins
 
 ---
 
@@ -107,9 +109,11 @@ java -jar target/*.jar --combined
 ```yml
 CloudMaster:
   Network:
-    GameHost: 127.0.0.1
+    GameHost: auto
     EnforceBackendBind: true
-    BackendBindAddress: 127.0.0.1
+    BackendBindAddress: auto
+CloudWrapper:
+  RouteHost: auto
 ```
 3. In der Cloud-Konsole:
 ```text
@@ -139,16 +143,23 @@ java -jar target/*.jar --wrapper
 java -jar target/*.jar --wrapper
 ```
 3. `CloudMaster.Network.ConnectHost` auf beiden Wrappern auf die Master-IP setzen.
-4. Pro Wrapper den erreichbaren Route-Host setzen:
-- Wrapper auf Server 1: `GameHost: <private-ip-server1>`
-- Wrapper auf Server 2: `GameHost: <private-ip-server2>`
-5. Backend-Bind für Multi-Host:
+4. Pro Wrapper den erreichbaren Route-Host automatisch erkennen lassen oder fest setzen:
+```yml
+CloudWrapper:
+  RouteHost: auto
+```
+Optional fest pro Root-Server:
+- Server 1: `CloudWrapper.RouteHost: <private-ip-server1>`
+- Server 2: `CloudWrapper.RouteHost: <private-ip-server2>`
+- Alternativ als Umgebungsvariable: `KALLICLOUD_ROUTE_HOST=<private-ip-des-root-servers>`
+5. Backend-Bind für Single-Host und Multi-Host automatisch:
 ```yml
 CloudMaster:
   Network:
     EnforceBackendBind: true
-    BackendBindAddress: 0.0.0.0
+    BackendBindAddress: auto
 ```
+Bei `auto` gilt: Single-Host bindet auf `127.0.0.1`, Multi-Host-Backends binden auf `0.0.0.0`, damit der Proxy sie ueber die Wrapper-Route erreichen kann.
 6. Firewall:
 - Proxy-Port (z. B. `25577`) öffentlich
 - Backend-Ports nur intern/zwischen den Host-IP-Adressen erlauben
@@ -180,10 +191,11 @@ Wichtige Dateien:
 - `CloudMaster.Network.TcpPort` (Master TCP, Default: `54555`)
 - `CloudMaster.Network.UdpPort` (Master UDP, Default: `54777`)
 - `CloudMaster.Network.ConnectHost` (Wrapper Zielhost)
-- `CloudMaster.Network.GameHost` (Route-Host für Proxy->Backend, pro Wrapper-Host setzen)
+- `CloudMaster.Network.GameHost` (`auto` empfohlen; globaler Fallback für Proxy->Backend-Routen)
+- `CloudWrapper.RouteHost` (`auto` empfohlen; pro Root-Server erreichbare Backend-Adresse)
 - `CloudMaster.Network.ProxyBindHost` (Proxy listener bind, Default: `0.0.0.0`)
 - `CloudMaster.Network.EnforceBackendBind` (erzwingt Backend `server-ip`)
-- `CloudMaster.Network.BackendBindAddress` (Default: `127.0.0.1`)
+- `CloudMaster.Network.BackendBindAddress` (`auto` empfohlen; Single-Host `127.0.0.1`, Multi-Host `0.0.0.0`)
 - `CloudMaster.Network.ForwardingSecret` (Proxy forwarding secret sync)
 
 ### Runtime Permission Enforcer
@@ -226,10 +238,16 @@ Wenn TLS aktiv ist:
 ### Core / Server
 - `help`, `list`, `status`, `reloadconfig`
 - `setup [--fix]`
+- `systemdoctor [--verbose]`
 - `startserver <name> <group>`
 - `stopserver <name>`
 - `restartserver <name>`
 - `forcestopserver <name>`
+
+### Diagnose
+- `setup [--fix]`: prüft Templates, JARs und Modloader-Startdateien pro ServerGroup
+- `networkdoctor [--fix] [--prune]`: prüft Proxy-/Backend-Routing, Forwarding und stale Routen
+- `systemdoctor [--verbose]`: prüft Config-Dateien, Ports, Netzwerk-Bindings, Monitoring-/Recovery-Schwellen, AutoStart und ServerGroups; schreibt `logs/systemdoctor-report-*.json`
 
 ### Monitoring / Wrapper
 - `alerts`, `clearalerts`, `webhooktest`
@@ -247,6 +265,115 @@ Wenn TLS aktiv ist:
 - `templatepush <serverName> [--clear] [--restart]`
 - `capacity [group]` / `cap` (RAM-Headroom, Startbarkeit, Empfehlung pro Group)
 - `scalenow <group> <count>`
+
+### Selector-System
+- `sign list`
+- `sign create <server|group> <target> [layout] [priority] [category] [permission] [region]` (Auto-ID, Auto-Location)
+- `sign create <id> <world> <x> <y> <z> <server|group> <target> [layout] [priority]` (explizite Position)
+- `sign render [id]`, `sign move <id> <world> <x> <y> <z>`, `sign delete <id>`
+- `entityselector list [npc|mob]`
+- `entityselector create <npc|mob> <server|group> <target> <entityType> [displayName] [layout] [yaw] [pitch] [priority] [category] [permission] [region]` (Auto-ID, Auto-Location)
+- `entityselector create <npc|mob> <id> <world> <x> <y> <z> <server|group> <target> <entityType> [displayName] [layout] [yaw] [pitch] [priority]` (explizite Position)
+- `entityselector render [id|npc|mob]`, `entityselector rotate <id> <yaw> <pitch>`, `entityselector delete <id>`
+- `selector preview <id>` zeigt Sign-Zeilen, NPC/Mob-Name, Hologramm, Target und Health live an
+- `selector templates` listet Presets wie `LobbyNPC`, `GameMob`, `MaintenanceSign`, `QueueSign`
+- `selector cleanup [disable|delete]` markiert oder entfernt stale Selector-Ziele
+- `selector bulk <enable|disable|layout|permission> groupName=<group> ...` fuer Gruppen-Aktionen
+- `selector versions` und `selector rollback <versionFile>` fuer Rollback/Versionierung
+- Aliases: `signs`, `cloudsign`, `selectorcenter`, `npcselector`, `mobselector`, `npc`, `mob`
+
+Das CloudSystem ist die zentrale Quelle fuer Signs, NPCs und Mob-Selectoren. Lobby-/Spigot-Plugins sollen die Registry per REST/Java-API abrufen, lokal spawnen/rendern und per Heartbeat melden, ob ein Selector wirklich gespawnt ist.
+
+Wichtige Selector-Felder:
+- `selectorType`: `SIGN`, `NPC` oder `MOB`
+- `targetType`: ueber `serverName` oder `groupName`
+- `category`: z. B. `Lobby`, `BedWars`, `Survival`, `Event`
+- `permission`: z. B. `cloud.selector.vip`
+- `region`: z. B. `GLOBAL`, `EU`, `US`
+- `queueOnFull`, `partyAware`, `fallbackGroup`
+- `hologramLines` fuer NPC/Mob-Hologramme mit mehr als 4 Zeilen
+- `skinName`, `skinUrl`, `variant`, `baby`, `glowing`
+
+### Server Software Support
+
+KalliCloud kann pro ServerGroup unterschiedliche Minecraft-Server-Software starten:
+
+- `proxy`: BungeeCord, Waterfall, Velocity-kompatible Proxy-JARs
+- `paper`: Spigot, Paper, Purpur
+- `fabric`: Fabric Server Launcher
+- `forge`: Forge Server, inkl. moderner `libraries/.../unix_args.txt` Starts
+- `neoforge`: NeoForge Server, inkl. moderner `libraries/.../unix_args.txt` Starts
+- `vanilla`: Vanilla Minecraft Server
+
+Beispiel `config/ServerGroups.yml`:
+
+```yml
+ServerGroup:
+  Survival:
+    Software: fabric
+    Ram: 4096
+    MaxPlayers: 100
+    Dynamic: false
+    JavaArgs:
+      - -Dfile.encoding=UTF-8
+    StartArgs:
+      - nogui
+
+  Modded:
+    Software: neoforge
+    Ram: 6144
+    MaxPlayers: 80
+    Dynamic: false
+    StartArgs:
+      - nogui
+```
+
+JAR-/Template-Erkennung:
+
+- Proxy: `bungeecord.jar`, `waterfall.jar`, `velocity.jar`, `proxy.jar`
+- Paper/Spigot/Purpur: `spigot.jar`, `paper.jar`, `purpur.jar`, `server.jar`
+- Fabric: `fabric-server-launch.jar`, `fabric-server.jar`, `fabric.jar`, `server.jar`
+- Forge: `forge.jar`, `forge-server.jar`, `minecraftforge.jar`, `server.jar`
+- NeoForge: `neoforge.jar`, `neoforge-server.jar`, `forge.jar`, `server.jar`
+- Vanilla: `server.jar`, `minecraft-server.jar`, `vanilla.jar`
+
+Die Suche ist case-insensitive und akzeptiert auch Versionsnamen wie `fabric-server-launch-1.21.1.jar`, `forge-1.20.1.jar` oder `neoforge-21.1.0.jar`. Moderne Forge/NeoForge-Installationen mit `libraries/.../unix_args.txt` werden ohne Umbenennen gestartet.
+
+### Forge / NeoForge / Fabric Java API
+
+Die Java Cloud API enthaelt zusaetzlich modloader-freundliche Fassaden. Diese Klassen importieren keine Forge-, NeoForge- oder Fabric-Klassen und koennen deshalb in Mods geshadet oder ueber einen kleinen Loader-Adapter genutzt werden.
+
+```java
+try (var api = de.kallifabio.cloud.pluginapi.CloudPluginApi.create(
+        "http://45.82.120.47:8081",
+        "DEIN_PLUGIN_API_KEY"
+)) {
+    api.fabric().configureGroup("Survival", 4096, 80);
+    api.forge().configureGroup("ModdedForge", 6144, 60);
+    api.neoForge().configureGroup("ModdedNeoForge", 6144, 60);
+
+    api.fabric().bestServer("Survival").ifPresent(server -> {
+        System.out.println("Best Survival server: " + server.serverName());
+    });
+}
+```
+
+Wichtige Einstiege:
+
+- `api.fabric()`
+- `api.forge()`
+- `api.neoForge()` / `api.neoforge()`
+- `api.modLoader(CloudModLoader.FABRIC|FORGE|NEOFORGE)`
+
+Funktionen der Modloader-Fassaden:
+
+- Gruppe auf passende `Software` setzen
+- RAM/MaxPlayers/StartArgs konfigurieren
+- Server starten, stoppen und restarten
+- beste Online-Instanz einer Gruppe finden
+- Routing-Entscheidung abfragen
+- Queue-Groesse lesen
+- Cloud-Permissions eines Spielers pruefen
 
 ### Permissions
 - `permgroupcreate`, `permgroupgrant`
@@ -284,6 +411,8 @@ Aktueller Status:
 ## REST API (Auszug)
 
 ### Auth / Dashboard
+- `POST /api/v1/auth/session`
+- `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/rotate` (ADMIN)
 - `GET /api/v1/dashboard/overview`
@@ -306,16 +435,43 @@ Aktueller Status:
 - `GET /api/v1/alerts`
 - `POST /api/v1/alerts/clear`
 - `GET /api/v1/system/diagnostics`
+- `GET /api/v1/system/doctor`
 - `GET /api/v1/system/capacity`
 - `GET /api/v1/system/report`
 - `GET /api/v1/events/recent`
+- `GET /api/v1/signs`
+- `GET /api/v1/signs/render`
+- `POST /api/v1/signs/upsert`
+- `POST /api/v1/signs/delete`
+- `GET/POST /api/v1/signs/layouts`
+- `GET /api/v1/entity-selectors`
+- `GET /api/v1/entity-selectors/render`
+- `POST /api/v1/entity-selectors/upsert`
+- `POST /api/v1/entity-selectors/delete`
+- `GET/POST /api/v1/entity-selectors/layouts`
+- `GET /api/v1/selectors`
+- `GET /api/v1/selectors/render`
+- `POST /api/v1/selectors/upsert`
+- `POST /api/v1/selectors/delete`
+- `GET/POST /api/v1/selectors/layouts`
+- `GET /api/v1/selectors/templates`
+- `GET|POST /api/v1/selectors/preview`
+- `POST /api/v1/selectors/bulk`
+- `POST /api/v1/selectors/cleanup`
+- `GET /api/v1/selectors/versions`
+- `POST /api/v1/selectors/rollback`
+- `POST /api/v1/selectors/heartbeat`
 - `GET /api/v1/lifecycle`
+- `GET /api/v1/recovery/state`
+- `POST /api/v1/recovery/unquarantine`
 - `GET /api/v1/incidents`
 - `GET /api/v1/backups`
 - `POST /api/v1/backups/create`
 - `POST /api/v1/backups/restore-staging`
 - `POST /api/v1/rolling/restart`
 - `GET /api/v1/firewall/check`
+- `GET /api/v1/motd`
+- `POST /api/v1/motd/update`
 - `GET /openapi.yml`
 
 ---

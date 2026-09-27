@@ -2,6 +2,7 @@ package de.kallifabio.cloud.pluginapi.examples;
 
 import de.kallifabio.cloud.pluginapi.CloudApiConfig;
 import de.kallifabio.cloud.pluginapi.CloudPluginApi;
+import de.kallifabio.cloud.pluginapi.modloader.ModLoaderCloudFacade;
 import de.kallifabio.cloud.pluginapi.model.CloudAuthInfo;
 import de.kallifabio.cloud.pluginapi.model.CloudOperationResult;
 import de.kallifabio.cloud.pluginapi.model.CloudServerInfo;
@@ -11,11 +12,12 @@ import de.kallifabio.cloud.pluginapi.request.ServerStartRequest;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Example helper methods for Bukkit/Spigot/Paper plugins.
- * You can copy these snippets into your own plugin class (Lobby, Bedwars, etc.).
+ * Example helper methods for Bukkit/Spigot/Paper plugins and Forge/NeoForge/Fabric mods.
+ * You can copy these snippets into your own plugin or mod class (Lobby, Bedwars, Survival, etc.).
  */
 public final class PluginUsageExamples {
 
@@ -58,5 +60,21 @@ public final class PluginUsageExamples {
                 Duration.ofSeconds(60),
                 Duration.ofSeconds(2)
         );
+    }
+
+    public static List<CloudOperationResult> configureFabricGroup(CloudPluginApi api, String groupName) {
+        return api.fabric().configureGroup(groupName, 4096, 80);
+    }
+
+    public static List<CloudOperationResult> configureForgeGroup(CloudPluginApi api, String groupName) {
+        return api.forge().configureGroup(groupName, 6144, 60);
+    }
+
+    public static List<CloudOperationResult> configureNeoForgeGroup(CloudPluginApi api, String groupName) {
+        return api.neoForge().configureGroup(groupName, 6144, 60);
+    }
+
+    public static Optional<CloudServerInfo> bestModdedServer(ModLoaderCloudFacade facade, String groupName) {
+        return facade.bestServer(groupName);
     }
 }
