@@ -43,7 +43,6 @@ import java.security.KeyStore;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -57,7 +56,7 @@ public class CloudHttpServer {
 
     private HttpServer server;
     private LiveWebSocketServer liveWebSocketServer;
-    private ExecutorService httpExecutor;
+    private ThreadPoolExecutor httpExecutor;
     private final Gson gson;
     private final long startedAt = System.currentTimeMillis();
     private volatile String cachedDashboardHtml;
@@ -82,6 +81,7 @@ public class CloudHttpServer {
     private static final long MAX_FILE_READ_BYTES = 512L * 1024L;
     private static final long MAX_FILE_WRITE_BYTES = 1024L * 1024L;
     private static final long SYSTEM_DOCTOR_CACHE_TTL_MS = 30_000L;
+    private static final long SELECTOR_HEARTBEAT_STALE_MS = 45_000L;
     private final Deque<Map<String, Object>> metricHistory = new ArrayDeque<>();
     private volatile Map<String, Object> cachedSystemDoctorPayload;
     private volatile long cachedSystemDoctorAt = 0L;
@@ -209,7 +209,7 @@ public class CloudHttpServer {
                 " Konnte WebSocket nicht starten: " + msg);
     }
 
-    private ExecutorService createHttpExecutor() {
+    private ThreadPoolExecutor createHttpExecutor() {
         int cores = Math.max(2, Runtime.getRuntime().availableProcessors());
         int coreThreads = Math.min(8, Math.max(4, cores));
         int maxThreads = Math.min(32, Math.max(coreThreads, cores * 2));
@@ -335,6 +335,7 @@ public class CloudHttpServer {
         registerContext("/api/v1/selectors/versions", this::handleSelectorVersions);
         registerContext("/api/v1/selectors/rollback", this::handleSelectorRollback);
         registerContext("/api/v1/selectors/heartbeat", this::handleSelectorHeartbeat);
+        registerContext("/api/v1/selectors/resolve", this::handleSelectorResolve);
 
         // Safe managed file browser
         registerContext("/api/v1/files/list", this::handleFileList);
@@ -417,7 +418,57 @@ public class CloudHttpServer {
         health.put("apiPort", port);
         health.put("wsPort", wsPort);
         health.put("tls", tlsEnabled);
+        health.put("apiRuntime", buildApiRuntimePayload());
         return health;
+    }
+
+    private Map<String, Object> buildApiRuntimePayload() {
+        Map<String, Object> runtime = new LinkedHashMap<>();
+        runtime.put("uptimeMs", System.currentTimeMillis() - startedAt);
+        runtime.put("apiPort", port);
+        runtime.put("wsPort", wsPort);
+        runtime.put("tls", tlsEnabled);
+
+        ThreadPoolExecutor executor = httpExecutor;
+        if (executor == null) {
+            runtime.put("status", "STOPPED");
+            runtime.put("activeThreads", 0);
+            runtime.put("poolSize", 0);
+            runtime.put("maxThreads", 0);
+            runtime.put("queuedRequests", 0);
+            runtime.put("queueCapacity", 0);
+            runtime.put("queueUtilization", 0.0);
+            return runtime;
+        }
+
+        int queueSize = executor.getQueue().size();
+        int queueRemaining = executor.getQueue().remainingCapacity();
+        int queueCapacity = queueSize + queueRemaining;
+        double queueUtilization = queueCapacity <= 0 ? 0.0 : queueSize / (double) queueCapacity;
+        boolean saturated = executor.getActiveCount() >= executor.getMaximumPoolSize() && queueSize > 0;
+        String status = queueUtilization >= 0.90 || saturated ? "CRITICAL"
+                : queueUtilization >= 0.70 ? "WARNING"
+                : "OK";
+
+        runtime.put("status", status);
+        runtime.put("coreThreads", executor.getCorePoolSize());
+        runtime.put("activeThreads", executor.getActiveCount());
+        runtime.put("poolSize", executor.getPoolSize());
+        runtime.put("largestPoolSize", executor.getLargestPoolSize());
+        runtime.put("maxThreads", executor.getMaximumPoolSize());
+        runtime.put("queuedRequests", queueSize);
+        runtime.put("queueRemaining", queueRemaining);
+        runtime.put("queueCapacity", queueCapacity);
+        runtime.put("queueUtilization", Math.round(queueUtilization * 10_000.0) / 10_000.0);
+        runtime.put("completedRequests", executor.getCompletedTaskCount());
+        runtime.put("totalScheduledRequests", executor.getTaskCount());
+        return runtime;
+    }
+
+    private boolean isApiRuntimeHealthy(Map<String, Object> runtime) {
+        Object status = runtime == null ? null : runtime.get("status");
+        return status == null || (!"CRITICAL".equalsIgnoreCase(String.valueOf(status))
+                && !"STOPPED".equalsIgnoreCase(String.valueOf(status)));
     }
 
     private void handleReadiness(HttpExchange exchange) throws IOException {
@@ -482,7 +533,10 @@ public class CloudHttpServer {
         boolean hasWrapper = masterReady && master.getConnectedWrappers().values().stream().anyMatch(wrapper -> wrapper.isHealthy());
         boolean apiReady = server != null;
         boolean wsReady = liveWebSocketServer != null;
-        boolean ready = masterReady && apiReady && wsReady && hasWrapper && !"CRITICAL".equalsIgnoreCase(diagnosticsState);
+        Map<String, Object> apiRuntime = buildApiRuntimePayload();
+        boolean apiRuntimeHealthy = isApiRuntimeHealthy(apiRuntime);
+        boolean ready = masterReady && apiReady && wsReady && hasWrapper && apiRuntimeHealthy
+                && !"CRITICAL".equalsIgnoreCase(diagnosticsState);
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("ready", ready);
@@ -492,12 +546,14 @@ public class CloudHttpServer {
         payload.put("components", Map.of(
                 "master", masterReady,
                 "api", apiReady,
+                "apiRuntime", apiRuntimeHealthy,
                 "websocket", wsReady,
                 "healthyWrapper", hasWrapper
         ));
         payload.put("recommendedHttpStatus", ready ? 200 : 503);
         payload.put("diagnosticsState", diagnosticsState);
         payload.put("summary", summary);
+        payload.put("apiRuntime", apiRuntime);
         return payload;
     }
 
@@ -768,6 +824,7 @@ public class CloudHttpServer {
         report.put("health", buildHealthPayload());
         report.put("readiness", buildReadinessPayload());
         report.put("masterAvailable", master != null);
+        report.put("apiRuntime", buildApiRuntimePayload());
         report.put("doctor", buildSystemDoctorPayload());
         if (master != null) {
             report.put("overview", buildDashboardOverviewPayload());
@@ -1877,6 +1934,52 @@ public class CloudHttpServer {
             return;
         }
         sendResponse(exchange, 200, buildSignCenterPayload(true));
+    }
+
+    private void handleSelectorResolve(HttpExchange exchange) throws IOException {
+        if (!authenticateRequest(exchange, "OPERATOR")) {
+            sendResponse(exchange, 403, Map.of("error", "Forbidden"));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendResponse(exchange, 405, Map.of("error", "Method not allowed"));
+            return;
+        }
+        Master master = Master.getInstance();
+        if (master == null) {
+            sendResponse(exchange, 503, Map.of("error", "Master not available"));
+            return;
+        }
+
+        Map<String, Object> request = readJsonBody(exchange);
+        String selectorId = stringValue(request.get("id"), stringValue(request.get("selectorId"), ""));
+        if (selectorId.isBlank()) {
+            sendResponse(exchange, 400, Map.of("error", "id required"));
+            return;
+        }
+        Map<String, Object> storedSelector = findSelectorForPath(master, selectorId, "/api/v1/selectors");
+        if (storedSelector == null) {
+            sendResponse(exchange, 404, Map.of("error", "selector not found", "id", selectorId));
+            return;
+        }
+
+        Map<String, Object> selector = new LinkedHashMap<>(storedSelector);
+        String playerUuid = stringValue(request.get("playerUuid"), "");
+        String playerName = stringValue(request.get("playerName"), "Player");
+        int priority = numberValue(request.get("priority"), 0);
+        boolean enqueue = booleanValue(request.get("enqueue"), true);
+        boolean assignSession = booleanValue(request.get("assignSession"), false);
+
+        Map<String, Object> decision = resolveSelectorDecision(master, selector, playerUuid, playerName, priority, enqueue, assignSession);
+        master.getEventTimelineService().publish("SELECTOR_RESOLVE", "selector:" + selectorId, "INFO",
+                "Selector resolve executed", Map.of(
+                        "selectorId", selectorId,
+                        "action", String.valueOf(decision.get("action")),
+                        "playerUuid", playerUuid,
+                        "targetServer", String.valueOf(decision.getOrDefault("targetServer", ""))
+                ));
+        CentralLogger.audit("api", "selector_resolve", selectorId + " -> " + decision.get("action"));
+        sendResponse(exchange, 200, decision);
     }
 
     private void handleSignUpsert(HttpExchange exchange) throws IOException {
@@ -2992,13 +3095,14 @@ public class CloudHttpServer {
                 List<String> customHologram = stringList(sign.get("hologramLines"));
                 sign.put("renderedHologramLines", customHologram.isEmpty()
                         ? lines
-                        : renderSignLines(customHologram, sign, target, animation));
+                        : renderTemplateLines(customHologram, sign, target, animation, 12, false));
                 sign.put("renderedDisplayName", renderDisplayName(sign, target, animation));
             }
             enriched.add(sign);
         }
         snapshot.put("signs", enriched);
         snapshot.put("categories", buildSelectorCategorySummary(enriched));
+        snapshot.put("healthSummary", buildSelectorHealthSummary(enriched));
         snapshot.put("rendered", renderLines);
         snapshot.put("generatedAt", System.currentTimeMillis());
         return snapshot;
@@ -3016,31 +3120,193 @@ public class CloudHttpServer {
         if (groupName.isBlank()) {
             return null;
         }
+        String selected = master.getLoadBalancerManager().getBestServerAllowFull(groupName,
+                "selector:" + stringValue(sign.get("id"), groupName));
+        if (selected != null) {
+            ServerInstance best = master.getRunningServers().get(selected);
+            if (best != null) {
+                return best;
+            }
+        }
         return master.getRunningServers().values().stream()
                 .filter(server -> groupName.equalsIgnoreCase(server.groupName))
                 .sorted(Comparator
-                        .comparing((ServerInstance server) -> !"ONLINE".equalsIgnoreCase(server.status))
-                        .thenComparingInt(server -> server.playerCount)
+                        .comparing((ServerInstance server) -> !server.isOnline())
+                        .thenComparing((ServerInstance server) -> !server.isHealthy())
+                        .thenComparingDouble(server -> server.maxPlayers <= 0 ? 0.0
+                                : (double) effectiveSelectorPlayerCount(master, server) / Math.max(1, server.maxPlayers))
+                        .thenComparing((ServerInstance server) -> -server.tps)
                         .thenComparing(server -> server.serverName))
                 .findFirst()
                 .orElse(null);
     }
 
+    private Map<String, Object> resolveSelectorDecision(Master master, Map<String, Object> selector,
+                                                        String playerUuid, String playerName, int priority,
+                                                        boolean enqueue, boolean assignSession) {
+        Map<String, Object> decision = new LinkedHashMap<>();
+        String selectorId = stringValue(selector.get("id"), "");
+        String selectorType = stringValue(selector.get("selectorType"), "SIGN").toUpperCase(Locale.ROOT);
+        String configuredGroup = stringValue(selector.get("groupName"), "");
+        String fallbackGroup = stringValue(selector.get("fallbackGroup"), "");
+        String clickAction = stringValue(selector.get("clickAction"), "CONNECT").toUpperCase(Locale.ROOT);
+        boolean allowFull = priority >= 50 || booleanValue(selector.get("bypassFull"), false);
+
+        ServerInstance target = resolveSelectorTargetForPlayer(master, selector, playerUuid, allowFull);
+        Map<String, Object> health = buildSelectorHealth(master, selector, target);
+        String healthAction = stringValue(health.get("action"), "CONNECT").toUpperCase(Locale.ROOT);
+        String action = healthAction;
+        ServerInstance resolvedTarget = target;
+        boolean connect = false;
+        boolean queued = false;
+        int queuePosition = -1;
+        String message = "Selector target resolved.";
+
+        if ("SPAWN".equals(healthAction) || "RESPAWN".equals(healthAction) || "DISABLED".equals(healthAction)) {
+            message = "Selector is not ready for player interaction.";
+        } else if (isSelectorConnectAction(clickAction) && isSelectorTargetJoinable(master, target, allowFull)) {
+            action = "CONNECT";
+            connect = true;
+            message = "Connect player to selected target.";
+        } else {
+            ServerInstance fallbackTarget = resolveFallbackSelectorTarget(master, fallbackGroup, playerUuid, allowFull);
+            if (fallbackTarget != null) {
+                action = "FALLBACK_CONNECT";
+                resolvedTarget = fallbackTarget;
+                connect = true;
+                message = "Primary target unavailable; connect player to fallback target.";
+            } else if (enqueue && shouldQueueSelector(selector, clickAction) && !playerUuid.isBlank()) {
+                String queueGroup = configuredGroup.isBlank() ? fallbackGroup : configuredGroup;
+                if (!queueGroup.isBlank()) {
+                    master.getPlayerQueueManager().addToQueue(playerUuid, playerName.isBlank() ? "Player" : playerName, queueGroup, priority);
+                    queuePosition = master.getPlayerQueueManager().getQueuePosition(playerUuid, queueGroup);
+                    action = "QUEUE";
+                    queued = true;
+                    message = "Player added to queue.";
+                } else {
+                    action = "WAIT";
+                    message = "No queue group configured for selector.";
+                }
+            } else {
+                action = "WAIT";
+                message = "No joinable target available.";
+            }
+        }
+
+        if (connect && assignSession && !playerUuid.isBlank() && resolvedTarget != null) {
+            master.getPlayerSessionManager().assignServer(playerUuid, resolvedTarget.serverName);
+        }
+
+        decision.put("selectorId", selectorId);
+        decision.put("selectorType", selectorType);
+        decision.put("action", action);
+        decision.put("connect", connect);
+        decision.put("queued", queued);
+        decision.put("queuePosition", queuePosition);
+        decision.put("message", message);
+        decision.put("targetServer", resolvedTarget == null ? "" : resolvedTarget.serverName);
+        decision.put("groupName", resolvedTarget == null ? configuredGroup : resolvedTarget.groupName);
+        decision.put("target", serverToSignTarget(resolvedTarget, selector));
+        decision.put("primaryTarget", serverToSignTarget(target, selector));
+        decision.put("health", health);
+        decision.put("permission", stringValue(selector.get("permission"), ""));
+        decision.put("partyAware", booleanValue(selector.get("partyAware"), true));
+        decision.put("fallbackGroup", fallbackGroup);
+        decision.put("clickAction", clickAction);
+        decision.put("resolvedAt", System.currentTimeMillis());
+        return decision;
+    }
+
+    private ServerInstance resolveSelectorTargetForPlayer(Master master, Map<String, Object> selector,
+                                                          String playerUuid, boolean allowFull) {
+        String serverName = stringValue(selector.get("serverName"), "");
+        if (!serverName.isBlank()) {
+            ServerInstance exact = master.getRunningServers().get(serverName);
+            if (exact != null) {
+                return exact;
+            }
+        }
+        String groupName = stringValue(selector.get("groupName"), "");
+        if (groupName.isBlank()) {
+            return null;
+        }
+        String selected = allowFull
+                ? master.getLoadBalancerManager().getBestServerAllowFull(groupName, playerUuid)
+                : master.getLoadBalancerManager().getBestServer(groupName, playerUuid);
+        return selected == null ? null : master.getRunningServers().get(selected);
+    }
+
+    private ServerInstance resolveFallbackSelectorTarget(Master master, String fallbackGroup,
+                                                         String playerUuid, boolean allowFull) {
+        if (fallbackGroup == null || fallbackGroup.isBlank()) {
+            return null;
+        }
+        String selected = allowFull
+                ? master.getLoadBalancerManager().getBestServerAllowFull(fallbackGroup, playerUuid)
+                : master.getLoadBalancerManager().getBestServer(fallbackGroup, playerUuid);
+        ServerInstance fallback = selected == null ? null : master.getRunningServers().get(selected);
+        return isSelectorTargetJoinable(master, fallback, allowFull) ? fallback : null;
+    }
+
+    private boolean isSelectorTargetJoinable(Master master, ServerInstance target, boolean allowFull) {
+        if (target == null || !target.isOnline() || !target.isHealthy()) {
+            return false;
+        }
+        if (master.getLoadBalancerManager().isWrapperDraining(target.wrapperId)) {
+            return false;
+        }
+        if (master.getConfigManager().isMaintenanceMode(target.groupName)) {
+            return false;
+        }
+        return allowFull || target.maxPlayers <= 0 || effectiveSelectorPlayerCount(master, target) < target.maxPlayers;
+    }
+
+    private boolean isSelectorConnectAction(String clickAction) {
+        return clickAction == null
+                || clickAction.isBlank()
+                || "CONNECT".equalsIgnoreCase(clickAction)
+                || "QUEUE_OR_CONNECT".equalsIgnoreCase(clickAction)
+                || "FALLBACK".equalsIgnoreCase(clickAction);
+    }
+
+    private boolean shouldQueueSelector(Map<String, Object> selector, String clickAction) {
+        if ("QUEUE".equalsIgnoreCase(clickAction) || "QUEUE_OR_CONNECT".equalsIgnoreCase(clickAction)) {
+            return true;
+        }
+        return booleanValue(selector.get("queueOnFull"), true);
+    }
+
     private Map<String, Object> serverToSignTarget(ServerInstance server, Map<String, Object> sign) {
+        return serverToSignTarget(Master.getInstance(), server, sign);
+    }
+
+    private Map<String, Object> serverToSignTarget(Master master, ServerInstance server, Map<String, Object> sign) {
         Map<String, Object> target = new LinkedHashMap<>();
         String configuredServer = stringValue(sign.get("serverName"), "");
         String configuredGroup = stringValue(sign.get("groupName"), "");
+        int effectivePlayers = effectiveSelectorPlayerCount(master, server);
         target.put("serverName", server == null ? configuredServer : server.serverName);
         target.put("groupName", server == null ? configuredGroup : server.groupName);
         target.put("status", server == null ? "OFFLINE" : server.status);
         target.put("online", server != null && "ONLINE".equalsIgnoreCase(server.status));
-        target.put("playersOnline", server == null ? 0 : server.playerCount);
+        target.put("playersOnline", effectivePlayers);
+        target.put("rawPlayersOnline", server == null ? 0 : server.playerCount);
         target.put("maxPlayers", server == null ? 0 : server.maxPlayers);
         target.put("tps", server == null ? 0.0 : server.tps);
         target.put("port", server == null ? -1 : server.port);
         target.put("wrapperId", server == null ? "" : server.wrapperId);
         target.put("lifecycleState", server == null ? "OFFLINE" : server.getLifecycleState().name());
         return target;
+    }
+
+    private int effectiveSelectorPlayerCount(Master master, ServerInstance server) {
+        if (server == null) {
+            return 0;
+        }
+        if (master == null || master.getLoadBalancerManager() == null) {
+            return Math.max(0, server.playerCount);
+        }
+        return master.getLoadBalancerManager().getEffectivePlayerCount(server);
     }
 
     private Map<String, Object> renderSelectorPreview(Master master, Map<String, Object> selector) {
@@ -3059,7 +3325,7 @@ public class CloudHttpServer {
         preview.put("lines", signLines);
         preview.put("renderedHologramLines", customHologram.isEmpty()
                 ? signLines
-                : renderSignLines(customHologram, sign, target, animation));
+                : renderTemplateLines(customHologram, sign, target, animation, 12, false));
         preview.put("renderedDisplayName", renderDisplayName(sign, target, animation));
         return preview;
     }
@@ -3069,21 +3335,41 @@ public class CloudHttpServer {
         boolean enabled = Boolean.parseBoolean(String.valueOf(sign.getOrDefault("enabled", true)));
         String serverName = stringValue(sign.get("serverName"), "");
         String groupName = stringValue(sign.get("groupName"), "");
-        boolean hasGroup = groupName.isBlank() || master.getConfigManager().getAllServerGroups().stream().anyMatch(groupName::equalsIgnoreCase);
-        boolean maintenance = !groupName.isBlank() && master.getConfigManager().isMaintenanceMode(groupName);
-        boolean full = target != null && target.maxPlayers > 0 && target.playerCount >= target.maxPlayers;
+        String effectiveGroupName = !groupName.isBlank() ? groupName : (target == null ? "" : target.groupName);
+        boolean hasGroup = effectiveGroupName.isBlank()
+                || master.getConfigManager().getAllServerGroups().stream().anyMatch(effectiveGroupName::equalsIgnoreCase);
+        boolean maintenance = !effectiveGroupName.isBlank() && master.getConfigManager().isMaintenanceMode(effectiveGroupName);
+        boolean full = target != null && target.maxPlayers > 0 && effectiveSelectorPlayerCount(master, target) >= target.maxPlayers;
         boolean online = target != null && "ONLINE".equalsIgnoreCase(target.status);
+        String selectorType = stringValue(sign.get("selectorType"), "SIGN").toUpperCase(Locale.ROOT);
+        boolean entitySelector = "NPC".equals(selectorType) || "MOB".equals(selectorType);
+        boolean spawned = Boolean.parseBoolean(String.valueOf(sign.getOrDefault("spawned", false)));
+        long lastSeenAt = longValue(sign.get("lastSeenAt"), 0L);
+        long lastSeenAgeMs = lastSeenAt <= 0 ? -1L : System.currentTimeMillis() - lastSeenAt;
+        boolean staleSpawn = entitySelector && spawned && lastSeenAgeMs > SELECTOR_HEARTBEAT_STALE_MS;
+        String clickAction = stringValue(sign.get("clickAction"), "CONNECT").toUpperCase(Locale.ROOT);
         String status = "OK";
-        String action = "CONNECT";
+        String action = clickAction.isBlank() ? "CONNECT" : clickAction;
         List<String> issues = new ArrayList<>();
         if (!enabled) {
             status = "DISABLED";
             action = "DISABLED";
             issues.add("selector disabled");
+        } else if ("DISABLED".equals(action)) {
+            status = "DISABLED";
+            issues.add("click action disabled");
         } else if (!hasGroup) {
             status = "MISSING_GROUP";
             action = "DISABLED";
             issues.add("target group missing");
+        } else if (staleSpawn) {
+            status = "SPAWN_STALE";
+            action = "RESPAWN";
+            issues.add("entity selector heartbeat stale");
+        } else if (entitySelector && !spawned) {
+            status = "NOT_SPAWNED";
+            action = "SPAWN";
+            issues.add("entity selector not spawned");
         } else if (!serverName.isBlank() && target == null) {
             status = "TARGET_OFFLINE";
             action = stringValue(sign.get("fallbackGroup"), "").isBlank() ? "QUEUE" : "FALLBACK";
@@ -3112,6 +3398,14 @@ public class CloudHttpServer {
         health.put("maintenance", maintenance);
         health.put("full", full);
         health.put("permissionRequired", !stringValue(sign.get("permission"), "").isBlank());
+        health.put("spawned", spawned);
+        health.put("spawnStale", staleSpawn);
+        health.put("lastSeenAt", lastSeenAt);
+        health.put("lastSeenAgeMs", lastSeenAgeMs);
+        health.put("selectorType", selectorType);
+        health.put("clickAction", clickAction);
+        health.put("fallbackGroup", stringValue(sign.get("fallbackGroup"), ""));
+        health.put("partyAware", Boolean.parseBoolean(String.valueOf(sign.getOrDefault("partyAware", true))));
         return health;
     }
 
@@ -3122,6 +3416,31 @@ public class CloudHttpServer {
             counts.put(category, counts.getOrDefault(category, 0) + 1);
         }
         return new LinkedHashMap<>(counts);
+    }
+
+    private Map<String, Object> buildSelectorHealthSummary(List<Map<String, Object>> selectors) {
+        Map<String, Integer> byStatus = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        int ok = 0;
+        int actionable = 0;
+        for (Map<String, Object> selector : selectors) {
+            Map<?, ?> health = selector.get("health") instanceof Map<?, ?> raw ? raw : Map.of();
+            String status = stringValue(health.get("status"), "UNKNOWN");
+            byStatus.put(status, byStatus.getOrDefault(status, 0) + 1);
+            if ("OK".equalsIgnoreCase(status)) {
+                ok++;
+            }
+            String action = stringValue(health.get("action"), "");
+            if (!action.isBlank() && !"DISABLED".equalsIgnoreCase(action)) {
+                actionable++;
+            }
+        }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("total", selectors.size());
+        summary.put("ok", ok);
+        summary.put("issues", Math.max(0, selectors.size() - ok));
+        summary.put("actionable", actionable);
+        summary.put("byStatus", byStatus);
+        return summary;
     }
 
     private String defaultLayoutForSelector(Map<String, Object> selector) {
@@ -3144,6 +3463,11 @@ public class CloudHttpServer {
     }
 
     private List<String> renderSignLines(List<String> templateLines, Map<String, Object> sign, ServerInstance target, String animation) {
+        return renderTemplateLines(templateLines, sign, target, animation, 4, true);
+    }
+
+    private List<String> renderTemplateLines(List<String> templateLines, Map<String, Object> sign, ServerInstance target,
+                                             String animation, int maxLines, boolean padToMax) {
         List<String> lines = new ArrayList<>();
         Map<String, String> placeholders = new LinkedHashMap<>();
         placeholders.put("{id}", stringValue(sign.get("id"), ""));
@@ -3172,16 +3496,19 @@ public class CloudHttpServer {
         placeholders.put("{wrapper}", target == null ? "" : target.wrapperId);
         placeholders.put("{animation}", animation == null ? "" : animation);
         for (String line : templateLines) {
+            if (maxLines > 0 && lines.size() >= maxLines) {
+                break;
+            }
             String rendered = line == null ? "" : line;
             for (Map.Entry<String, String> entry : placeholders.entrySet()) {
                 rendered = rendered.replace(entry.getKey(), entry.getValue());
             }
             lines.add(rendered);
         }
-        while (lines.size() < 4) {
+        while (padToMax && lines.size() < maxLines) {
             lines.add("");
         }
-        return lines.subList(0, 4);
+        return maxLines > 0 && lines.size() > maxLines ? new ArrayList<>(lines.subList(0, maxLines)) : lines;
     }
 
     private void publishApiEvent(String type, String message) {
@@ -3545,6 +3872,7 @@ public class CloudHttpServer {
         Map<String, Object> stats = new HashMap<>();
 
         stats.put("serverLoads", master.getLoadBalancerManager().getServerLoads());
+        stats.put("routing", master.getLoadBalancerManager().getRoutingDiagnostics());
 
         sendResponse(exchange, 200, stats);
     }
@@ -4000,6 +4328,7 @@ public class CloudHttpServer {
         snapshot.put("type", "live_update");
         snapshot.put("timestamp", System.currentTimeMillis());
         snapshot.put("doctor", buildSystemDoctorLiveSummary());
+        snapshot.put("apiRuntime", buildApiRuntimePayload());
         if (master == null) {
             snapshot.put("runningServers", 0);
             snapshot.put("connectedWrappers", 0);
@@ -4248,6 +4577,24 @@ public class CloudHttpServer {
                     post:
                       summary: Report spawned selector health/location from a Lobby or Spigot plugin
                       responses: { '200': { description: Selector heartbeat result } }
+                  /selectors/resolve:
+                    post:
+                      summary: Resolve a Sign/NPC/Mob selector click to connect, fallback, queue or spawn action
+                      requestBody:
+                        required: true
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              required: [id]
+                              properties:
+                                id: { type: string, example: lobby-selector-1 }
+                                playerUuid: { type: string, example: 00000000-0000-0000-0000-000000000000 }
+                                playerName: { type: string, example: kallifabio }
+                                priority: { type: integer, example: 0 }
+                                enqueue: { type: boolean, example: true }
+                                assignSession: { type: boolean, example: false }
+                      responses: { '200': { description: Selector resolve decision } }
                   /bungeesystem:
                     get:
                       summary: BungeeSystem proxy-layer overview with proxies, punishments, clans and live events
@@ -4556,8 +4903,8 @@ public class CloudHttpServer {
                       responses: { '200': { description: Path deleted } }
                   /loadbalancer/stats:
                     get:
-                      summary: Load balancer statistics
-                      responses: { '200': { description: Load balancer stats } }
+                      summary: Load balancer statistics with routing diagnostics and rejection reasons
+                      responses: { '200': { description: Load balancer stats and candidate diagnostics } }
                   /groups:
                     get:
                       summary: List server groups

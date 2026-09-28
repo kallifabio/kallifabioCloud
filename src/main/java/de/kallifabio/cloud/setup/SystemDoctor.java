@@ -27,10 +27,12 @@ public final class SystemDoctor {
         Map<String, Object> report = new LinkedHashMap<>();
 
         inspectFiles(configManager, findings);
+        inspectApiSecurity(configManager, findings);
         inspectPorts(configManager, findings);
         inspectNetwork(configManager, findings);
         inspectMonitoringAndRecovery(configManager, findings);
         inspectServerGroups(configManager, findings);
+        inspectSelectors(configManager, findings);
         inspectAutoStart(configManager, findings);
         inspectSetupValidator(configManager, findings);
 
@@ -45,6 +47,7 @@ public final class SystemDoctor {
         summary.put("info", info);
         summary.put("findings", findings.size());
         summary.put("groups", configManager.getAllServerGroups().size());
+        summary.put("selectors", configManager.getCloudSigns().size());
 
         report.put("timestamp", System.currentTimeMillis());
         report.put("summary", summary);
@@ -56,9 +59,53 @@ public final class SystemDoctor {
         checkReadableFile(findings, "config:master", config.getMasterConfigFile(), "Master config file");
         checkReadableFile(findings, "config:servergroups", config.getServerGroupsFile(), "ServerGroups config file");
         checkReadableFile(findings, "config:cluster", config.getClusterConfigFile(), "Cluster config file");
+        checkReadableFile(findings, "config:signs", config.getSignsFile(), "Signs/selector config file");
+        checkReadableFile(findings, "config:sign-layout", config.getSignLayoutFile(), "Selector layout config file");
         checkWritableDirectory(findings, "dir:logs", Path.of("logs"), "Log/report directory");
         checkDirectory(findings, "dir:templates", Path.of("templates"), "Template directory");
         checkDirectory(findings, "dir:data", Path.of("data"), "Data directory");
+    }
+
+    private static void inspectApiSecurity(ConfigManager config, List<Map<String, Object>> findings) {
+        boolean apiEnabled = config.getMasterConfigData().getBoolean("CloudMaster.API.Enabled", true);
+        if (!apiEnabled) {
+            finding(findings, "INFO", "api:disabled",
+                    "REST API is disabled.",
+                    "Enable it only when the dashboard or external plugins should access the cloud.");
+            return;
+        }
+
+        String adminKey = config.getMaster("CloudMaster.API.AdminKey");
+        String dashboardKey = config.getMaster("CloudMaster.API.DashboardKey");
+        String ownerKey = config.getMaster("CloudMaster.API.OwnerKey");
+        String allowedOrigins = config.getMasterConfigData().getString("CloudMaster.API.AllowedOrigins", "*");
+        boolean tls = config.getMasterConfigData().getBoolean("CloudMaster.API.TLS.Enabled", false);
+
+        if (isBlank(adminKey)) {
+            finding(findings, "CRITICAL", "api:adminKey",
+                    "Admin API key is empty.",
+                    "Generate a strong AdminKey before exposing the API.");
+        }
+        if (isBlank(dashboardKey)) {
+            finding(findings, "WARNING", "api:dashboardKey",
+                    "Dashboard API key is empty.",
+                    "Generate a DashboardKey for read-only dashboard access.");
+        }
+        if (!isBlank(adminKey) && adminKey.equals(dashboardKey)) {
+            finding(findings, "CRITICAL", "api:keyReuse",
+                    "AdminKey and DashboardKey are identical.",
+                    "Use separate keys so dashboard access cannot perform admin actions.");
+        }
+        if (!isBlank(ownerKey) && ownerKey.equals(adminKey)) {
+            finding(findings, "WARNING", "api:ownerAdminReuse",
+                    "OwnerKey and AdminKey are identical.",
+                    "Use a separate owner key for high-risk operations and key rotation.");
+        }
+        if ("*".equals(allowedOrigins) && !tls) {
+            finding(findings, "WARNING", "api:corsTls",
+                    "AllowedOrigins is '*' while API TLS is disabled.",
+                    "For public deployments, restrict origins and enable TLS or place the API behind a trusted reverse proxy.");
+        }
     }
 
     private static void inspectPorts(ConfigManager config, List<Map<String, Object>> findings) {
@@ -238,6 +285,97 @@ public final class SystemDoctor {
         }
     }
 
+    private static void inspectSelectors(ConfigManager config, List<Map<String, Object>> findings) {
+        List<Map<String, Object>> selectors = config.getCloudSigns();
+        if (selectors.isEmpty()) {
+            finding(findings, "INFO", "selectors:none",
+                    "No cloud selectors are configured.",
+                    "Create signs or NPC/mob selectors when you want centralized server selection.");
+            return;
+        }
+
+        Set<String> groups = new LinkedHashSet<>(config.getAllServerGroups());
+        Set<String> layouts = config.getSignLayouts().keySet();
+        Set<String> seenLocations = new LinkedHashSet<>();
+        Set<String> duplicateLocations = new LinkedHashSet<>();
+        long now = System.currentTimeMillis();
+
+        for (Map<String, Object> selector : selectors) {
+            String id = text(selector.get("id"));
+            String type = normalizeSelectorType(text(selector.get("selectorType")));
+            boolean enabled = bool(selector.get("enabled"), true);
+            String serverName = text(selector.get("serverName"));
+            String groupName = text(selector.get("groupName"));
+            String layout = text(selector.get("layout"));
+            String action = text(selector.get("clickAction")).toUpperCase(Locale.ROOT);
+            String entityType = text(selector.get("entityType")).toUpperCase(Locale.ROOT);
+            String locationMode = text(selector.get("locationMode"));
+
+            if (serverName.isBlank() && groupName.isBlank()) {
+                finding(findings, enabled ? "CRITICAL" : "WARNING", "selector:" + id + ":target",
+                        "Selector " + id + " has no serverName or groupName target.",
+                        "Set a server target for fixed routing or a group target for smart routing.");
+            }
+            if (!groupName.isBlank() && groups.stream().noneMatch(groupName::equalsIgnoreCase)) {
+                finding(findings, enabled ? "CRITICAL" : "WARNING", "selector:" + id + ":group",
+                        "Selector " + id + " references missing group " + groupName + ".",
+                        "Create the group or update the selector target.");
+            }
+            if (!serverName.isBlank() && groupName.isBlank()) {
+                finding(findings, "INFO", "selector:" + id + ":fallback",
+                        "Selector " + id + " targets a fixed server without group fallback.",
+                        "For production, prefer groupName or set fallbackGroup so offline targets can route to an alternative.");
+            }
+            if (!layout.isBlank() && layouts.stream().noneMatch(layout::equalsIgnoreCase)) {
+                finding(findings, "WARNING", "selector:" + id + ":layout",
+                        "Selector " + id + " uses missing layout " + layout + ".",
+                        "Create the layout or switch to Default/Npc/Mob.");
+            }
+            if (!isAllowedSelectorAction(action)) {
+                finding(findings, "WARNING", "selector:" + id + ":action",
+                        "Selector " + id + " uses unknown clickAction " + action + ".",
+                        "Use CONNECT, QUEUE, QUEUE_OR_CONNECT, FALLBACK, DISABLED or PREVIEW.");
+            }
+            if (("NPC".equals(type) || "MOB".equals(type)) && entityType.isBlank()) {
+                finding(findings, "WARNING", "selector:" + id + ":entity",
+                        "Entity selector " + id + " has no entityType.",
+                        "Use VILLAGER for NPC selectors or a valid mob type for MOB selectors.");
+            }
+            if ("MOB".equals(type) && "PLAYER".equals(entityType)) {
+                finding(findings, "WARNING", "selector:" + id + ":mobType",
+                        "Mob selector " + id + " uses PLAYER as entityType.",
+                        "Use selectorType=NPC for player-like selectors or a mob entity such as ZOMBIE.");
+            }
+            if (("NPC".equals(type) || "MOB".equals(type)) && bool(selector.get("spawned"), false)) {
+                long lastSeenAt = number(selector.get("lastSeenAt"), 0L);
+                if (lastSeenAt <= 0) {
+                    finding(findings, "WARNING", "selector:" + id + ":heartbeat",
+                            "Entity selector " + id + " is marked spawned but has no heartbeat timestamp.",
+                            "Send /api/v1/selectors/heartbeat from the LobbySystem after spawning selectors.");
+                } else if (now - lastSeenAt > 45_000L) {
+                    finding(findings, "WARNING", "selector:" + id + ":heartbeat",
+                            "Entity selector " + id + " heartbeat is stale (" + ((now - lastSeenAt) / 1000) + "s).",
+                            "Verify the LobbySystem selector sync/heartbeat task is running.");
+                }
+            }
+            if (enabled && ("FIXED".equalsIgnoreCase(locationMode) || !bool(selector.get("autoLocation"), false))) {
+                String locationKey = type + "|" + text(selector.get("world")).toLowerCase(Locale.ROOT)
+                        + "|" + number(selector.get("x"), 0L)
+                        + "|" + number(selector.get("y"), 0L)
+                        + "|" + number(selector.get("z"), 0L);
+                if (!seenLocations.add(locationKey)) {
+                    duplicateLocations.add(locationKey);
+                }
+            }
+        }
+
+        for (String duplicate : duplicateLocations) {
+            finding(findings, "WARNING", "selectors:duplicate-location:" + duplicate.hashCode(),
+                    "Multiple enabled/fixed selectors share location " + duplicate + ".",
+                    "Move duplicate selectors or use auto-location setup to avoid overlap.");
+        }
+    }
+
     private static void inspectAutoStart(ConfigManager config, List<Map<String, Object>> findings) {
         if (!config.isAutoStartEnabled()) {
             finding(findings, "INFO", "autostart:disabled",
@@ -322,5 +460,46 @@ public final class SystemDoctor {
         item.put("message", message);
         item.put("recommendation", recommendation);
         findings.add(item);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static String text(Object value) {
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static boolean bool(Object value, boolean fallback) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value == null) {
+            return fallback;
+        }
+        return Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private static long number(Object value, long fallback) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return value == null ? fallback : Long.parseLong(String.valueOf(value));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static String normalizeSelectorType(String type) {
+        if ("NPC".equalsIgnoreCase(type) || "MOB".equalsIgnoreCase(type)) {
+            return type.toUpperCase(Locale.ROOT);
+        }
+        return "SIGN";
+    }
+
+    private static boolean isAllowedSelectorAction(String action) {
+        return action == null || action.isBlank()
+                || Set.of("CONNECT", "QUEUE", "QUEUE_OR_CONNECT", "FALLBACK", "DISABLED", "PREVIEW").contains(action);
     }
 }

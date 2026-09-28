@@ -91,7 +91,13 @@ public class LiveWebSocketServer extends WebSocketServer {
             Map<String, Object> error = new HashMap<>();
             error.put("type", "live_error");
             error.put("message", ex.getMessage() == null ? "Snapshot failed" : ex.getMessage());
-            broadcast(gson.toJson(error));
+            try {
+                if (!getConnections().isEmpty()) {
+                    broadcast(gson.toJson(error));
+                }
+            } catch (Exception ignored) {
+                // Keep the scheduler alive even if clients disconnect while sending the error snapshot.
+            }
         }
     }
 

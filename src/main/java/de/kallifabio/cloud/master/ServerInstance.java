@@ -106,22 +106,26 @@ public class ServerInstance {
     }
 
     public double getMemoryUsagePercentage() {
-        if (allocatedRam == 0) return 0.0;
-        return ((double) memoryUsage / (allocatedRam * 1024 * 1024)) * 100.0;
+        if (allocatedRam <= 0) return 0.0;
+        return ((double) memoryUsage / (allocatedRam * 1024L * 1024L)) * 100.0;
     }
 
     public void updateMetrics(int playerCount, int maxPlayers, double tps, long memoryUsage) {
-        this.playerCount = playerCount;
-        this.maxPlayers = maxPlayers;
-        this.tps = tps;
-        this.memoryUsage = memoryUsage;
+        this.playerCount = Math.max(0, playerCount);
+        this.maxPlayers = Math.max(1, maxPlayers);
+        this.tps = Math.max(0.0, Math.min(20.0, tps));
+        this.memoryUsage = Math.max(0L, memoryUsage);
         this.lastUpdate = System.currentTimeMillis();
     }
 
     public void updateStatus(String newStatus) {
-        this.status = newStatus;
-        this.lifecycleState = ServerLifecycleState.fromStatus(newStatus);
-        this.lastStateChange = System.currentTimeMillis();
+        String normalized = newStatus == null || newStatus.isBlank() ? "UNKNOWN" : newStatus.trim().toUpperCase();
+        boolean changed = !normalized.equalsIgnoreCase(this.status);
+        this.status = normalized;
+        this.lifecycleState = ServerLifecycleState.fromStatus(normalized);
+        if (changed) {
+            this.lastStateChange = System.currentTimeMillis();
+        }
         this.lastUpdate = System.currentTimeMillis();
     }
 

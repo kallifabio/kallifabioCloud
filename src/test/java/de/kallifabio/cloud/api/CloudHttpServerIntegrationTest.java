@@ -101,6 +101,7 @@ public class CloudHttpServerIntegrationTest {
         Map<?, ?> readinessData = GSON.fromJson(readiness.body(), Map.class);
         Assertions.assertTrue(readinessData.containsKey("ready"));
         Assertions.assertTrue(readinessData.containsKey("components"));
+        Assertions.assertTrue(readinessData.containsKey("apiRuntime"));
 
         HttpResponse<String> invalidJson = sendJson(
                 baseUrl + "/api/v1/servers/start",
@@ -139,6 +140,7 @@ public class CloudHttpServerIntegrationTest {
         Map<?, ?> reportData = GSON.fromJson(report.body(), Map.class);
         Assertions.assertTrue(reportData.containsKey("health"));
         Assertions.assertTrue(reportData.containsKey("readiness"));
+        Assertions.assertTrue(reportData.containsKey("apiRuntime"));
         Assertions.assertTrue(reportData.containsKey("doctor"));
         Assertions.assertTrue(reportData.containsKey("logStats"));
 

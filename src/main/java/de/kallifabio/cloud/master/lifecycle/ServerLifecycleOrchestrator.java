@@ -27,6 +27,16 @@ public final class ServerLifecycleOrchestrator {
             return null;
         }
         ServerLifecycleState from = server.getLifecycleState();
+        if (!isAllowedTransition(from, target)) {
+            events.publish("SERVER_LIFECYCLE_REJECTED", "server:" + server.serverName, "WARNING",
+                    from + " -> " + target + " rejected",
+                    Map.of("server", server.serverName,
+                            "from", from.name(),
+                            "to", target.name(),
+                            "reason", reason == null ? "" : reason));
+            return new LifecycleTransition(System.currentTimeMillis(), server.serverName, from, from,
+                    "rejected invalid transition to " + target + ": " + (reason == null ? "" : reason));
+        }
         if (from == target) {
             server.lastUpdate = System.currentTimeMillis();
             return new LifecycleTransition(System.currentTimeMillis(), server.serverName, from, target, reason);
@@ -50,6 +60,39 @@ public final class ServerLifecycleOrchestrator {
                 from + " -> " + target,
                 Map.of("server", server.serverName, "from", from.name(), "to", target.name(), "reason", transition.reason()));
         return transition;
+    }
+
+    private boolean isAllowedTransition(ServerLifecycleState from, ServerLifecycleState target) {
+        if (from == target) {
+            return true;
+        }
+        if (target == ServerLifecycleState.FAILED || target == ServerLifecycleState.QUARANTINED) {
+            return true;
+        }
+        return switch (from) {
+            case QUEUED -> target == ServerLifecycleState.PREPARING
+                    || target == ServerLifecycleState.STOPPING
+                    || target == ServerLifecycleState.OFFLINE;
+            case PREPARING -> target == ServerLifecycleState.STARTING
+                    || target == ServerLifecycleState.STOPPING
+                    || target == ServerLifecycleState.OFFLINE;
+            case STARTING -> target == ServerLifecycleState.ONLINE
+                    || target == ServerLifecycleState.STOPPING
+                    || target == ServerLifecycleState.OFFLINE;
+            case ONLINE -> target == ServerLifecycleState.DRAINING
+                    || target == ServerLifecycleState.STOPPING
+                    || target == ServerLifecycleState.OFFLINE;
+            case DRAINING -> target == ServerLifecycleState.STOPPING
+                    || target == ServerLifecycleState.OFFLINE;
+            case STOPPING -> target == ServerLifecycleState.OFFLINE;
+            case FAILED -> target == ServerLifecycleState.OFFLINE
+                    || target == ServerLifecycleState.QUEUED
+                    || target == ServerLifecycleState.PREPARING;
+            case OFFLINE -> target == ServerLifecycleState.QUEUED
+                    || target == ServerLifecycleState.PREPARING
+                    || target == ServerLifecycleState.STARTING;
+            case QUARANTINED -> target == ServerLifecycleState.OFFLINE;
+        };
     }
 
     public List<Map<String, Object>> recentTransitions(String serverName, int limit) {

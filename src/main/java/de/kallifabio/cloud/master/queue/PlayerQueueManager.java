@@ -52,6 +52,11 @@ public class PlayerQueueManager {
     }
 
     public void addToQueue(String playerUuid, String playerName, String groupName, int priority) {
+        if (playerUuid == null || playerUuid.isBlank() || groupName == null || groupName.isBlank()) {
+            return;
+        }
+        playerUuid = playerUuid.trim().toLowerCase();
+        groupName = groupName.trim();
         PriorityBlockingQueue<QueuedPlayer> queue = groupQueues.computeIfAbsent(groupName, k -> new PriorityBlockingQueue<>());
         String queueKey = queueKey(groupName, playerUuid);
 
@@ -60,10 +65,11 @@ public class PlayerQueueManager {
             notifyPlayerQueueUpdate(existing);
             return;
         }
+        removeFromQueue(playerUuid);
 
         QueuedPlayer queuedPlayer = new QueuedPlayer(
                 playerUuid,
-                playerName,
+                playerName == null || playerName.isBlank() ? "Player" : playerName.trim(),
                 groupName,
                 priority,
                 System.currentTimeMillis()
@@ -94,12 +100,11 @@ public class PlayerQueueManager {
 
             int processedThisTick = 0;
             while (!queue.isEmpty() && processedThisTick < MAX_MATCHES_PER_TICK) {
-                List<QueuedPlayer> orderedQueue = getOrderedQueue(groupName);
-                if (orderedQueue.isEmpty()) {
+                QueuedPlayer nextPlayer = queue.peek();
+                if (nextPlayer == null) {
                     break;
                 }
 
-                QueuedPlayer nextPlayer = orderedQueue.get(0);
                 String availableServer = loadBalancer.getBestServer(groupName, nextPlayer.playerUuid);
 
                 if (availableServer == null) {
@@ -188,6 +193,10 @@ public class PlayerQueueManager {
     }
 
     public int getQueuePosition(String playerUuid) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            return -1;
+        }
+        playerUuid = playerUuid.trim().toLowerCase();
         for (QueuedPlayer player : playerQueue.values()) {
             int pos = getQueuePosition(playerUuid, player.groupName);
             if (pos > 0) {
@@ -198,6 +207,11 @@ public class PlayerQueueManager {
     }
 
     public int getQueuePosition(String playerUuid, String groupName) {
+        if (playerUuid == null || playerUuid.isBlank() || groupName == null || groupName.isBlank()) {
+            return -1;
+        }
+        playerUuid = playerUuid.trim().toLowerCase();
+        groupName = groupName.trim();
         QueuedPlayer player = playerQueue.get(queueKey(groupName, playerUuid));
         if (player == null) {
             return -1;
@@ -209,8 +223,13 @@ public class PlayerQueueManager {
     }
 
     public void removeFromQueue(String playerUuid) {
+        if (playerUuid == null || playerUuid.isBlank()) {
+            return;
+        }
+        playerUuid = playerUuid.trim().toLowerCase();
+        String normalizedPlayerUuid = playerUuid;
         List<QueuedPlayer> toRemove = playerQueue.values().stream()
-                .filter(p -> p.playerUuid.equalsIgnoreCase(playerUuid))
+                .filter(p -> p.playerUuid.equalsIgnoreCase(normalizedPlayerUuid))
                 .toList();
         for (QueuedPlayer player : toRemove) {
             playerQueue.remove(queueKey(player.groupName, player.playerUuid));
@@ -318,6 +337,11 @@ public class PlayerQueueManager {
     }
 
     public void markQueueActivity(String playerUuid, String groupName) {
+        if (playerUuid == null || playerUuid.isBlank() || groupName == null || groupName.isBlank()) {
+            return;
+        }
+        playerUuid = playerUuid.trim().toLowerCase();
+        groupName = groupName.trim();
         queueActivity.put(queueKey(groupName, playerUuid), System.currentTimeMillis());
     }
 
@@ -351,7 +375,7 @@ public class PlayerQueueManager {
     }
 
     private String queueKey(String groupName, String playerUuid) {
-        return groupName + "|" + playerUuid;
+        return groupName.trim() + "|" + playerUuid.trim().toLowerCase();
     }
 }
 

@@ -447,6 +447,7 @@ public class Wrapper {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " Unerwarteter Fehler bei " + serverName + ": " + e.getMessage());
             e.printStackTrace();
+            sendServerStatus(serverName, groupName, "FAILED");
             restartInProgress.remove(serverName);
             restartRetryCounts.remove(serverName);
         } finally {
@@ -660,6 +661,7 @@ public class Wrapper {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
                     ConsoleColors.getCurrentTime() + " FEHLER beim Starten von " + serverName +
                     ": " + reason + " (Retry-Limit erreicht)");
+            sendServerStatus(serverName, groupName, "FAILED");
             restartInProgress.remove(serverName);
             restartRetryCounts.remove(serverName);
             return;
@@ -868,6 +870,11 @@ public class Wrapper {
     }
 
     public void sendServerStatus(String serverName, String status) {
+        Serverprocess process = managedServers.get(serverName);
+        sendServerStatus(serverName, process == null ? null : process.getGroupName(), status);
+    }
+
+    public void sendServerStatus(String serverName, String groupName, String status) {
         if (!connected) return;
 
         Message.ServerStatusMessage message = new Message.ServerStatusMessage();
@@ -878,6 +885,8 @@ public class Wrapper {
             message.groupName = process.getGroupName();
             message.playerCount = process.getPlayerCount();
             message.maxPlayers = process.getMaxPlayers();
+        } else {
+            message.groupName = groupName;
         }
 
         client.sendTCP(message);

@@ -535,15 +535,24 @@ public class Master {
         }
 
         if (instance != null) {
-            instance.status = message.status;
-            instance.lastUpdate = System.currentTimeMillis();
+            if (message.playerCount >= 0) {
+                instance.playerCount = Math.max(0, message.playerCount);
+            }
+            if (message.maxPlayers > 0) {
+                instance.maxPlayers = message.maxPlayers;
+            }
 
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                     " Server Status: " + message.serverName + " -> " + message.status);
-            lifecycleOrchestrator.transition(instance, ServerLifecycleState.fromStatus(message.status),
-                    "wrapper status update");
+            ServerLifecycleState targetState = ServerLifecycleState.fromStatus(message.status);
+            if (("OFFLINE".equalsIgnoreCase(message.status) || "KILLED".equalsIgnoreCase(message.status))
+                    && stopInProgress.contains(message.serverName)) {
+                targetState = ServerLifecycleState.OFFLINE;
+            }
+            lifecycleOrchestrator.transition(instance, targetState, "wrapper status update: " + message.status);
 
-            if ("ONLINE".equals(message.status)) {
+            if ("ONLINE".equalsIgnoreCase(message.status)) {
+                loadBalancerManager.releaseServerReservation(message.serverName);
                 stopInProgress.remove(message.serverName);
                 restartInProgress.remove(message.serverName);
                 restartRetryCounts.remove(message.serverName);
@@ -555,15 +564,18 @@ public class Master {
                 autoScalingManager.checkScalingNeeded(message.serverName);
             } else if ("OFFLINE".equalsIgnoreCase(message.status)
                     || "KILLED".equalsIgnoreCase(message.status)
-                    || "CRASHED".equalsIgnoreCase(message.status)) {
+                    || "CRASHED".equalsIgnoreCase(message.status)
+                    || "FAILED".equalsIgnoreCase(message.status)) {
                 if (shuttingDown) {
                     cleanupStoppedServer(instance, false);
                     return;
                 }
                 boolean expectedStop = stopInProgress.remove(message.serverName);
                 boolean restarting = restartInProgress.contains(message.serverName);
-                boolean failureStatus = "CRASHED".equalsIgnoreCase(message.status) || "KILLED".equalsIgnoreCase(message.status);
-                if (failureStatus && !expectedStop && !restarting) {
+                boolean failureStatus = "CRASHED".equalsIgnoreCase(message.status)
+                        || "KILLED".equalsIgnoreCase(message.status)
+                        || "FAILED".equalsIgnoreCase(message.status);
+                if (failureStatus && !expectedStop) {
                     handleServerFailure(instance, true);
                     return;
                 }
@@ -575,6 +587,15 @@ public class Master {
     private void cleanupStoppedServer(ServerInstance instance, boolean keepRestartState) {
         if (!isProxyGroup(instance.groupName)) {
             syncBackendRouteToProxies(instance, false);
+        }
+        lifecycleOrchestrator.transition(instance, ServerLifecycleState.OFFLINE,
+                keepRestartState ? "cleanup before restart" : "server stopped");
+        int clearedPlayers = playerSessionManager == null ? 0 : playerSessionManager.clearServerAssignments(instance.serverName);
+        int clearedAffinities = loadBalancerManager == null ? 0 : loadBalancerManager.removeServerTracking(instance.serverName);
+        if (clearedPlayers > 0 || clearedAffinities > 0) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Cleanup fuer " + instance.serverName +
+                    ": sessions=" + clearedPlayers + ", affinities=" + clearedAffinities);
         }
         Integer releasedPort = serverPorts.remove(instance.serverName);
         if (releasedPort != null) {
@@ -600,17 +621,13 @@ public class Master {
         }
 
         if (instance != null) {
-            instance.playerCount = metrics.playerCount;
-            instance.maxPlayers = metrics.maxPlayers;
-            instance.tps = metrics.tps;
-            instance.memoryUsage = metrics.memoryUsage;
-            instance.cpuUsage = metrics.cpuUsage;
-            instance.networkInBytes = metrics.networkInBytes;
-            instance.networkOutBytes = metrics.networkOutBytes;
+            instance.updateMetrics(metrics.playerCount, metrics.maxPlayers, metrics.tps, metrics.memoryUsage);
+            instance.cpuUsage = Math.max(0.0, metrics.cpuUsage);
+            instance.networkInBytes = Math.max(0L, metrics.networkInBytes);
+            instance.networkOutBytes = Math.max(0L, metrics.networkOutBytes);
             instance.networkMode = metrics.networkMode == null ? "NONE" : metrics.networkMode;
-            instance.diskReadBytes = metrics.diskReadBytes;
-            instance.diskWriteBytes = metrics.diskWriteBytes;
-            instance.lastUpdate = System.currentTimeMillis();
+            instance.diskReadBytes = Math.max(0L, metrics.diskReadBytes);
+            instance.diskWriteBytes = Math.max(0L, metrics.diskWriteBytes);
 
             monitoringService.recordServerMetrics(instance);
             loadBalancerManager.updateServerLoad(metrics);
@@ -672,21 +689,6 @@ public class Master {
             return;
         }
 
-        String lastServer = playerSessionManager.getLastServer(request.playerUuid);
-        if (lastServer != null && !lastServer.isBlank()) {
-            ServerInstance previous = runningServers.get(lastServer);
-            if (previous != null && "ONLINE".equals(previous.status)) {
-                Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
-                response.playerUuid = request.playerUuid;
-                response.targetServer = lastServer;
-                response.success = true;
-                response.message = "Reconnecting to last server";
-                connection.sendTCP(response);
-                playerSessionManager.assignServer(request.playerUuid, lastServer);
-                return;
-            }
-        }
-
         boolean staffBypass = request.priority >= 100 || permissionEnforcer.canBypassMaintenance(request.playerUuid);
         boolean vipBypass = request.priority >= 50 || permissionEnforcer.canBypassServerFull(request.playerUuid);
 
@@ -698,6 +700,21 @@ public class Master {
                 response.success = false;
                 response.message = "Group is in maintenance mode";
                 connection.sendTCP(response);
+                return;
+            }
+        }
+
+        String lastServer = playerSessionManager.getLastServer(request.playerUuid);
+        if (lastServer != null && !lastServer.isBlank()) {
+            ServerInstance previous = runningServers.get(lastServer);
+            if (isJoinTargetAllowed(previous, request.groupName, request.playerUuid, staffBypass, vipBypass)) {
+                Message.PlayerJoinResponse response = new Message.PlayerJoinResponse();
+                response.playerUuid = request.playerUuid;
+                response.targetServer = lastServer;
+                response.success = true;
+                response.message = "Reconnecting to last server";
+                connection.sendTCP(response);
+                playerSessionManager.assignServer(request.playerUuid, lastServer);
                 return;
             }
         }
@@ -734,6 +751,26 @@ public class Master {
             response.message = "No server available, added to queue";
             connection.sendTCP(response);
         }
+    }
+
+    private boolean isJoinTargetAllowed(ServerInstance target, String requestedGroup, String playerUuid,
+                                        boolean maintenanceBypass, boolean fullBypass) {
+        if (target == null || !target.isOnline() || !target.isHealthy()) {
+            return false;
+        }
+        if (requestedGroup == null || target.groupName == null || !target.groupName.equalsIgnoreCase(requestedGroup)) {
+            return false;
+        }
+        if (loadBalancerManager.isWrapperDraining(target.wrapperId)) {
+            return false;
+        }
+        if (configManager.isMaintenanceMode(target.groupName) && !maintenanceBypass) {
+            List<String> whitelist = configManager.getGroupWhitelist(target.groupName);
+            if (!whitelist.contains(playerUuid)) {
+                return false;
+            }
+        }
+        return fullBypass || target.maxPlayers <= 0 || target.playerCount < target.maxPlayers;
     }
 
     private void handleClusterSync(Connection connection, Message.ClusterSync sync) {
@@ -976,6 +1013,13 @@ public class Master {
             cleanupPendingSocialRequests();
         }, 60, 60, TimeUnit.SECONDS);
 
+        executorService.scheduleAtFixedRate(() -> {
+            int removed = playerSessionManager.cleanupExpiredSessions();
+            if (removed > 0) {
+                CentralLogger.info("PlayerSession", "Expired player sessions removed: " + removed);
+            }
+        }, 5, 5, TimeUnit.MINUTES);
+
         // Auto-Start configured servers after 10 seconds
         int autoStartDelay = configManager.getAutoStartDelay();
         executorService.schedule(() -> {
@@ -1142,6 +1186,10 @@ public class Master {
         if (port != null) {
             releasePort(port);
         }
+        stopInProgress.remove(server.serverName);
+        restartInProgress.remove(server.serverName);
+        restartRetryCounts.remove(server.serverName);
+        loadBalancerManager.releaseServerReservation(server.serverName);
 
         runningServers.remove(server.serverName);
 
@@ -1246,6 +1294,16 @@ public class Master {
         if (shuttingDown) {
             return;
         }
+        ServerInstance existing = runningServers.get(serverName);
+        if (existing != null
+                && !"OFFLINE".equalsIgnoreCase(existing.status)
+                && !"FAILED".equalsIgnoreCase(existing.status)
+                && !"QUARANTINED".equalsIgnoreCase(existing.status)) {
+            ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
+                    ConsoleColors.getCurrentTime() + " Start ignoriert: " + serverName +
+                    " ist bereits im Status " + existing.status);
+            return;
+        }
         if (isQuarantineBlockingEnabled()
                 && serverFailureCounts.getOrDefault(serverName, 0) >= getFailureQuarantineThreshold()) {
             ConsoleScreenManager.printToTerminal(ConsoleColors.RED + ConsoleColors.PREFIX +
@@ -1257,6 +1315,7 @@ public class Master {
             restartRetryCounts.remove(serverName);
             return;
         }
+        int requiredRam = Math.max(256, configManager.getRamForGroup(groupName));
         WrapperConnection bestWrapper = loadBalancerManager.getBestWrapperForServer(groupName);
 
         if (bestWrapper == null) {
@@ -1275,13 +1334,14 @@ public class Master {
                 serverName,
                 groupName,
                 bestWrapper.wrapperId,
-                configManager.getRamForGroup(groupName)
+                requiredRam
         );
         instance.port = assignedPort;
         lifecycleOrchestrator.transition(instance, ServerLifecycleState.QUEUED, "start requested");
         lifecycleOrchestrator.transition(instance, ServerLifecycleState.PREPARING, "wrapper selected");
 
         runningServers.put(serverName, instance);
+        loadBalancerManager.reserveWrapperCapacity(serverName, bestWrapper.wrapperId, requiredRam);
 
         // Send start command to wrapper
         Message.ServerCommand command = new Message.ServerCommand();

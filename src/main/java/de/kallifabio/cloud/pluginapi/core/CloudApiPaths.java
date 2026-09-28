@@ -49,4 +49,5 @@ public final class CloudApiPaths {
     public static final String SELECTORS_VERSIONS = "/api/v1/selectors/versions";
     public static final String SELECTORS_ROLLBACK = "/api/v1/selectors/rollback";
     public static final String SELECTORS_HEARTBEAT = "/api/v1/selectors/heartbeat";
+    public static final String SELECTORS_RESOLVE = "/api/v1/selectors/resolve";
 }

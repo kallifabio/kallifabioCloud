@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -562,7 +563,7 @@ public class ConfigManager {
         String selectorType = normalizeSelectorType(defaultString(request.get("selectorType"), defaultString(request.get("type"), "SIGN")));
         String id = stringValue(request.get("id"));
         if (id.isBlank()) {
-            id = selectorType.toLowerCase() + "-" + UUID.randomUUID().toString().substring(0, 8);
+            id = generateSelectorId(selectorType, request);
         }
         String safeId = sanitizeYamlKey(id);
         String base = "Signs." + safeId;
@@ -577,15 +578,17 @@ public class ConfigManager {
             locationMode = autoLocation ? "AUTO" : "FIXED";
         }
         autoLocation = "AUTO".equals(locationMode);
+        String entityType = normalizeEntityType(defaultString(request.get("entityType"), defaultEntityType(selectorType)), selectorType);
+        String displayName = defaultString(request.get("displayName"), "");
         signsData.set(base + ".Type", selectorType);
-        signsData.set(base + ".EntityType", defaultString(request.get("entityType"), "VILLAGER").toUpperCase());
-        signsData.set(base + ".DisplayName", defaultString(request.get("displayName"), ""));
+        signsData.set(base + ".EntityType", entityType);
+        signsData.set(base + ".DisplayName", displayName);
         signsData.set(base + ".SkinName", defaultString(request.get("skinName"), ""));
         signsData.set(base + ".SkinUrl", defaultString(request.get("skinUrl"), ""));
         signsData.set(base + ".Glowing", asBoolean(request.get("glowing"), false));
         signsData.set(base + ".Baby", asBoolean(request.get("baby"), false));
         signsData.set(base + ".Variant", defaultString(request.get("variant"), ""));
-        signsData.set(base + ".CustomName", defaultString(request.get("customName"), defaultString(request.get("displayName"), "")));
+        signsData.set(base + ".CustomName", defaultString(request.get("customName"), displayName));
         signsData.set(base + ".LocationMode", locationMode);
         signsData.set(base + ".AutoLocation", autoLocation);
         signsData.set(base + ".World", defaultString(request.get("world"), autoLocation ? "AUTO" : "world"));
@@ -596,16 +599,16 @@ public class ConfigManager {
         signsData.set(base + ".Pitch", asDouble(request.get("pitch"), 0.0));
         signsData.set(base + ".Server", defaultString(request.get("serverName"), defaultString(request.get("server"), "")));
         signsData.set(base + ".Group", defaultString(request.get("groupName"), defaultString(request.get("group"), "")));
-        signsData.set(base + ".Layout", defaultString(request.get("layout"), "Default"));
+        signsData.set(base + ".Layout", normalizeSelectorLayout(defaultString(request.get("layout"), defaultLayout(selectorType)), selectorType));
         signsData.set(base + ".Category", defaultString(request.get("category"), "General"));
         signsData.set(base + ".Permission", defaultString(request.get("permission"), ""));
         signsData.set(base + ".Region", defaultString(request.get("region"), "GLOBAL").toUpperCase());
         signsData.set(base + ".SelectorTemplate", defaultString(request.get("selectorTemplate"), defaultString(request.get("template"), "")));
-        signsData.set(base + ".ClickAction", defaultString(request.get("clickAction"), "CONNECT").toUpperCase());
+        signsData.set(base + ".ClickAction", normalizeClickAction(defaultString(request.get("clickAction"), "CONNECT")));
         signsData.set(base + ".FallbackGroup", defaultString(request.get("fallbackGroup"), ""));
         signsData.set(base + ".QueueOnFull", asBoolean(request.get("queueOnFull"), true));
         signsData.set(base + ".PartyAware", asBoolean(request.get("partyAware"), true));
-        signsData.set(base + ".HologramLines", asStringList(request.get("hologramLines")));
+        signsData.set(base + ".HologramLines", normalizeHologramLines(asStringList(request.get("hologramLines")), selectorType, displayName));
         signsData.set(base + ".Enabled", asBoolean(request.get("enabled"), true));
         signsData.set(base + ".Priority", asInt(request.get("priority")));
         signsData.set(base + ".Spawned", asBoolean(request.get("spawned"), signsData.getBoolean(base + ".Spawned", false)));
@@ -1393,6 +1396,82 @@ public class ConfigManager {
     private String sanitizeYamlKey(String value) {
         String safe = value == null ? "" : value.trim().replaceAll("[^a-zA-Z0-9._-]", "_");
         return safe.isBlank() ? "sign-" + UUID.randomUUID().toString().substring(0, 8) : safe;
+    }
+
+    private String generateSelectorId(String selectorType, Map<String, Object> request) {
+        String target = defaultString(request.get("serverName"), defaultString(request.get("server"),
+                defaultString(request.get("groupName"), defaultString(request.get("group"), ""))));
+        String prefix = normalizeSelectorType(selectorType).toLowerCase(Locale.ROOT);
+        if (!target.isBlank()) {
+            prefix += "-" + sanitizeYamlKey(target).toLowerCase(Locale.ROOT);
+        }
+        return prefix + "-" + Long.toUnsignedString(System.currentTimeMillis(), 36)
+                + "-" + UUID.randomUUID().toString().substring(0, 4);
+    }
+
+    private String defaultEntityType(String selectorType) {
+        if ("MOB".equalsIgnoreCase(selectorType)) {
+            return "ZOMBIE";
+        }
+        return "VILLAGER";
+    }
+
+    private String normalizeEntityType(String entityType, String selectorType) {
+        String normalized = defaultString(entityType, defaultEntityType(selectorType))
+                .trim()
+                .replace('-', '_')
+                .replace(' ', '_')
+                .toUpperCase(Locale.ROOT);
+        if ("NPC".equalsIgnoreCase(selectorType)) {
+            return normalized.isBlank() ? "VILLAGER" : normalized;
+        }
+        if ("MOB".equalsIgnoreCase(selectorType)) {
+            return normalized.isBlank() || "PLAYER".equals(normalized) ? "ZOMBIE" : normalized;
+        }
+        return normalized.isBlank() ? "VILLAGER" : normalized;
+    }
+
+    private String defaultLayout(String selectorType) {
+        if ("NPC".equalsIgnoreCase(selectorType)) {
+            return "Npc";
+        }
+        if ("MOB".equalsIgnoreCase(selectorType)) {
+            return "Mob";
+        }
+        return "Default";
+    }
+
+    private String normalizeSelectorLayout(String layout, String selectorType) {
+        String safe = defaultString(layout, defaultLayout(selectorType));
+        Map<String, List<String>> layouts = getSignLayouts();
+        if (layouts.containsKey(safe)) {
+            return safe;
+        }
+        return layouts.containsKey(defaultLayout(selectorType)) ? defaultLayout(selectorType) : "Default";
+    }
+
+    private String normalizeClickAction(String action) {
+        String normalized = defaultString(action, "CONNECT").trim().replace('-', '_').toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "CONNECT", "QUEUE", "QUEUE_OR_CONNECT", "FALLBACK", "DISABLED", "PREVIEW" -> normalized;
+            default -> "CONNECT";
+        };
+    }
+
+    private List<String> normalizeHologramLines(List<String> lines, String selectorType, String displayName) {
+        if (lines != null && !lines.isEmpty()) {
+            return lines.stream().map(line -> line == null ? "" : line).toList();
+        }
+        if ("SIGN".equalsIgnoreCase(selectorType)) {
+            return List.of();
+        }
+        String title = displayName == null || displayName.isBlank() ? "&a{server}" : displayName;
+        return List.of(
+                title,
+                "&7Status: {health}",
+                "&e{players} Spieler",
+                "&8Klicken zum Verbinden"
+        );
     }
 
     private String defaultString(Object value, String fallback) {

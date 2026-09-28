@@ -151,6 +151,31 @@ public final class SignService {
         return client.post(CloudApiPaths.SELECTORS_HEARTBEAT, body);
     }
 
+    public JsonObject resolve(String id, String playerUuid, String playerName, boolean enqueue) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", id == null ? "" : id);
+        body.put("playerUuid", playerUuid == null ? "" : playerUuid);
+        body.put("playerName", playerName == null ? "Player" : playerName);
+        body.put("enqueue", enqueue);
+        return client.post(CloudApiPaths.SELECTORS_RESOLVE, body);
+    }
+
+    public JsonObject resolve(String id, String playerUuid, String playerName, int priority,
+                              boolean enqueue, boolean assignSession) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", id == null ? "" : id);
+        body.put("playerUuid", playerUuid == null ? "" : playerUuid);
+        body.put("playerName", playerName == null ? "Player" : playerName);
+        body.put("priority", priority);
+        body.put("enqueue", enqueue);
+        body.put("assignSession", assignSession);
+        return client.post(CloudApiPaths.SELECTORS_RESOLVE, body);
+    }
+
+    public JsonObject resolve(Map<String, Object> request) {
+        return client.post(CloudApiPaths.SELECTORS_RESOLVE, request == null ? Map.of() : request);
+    }
+
     public JsonObject upsertSelector(String id, String selectorType, String entityType, String displayName,
                                      String world, int x, int y, int z, double yaw, double pitch,
                                      String serverName, String groupName, String layout, boolean enabled) {
