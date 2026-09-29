@@ -20,7 +20,7 @@ public class ServerInstance {
 
     // Status
     public String status = "STARTING";
-    private ServerLifecycleState lifecycleState = ServerLifecycleState.STARTING;
+    private ServerLifecycleState lifecycleState = ServerLifecycleState.OFFLINE;
     public long startTime;
     public long lastUpdate;
     public long lastStateChange;

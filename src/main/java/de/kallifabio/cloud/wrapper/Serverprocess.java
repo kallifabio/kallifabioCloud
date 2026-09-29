@@ -54,6 +54,7 @@ public class Serverprocess {
 
     private int allocatedMemory;
     private volatile boolean running = false;
+    private volatile boolean stopping = false;
     private long startTime;
 
     // Metrics
@@ -428,6 +429,7 @@ public class Serverprocess {
 
     private void configureNetworkFiles(File serverDir) {
         try {
+            configurePluginApiKeys(serverDir);
             if (isProxyGroup()) {
                 configureProxyConfig(serverDir);
                 configureProxyForwardingSecret(serverDir);
@@ -438,11 +440,100 @@ public class Serverprocess {
                     ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                             " Modded/Vanilla Backend erkannt (" + software.name() + ") - spigot.yml-Konfiguration übersprungen für " + serverName);
                 }
+                configureProxyAllowlist(serverDir);
                 registerBackendInLocalProxyConfigs();
             }
         } catch (Exception e) {
             CentralLogger.error("NetworkConfig", "Automatische Netzwerk-Konfiguration fehlgeschlagen für " + serverName, e);
         }
+    }
+
+    private static final Set<String> API_KEY_PLACEHOLDERS = Set.of("", "change_me", "dashboard", "admin");
+
+    /**
+     * Traegt den Dashboard-Key der Cloud in die Configs der Cloud-Plugins ein, solange dort noch
+     * ein Platzhalter steht. Fehlt die Config noch, wird die Standard-Config aus dem Plugin-Jar entpackt.
+     */
+    private void configurePluginApiKeys(File serverDir) {
+        String dashboardKey = trimToNull(configManager.getMaster("CloudMaster.API.DashboardKey"));
+        String adminKey = trimToNull(configManager.getMaster("CloudMaster.API.AdminKey"));
+        // Lobby/Bungee schreiben in die Cloud (Events, Settings, Party, Selektoren) und brauchen ADMIN.
+        // Der Enforcer liest nur (GET profile/check) - dort reicht der Viewer-Key (Dashboard).
+        // {Plugin, Config-Pfad, benoetigt Schreibrechte}
+        String[][] plugins = {
+                {"KalliCloud-BungeeSystem", "cloud.api-key", "write"},
+                {"Cloud-Lobbysystem", "cloud.api-key", "write"},
+                {"KalliCloudPermissionEnforcer", "cloud.apiKey", "read"}};
+        for (String[] plugin : plugins) {
+            boolean write = "write".equals(plugin[2]);
+            String key = write ? adminKey : dashboardKey;
+            if (key == null) {
+                continue;
+            }
+            try {
+                File pluginDir = new File(serverDir, "plugins/" + plugin[0]);
+                File cfgFile = new File(pluginDir, "config.yml");
+                if (!cfgFile.exists() && !extractDefaultPluginConfig(new File(serverDir, "plugins"), cfgFile)) {
+                    continue;
+                }
+                YamlConfiguration cfg = YamlConfiguration.loadConfiguration(cfgFile);
+                String current = cfg.getString(plugin[1], "");
+                String normalized = current == null ? "" : current.trim();
+                boolean placeholder = API_KEY_PLACEHOLDERS.contains(normalized.toLowerCase(Locale.ROOT));
+                // Migration: Schreib-Plugins hatten bisher den Viewer-Key und bekamen 403 auf POSTs.
+                boolean viewerKeyButNeedsWrite = write && dashboardKey != null && normalized.equals(dashboardKey);
+                if (!placeholder && !viewerKeyButNeedsWrite) {
+                    continue;
+                }
+                cfg.set(plugin[1], key);
+                cfg.save(cfgFile);
+                CentralLogger.info("NetworkConfig", "API-Key in " + plugin[0] + "/config.yml gesetzt für " + serverName
+                        + (write ? " (Schreibzugriff)" : " (nur lesen)"));
+            } catch (Exception e) {
+                CentralLogger.warn("NetworkConfig", "API-Key für " + plugin[0] + " nicht gesetzt: " + e.getMessage());
+            }
+        }
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean extractDefaultPluginConfig(File pluginsDir, File target) throws IOException {
+        File[] jars = pluginsDir.listFiles((d, n) -> n.toLowerCase(Locale.ROOT).endsWith(".jar"));
+        if (jars == null) {
+            return false;
+        }
+        String pluginName = target.getParentFile().getName();
+        for (File jar : jars) {
+            try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar)) {
+                java.util.zip.ZipEntry descriptor = zip.getEntry("plugin.yml");
+                if (descriptor == null) {
+                    descriptor = zip.getEntry("bungee.yml");
+                }
+                java.util.zip.ZipEntry entry = zip.getEntry("config.yml");
+                if (descriptor == null || entry == null) {
+                    continue;
+                }
+                YamlConfiguration meta;
+                try (Reader r = new InputStreamReader(zip.getInputStream(descriptor), java.nio.charset.StandardCharsets.UTF_8)) {
+                    meta = YamlConfiguration.loadConfiguration(r);
+                }
+                if (!pluginName.equals(meta.getString("name"))) {
+                    continue;
+                }
+                Files.createDirectories(target.getParentFile().toPath());
+                try (InputStream in = zip.getInputStream(entry)) {
+                    Files.copy(in, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isProxyGroup() {
@@ -595,19 +686,121 @@ public class Serverprocess {
         return Boolean.parseBoolean(configured);
     }
 
+    /**
+     * Single-Host: laufen alle Proxys auf diesem Wrapper (und ist nur ein Wrapper verbunden), reicht Loopback fuer
+     * Backends - dann ist nur der Proxy-Port oeffentlich. Nur im Master-Prozess sicher feststellbar; auf
+     * reinen Remote-Wrappern ist die Topologie unbekannt (-> false).
+     */
+    private boolean isSingleHostTopology() {
+        try {
+            de.kallifabio.cloud.master.Master master = de.kallifabio.cloud.master.Master.getInstance();
+            if (master == null || master.getConnectedWrappers().size() > 1) {
+                return false;
+            }
+            for (de.kallifabio.cloud.master.ServerInstance instance : master.getRunningServers().values()) {
+                if (isProxyGroupName(instance.groupName) && wrapper != null
+                        && !Objects.equals(instance.wrapperId, wrapper.getWrapperId())) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private String getBackendBindAddress() {
         String configured = configManager.getMaster("CloudMaster.Network.BackendBindAddress");
         String routeHost = getGameRouteHost();
+        boolean singleHost = isSingleHostTopology();
         if (configured == null || configured.isBlank() || "auto".equalsIgnoreCase(configured.trim())
                 || "detect".equalsIgnoreCase(configured.trim())) {
+            if (singleHost) {
+                return "127.0.0.1";
+            }
             return isLoopbackHost(routeHost) ? "127.0.0.1" : "0.0.0.0";
         }
         if (isLoopbackHost(configured) && !isLoopbackHost(routeHost)) {
+            if (singleHost) {
+                return configured.trim();
+            }
             CentralLogger.warn("NetworkConfig", "BackendBindAddress ist loopback, RouteHost ist remote (" +
-                    routeHost + ") - nutze automatisch 0.0.0.0 für " + serverName);
+                    routeHost + ") und es gibt mehrere Hosts - nutze automatisch 0.0.0.0 fuer " + serverName +
+                    " (Zugriff wird per security.allowedProxyAddresses im Enforcer eingeschraenkt)");
             return "0.0.0.0";
         }
         return configured.trim();
+    }
+
+    /** Adresse, unter der lokale Proxys (gleicher Wrapper) dieses Backend erreichen. */
+    private String getLocalProxyBackendHost() {
+        String bind = getBackendBindAddress();
+        if ("0.0.0.0".equals(bind) || isLoopbackHost(bind)) {
+            return "127.0.0.1";
+        }
+        return bind;
+    }
+
+    /**
+     * Schreibt security.allowedProxyAddresses in plugins/KalliCloudPermissionEnforcer/config.yml, wenn das Backend
+     * nicht nur auf Loopback lauscht (Multi-Host). Ohne verlaessliche Liste wird nichts geschrieben, damit
+     * keine Spieler ausgesperrt werden.
+     */
+    private void configureProxyAllowlist(File serverDir) {
+        try {
+            String bind = getBackendBindAddress();
+            if (isLoopbackHost(bind)) {
+                return;
+            }
+            java.util.LinkedHashSet<String> addresses = new java.util.LinkedHashSet<>();
+            addresses.add("127.0.0.1");
+            addresses.add("::1");
+            List<String> configuredExtra = configManager.getMasterConfigData().getStringList("CloudMaster.Network.AllowedProxyAddresses");
+            for (String extra : configuredExtra) {
+                if (extra != null && !extra.isBlank()) {
+                    addresses.add(extra.trim());
+                }
+            }
+            de.kallifabio.cloud.master.Master master = de.kallifabio.cloud.master.Master.getInstance();
+            if (master != null) {
+                // Alle Wrapper-Hosts sind potenzielle Proxy-Hosts (Proxys koennen ueberall geplant werden).
+                for (de.kallifabio.cloud.master.WrapperConnection wc : master.getConnectedWrappers().values()) {
+                    addResolved(addresses, wc.routeHost);
+                    addResolved(addresses, wc.hostname);
+                    try {
+                        if (wc.connection != null && wc.connection.getRemoteAddressTCP() != null) {
+                            addresses.add(wc.connection.getRemoteAddressTCP().getAddress().getHostAddress());
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            } else if (configuredExtra.isEmpty()) {
+                CentralLogger.warn("NetworkConfig", serverName + " lauscht auf " + bind + " (online-mode=false), aber die Proxy-Hosts sind " +
+                        "auf diesem Wrapper unbekannt. Setze CloudMaster.Network.AllowedProxyAddresses oder Firewall-Regeln, " +
+                        "sonst ist das Backend direkt erreichbar.");
+                return;
+            }
+            addResolved(addresses, getGameRouteHost());
+            File cfgFile = new File(serverDir, "plugins/KalliCloudPermissionEnforcer/config.yml");
+            cfgFile.getParentFile().mkdirs();
+            YamlConfiguration cfg = YamlConfiguration.loadConfiguration(cfgFile);
+            cfg.set("security.allowedProxyAddresses", new ArrayList<>(addresses));
+            cfg.save(cfgFile);
+            CentralLogger.info("NetworkConfig", "security.allowedProxyAddresses fuer " + serverName + " gesetzt: " + addresses);
+        } catch (Exception e) {
+            CentralLogger.warn("NetworkConfig", "Proxy-Allowlist fuer " + serverName + " nicht geschrieben: " + e.getMessage());
+        }
+    }
+
+    private void addResolved(Set<String> target, String host) {
+        if (host == null || host.isBlank()) {
+            return;
+        }
+        target.add(host.trim());
+        try {
+            target.add(java.net.InetAddress.getByName(host.trim()).getHostAddress());
+        } catch (Exception ignored) {
+        }
     }
 
     private void registerBackendInLocalProxyConfigs() {
@@ -642,12 +835,12 @@ public class Serverprocess {
                     serversSection = cfg.createSection("servers");
                 }
                 serversSection.set(serverName + ".motd", "&a" + serverName);
-                serversSection.set(serverName + ".address", getGameRouteHost() + ":" + port);
+                serversSection.set(serverName + ".address", getLocalProxyBackendHost() + ":" + port);
                 serversSection.set(serverName + ".restricted", false);
                 cfg.save(proxyConfig);
             }
             ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                    " Proxy-Backends aktualisiert: " + serverName + " -> " + getGameRouteHost() + ":" + port);
+                    " Proxy-Backends aktualisiert: " + serverName + " -> " + getLocalProxyBackendHost() + ":" + port);
         } catch (Exception e) {
             CentralLogger.error("NetworkConfig", "Konnte Proxy-Backend-Routing nicht aktualisieren für " + serverName, e);
         }
@@ -964,7 +1157,8 @@ public class Serverprocess {
 
                     // NEU: Nur wichtige Logs an Main-Screen
                     if (shouldprintToTerminal(line)) {
-                        ConsoleScreenManager.printToTerminal(
+                        // Nur Anzeige: die Zeile wird bereits ueber sendServerLog ins Log geschrieben
+                        ConsoleScreenManager.printToTerminalOnly(
                                 ConsoleColors.RED + "[" + serverName + "] " + line);
                     }
 
@@ -983,7 +1177,7 @@ public class Serverprocess {
                             ConsoleColors.RED + "Fehler beim Lesen der Ausgabe: " + e.getMessage());
                 }
             } finally {
-                if (running) {
+                if (running && !stopping) {
                     ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                             ConsoleColors.getCurrentTime() + " Server " + serverName + " wurde unerwartet beendet");
                     running = false;
@@ -1006,16 +1200,22 @@ public class Serverprocess {
                 || line.contains("SEVERE");
     }
 
+    // Level-Tag der Zeile: "[Server thread/INFO]", "/WARN]", Bungee "[INFO]" / "[WARNING]"
+    private static final Pattern LOG_LEVEL_TAG = Pattern.compile(
+            "(?:/|\\[)(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|SEVERE|FATAL)\\]", Pattern.CASE_INSENSITIVE);
+
     private String determineLogLevel(String line) {
-        String upper = line.toUpperCase();
-        if (upper.contains("ERROR") || upper.contains("SEVERE") || upper.contains("EXCEPTION")) {
-            return "ERROR";
+        if (line == null) {
+            return "INFO";
         }
-        if (upper.contains("WARN")) {
-            return "WARN";
-        }
-        if (upper.contains("DEBUG")) {
-            return "DEBUG";
+        Matcher matcher = LOG_LEVEL_TAG.matcher(line);
+        if (matcher.find()) {
+            return switch (matcher.group(1).toUpperCase(Locale.ROOT)) {
+                case "ERROR", "SEVERE", "FATAL" -> "ERROR";
+                case "WARN", "WARNING" -> "WARN";
+                case "DEBUG", "TRACE" -> "DEBUG";
+                default -> "INFO";
+            };
         }
         return "INFO";
     }
@@ -1036,7 +1236,7 @@ public class Serverprocess {
             }
         } catch (Exception e) {
             CentralLogger.warn("PermissionEnforcer", "Runtime-Apply fehlgeschlagen für " + sync.playerUuid +
-                    " auf " + serverName + ": " + e.getMessage());
+                    " auf " + serverName + ": " + e);
         }
     }
 
@@ -1052,10 +1252,10 @@ public class Serverprocess {
             }
         }
         enforcedPermissionsByPlayer.put(uuid, new java.util.LinkedHashSet<>(incoming));
-        enforcedGroupByPlayer.put(uuid, normalizeMeta(sync.primaryGroup));
+        putOrRemove(enforcedGroupByPlayer, uuid, normalizeMeta(sync.primaryGroup));
         if (isPrefixSuffixEnforcementEnabled()) {
-            enforcedPrefixByPlayer.put(uuid, normalizeMeta(sync.prefix));
-            enforcedSuffixByPlayer.put(uuid, normalizeMeta(sync.suffix));
+            putOrRemove(enforcedPrefixByPlayer, uuid, normalizeMeta(sync.prefix));
+            putOrRemove(enforcedSuffixByPlayer, uuid, normalizeMeta(sync.suffix));
         }
 
         String syncCommand = getCloudRuntimeSyncCommand();
@@ -1094,7 +1294,7 @@ public class Serverprocess {
         String previousGroup = enforcedGroupByPlayer.get(uuid);
         if (!Objects.equals(previousGroup, currentGroup) && currentGroup != null) {
             sendCommand("lp user " + uuid + " parent set " + currentGroup);
-            enforcedGroupByPlayer.put(uuid, currentGroup);
+            putOrRemove(enforcedGroupByPlayer, uuid, currentGroup);
         }
 
         if (isPrefixSuffixEnforcementEnabled()) {
@@ -1108,7 +1308,7 @@ public class Serverprocess {
                 } else {
                     sendCommand("lp user " + uuid + " meta setprefix 100 " + quote(prefix));
                 }
-                enforcedPrefixByPlayer.put(uuid, prefix);
+                putOrRemove(enforcedPrefixByPlayer, uuid, prefix);
             }
             if (!Objects.equals(previousSuffix, suffix)) {
                 if (suffix == null) {
@@ -1116,7 +1316,7 @@ public class Serverprocess {
                 } else {
                     sendCommand("lp user " + uuid + " meta setsuffix 100 " + quote(suffix));
                 }
-                enforcedSuffixByPlayer.put(uuid, suffix);
+                putOrRemove(enforcedSuffixByPlayer, uuid, suffix);
             }
         }
 
@@ -1160,6 +1360,14 @@ public class Serverprocess {
     private String getCloudRuntimeSyncCommand() {
         String configured = configManager.getMaster("CloudMaster.Permissions.Runtime.CloudSyncCommand");
         return configured == null ? "" : configured.trim();
+    }
+
+    private static void putOrRemove(Map<String, String> map, String key, String value) {
+        if (value == null) {
+            map.remove(key);
+        } else {
+            map.put(key, value);
+        }
     }
 
     private String normalizeMeta(String value) {
@@ -1405,9 +1613,33 @@ public class Serverprocess {
     }
 
     public void stop(boolean graceful) {
-        if (!running) {
+        stop(graceful, false);
+    }
+
+    private int getStopTimeoutSeconds() {
+        try {
+            return Math.max(1, configManager.getMasterConfigData().getInt("CloudMaster.Servers.StopTimeoutSeconds", 30));
+        } catch (Exception e) {
+            return 30;
+        }
+    }
+
+    private boolean isProxyProcess() {
+        String group = groupName == null ? "" : groupName.toLowerCase(Locale.ROOT);
+        return group.contains("proxy") || group.contains("bungee") || group.contains("waterfall") || group.contains("velocity");
+    }
+
+    /**
+     * Stoppt den Server. graceful: erst Stop-Befehl ueber stdin (Proxy "end"), dann bis zum
+     * konfigurierten Timeout warten, erst danach destroy/destroyForcibly.
+     *
+     * @param skipCountdown ueberspringt die Ingame-Countdown-Ansagen (z.B. beim Cloud-Shutdown)
+     */
+    public void stop(boolean graceful, boolean skipCountdown) {
+        if (!running || stopping) {
             return;
         }
+        stopping = true;
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " Stoppe Server: " + serverName);
@@ -1422,8 +1654,8 @@ public class Serverprocess {
             return;
         }
 
-        // Send stop command gracefully
-        if (!groupName.equalsIgnoreCase("Proxy")) {
+        boolean proxy = isProxyProcess();
+        if (!proxy && !skipCountdown) {
             sendCommand("say Server shutdown in 30 seconds.");
             sleepQuietly(15000);
             sendCommand("say Server shutdown in 15 seconds.");
@@ -1433,18 +1665,21 @@ public class Serverprocess {
             sendCommand("say Server shutdown in 5 seconds.");
             sleepQuietly(5000);
         }
-        sendCommand("stop");
+        // sendCommand prueft "running" - das ist hier noch true, der Prozess laeuft ja noch.
+        sendCommand(proxy ? (software.toString().toLowerCase(Locale.ROOT).contains("velocity") ? "shutdown" : "end") : "stop");
 
-        // Wait for graceful shutdown
         boolean killed = false;
+        int timeout = getStopTimeoutSeconds();
         try {
-            if (!process.waitFor(30, TimeUnit.SECONDS)) {
+            if (!process.waitFor(timeout, TimeUnit.SECONDS)) {
                 ConsoleScreenManager.printToTerminal(ConsoleColors.YELLOW + ConsoleColors.PREFIX +
                         ConsoleColors.getCurrentTime() + " Server " + serverName +
-                        " reagiert nicht, erzwinge Beendigung...");
-                process.destroyForcibly();
-                wrapper.sendServerStatus(serverName, "KILLED");
+                        " reagiert nach " + timeout + "s nicht auf den Stop-Befehl, beende Prozess...");
                 killed = true;
+                process.destroy();
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                }
             }
         } catch (InterruptedException e) {
             process.destroyForcibly();
@@ -1453,17 +1688,13 @@ public class Serverprocess {
         }
 
         running = false;
-
-        // Cleanup
         cleanup();
 
-        // Send status to master
-        if (!killed) {
-            wrapper.sendServerStatus(serverName, "OFFLINE");
-        }
+        // Sauberes Ende -> OFFLINE, nur bei erzwungenem Ende KILLED
+        wrapper.sendServerStatus(serverName, killed ? "KILLED" : "OFFLINE");
 
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
-                " Server " + serverName + " gestoppt");
+                " Server " + serverName + (killed ? " wurde nach Timeout beendet" : " gestoppt"));
     }
 
     private void sleepQuietly(long ms) {

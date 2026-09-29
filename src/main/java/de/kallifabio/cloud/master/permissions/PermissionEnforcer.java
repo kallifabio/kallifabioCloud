@@ -50,10 +50,14 @@ public class PermissionEnforcer {
     private boolean hasAny(String playerUuid, String... permissions) {
         PermissionProfile profile = permissionSyncService.buildProfile(playerUuid);
         for (String permission : permissions) {
-            if (profile.permissions.contains(permission)) {
+            if (matches(profile, permission)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private boolean matches(PermissionProfile profile, String required) {
+        return PermissionMatcher.matches(profile.permissions, required);
     }
 }

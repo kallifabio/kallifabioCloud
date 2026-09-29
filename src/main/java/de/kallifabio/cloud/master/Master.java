@@ -910,6 +910,23 @@ public class Master {
         return fallback.trim();
     }
 
+    /**
+     * Laeuft der Proxy auf demselben Wrapper wie das Backend, wird 127.0.0.1 eingetragen, damit das Backend
+     * nur auf Loopback lauschen muss (nur der Proxy-Port ist oeffentlich). Ist explizit eine konkrete Bind-IP
+     * konfiguriert, bleibt die Route-Adresse des Wrappers.
+     */
+    private String resolveRouteHostForProxy(ServerInstance backend, String proxyWrapperId) {
+        String routeHost = resolveWrapperRouteHost(backend.wrapperId);
+        if (proxyWrapperId == null || !proxyWrapperId.equals(backend.wrapperId)) {
+            return routeHost;
+        }
+        String bind = configManager.getMaster("CloudMaster.Network.BackendBindAddress");
+        String b = bind == null ? "" : bind.trim().toLowerCase(java.util.Locale.ROOT);
+        boolean genericBind = b.isEmpty() || b.equals("auto") || b.equals("detect") || b.equals("0.0.0.0")
+                || b.equals("localhost") || b.startsWith("127.");
+        return genericBind ? "127.0.0.1" : routeHost;
+    }
+
     private void syncBackendRouteToProxies(ServerInstance backend, boolean register) {
         if (backend == null || isProxyGroup(backend.groupName) || backend.port <= 0) {
             return;
@@ -927,7 +944,6 @@ public class Master {
         if (proxyWrapperIds.isEmpty()) {
             return;
         }
-        String routeHost = resolveWrapperRouteHost(backend.wrapperId);
         for (String proxyWrapperId : proxyWrapperIds) {
             WrapperConnection proxyWrapper = getWrapperById(proxyWrapperId);
             if (proxyWrapper == null) {
@@ -937,7 +953,7 @@ public class Master {
             routeUpdate.command = register ? "REGISTER_BACKEND_ROUTE" : "UNREGISTER_BACKEND_ROUTE";
             routeUpdate.serverName = backend.serverName;
             routeUpdate.port = backend.port;
-            routeUpdate.targetHost = routeHost;
+            routeUpdate.targetHost = resolveRouteHostForProxy(backend, proxyWrapperId);
             proxyWrapper.connection.sendTCP(routeUpdate);
         }
     }
@@ -961,7 +977,7 @@ public class Master {
             routeUpdate.command = "REGISTER_BACKEND_ROUTE";
             routeUpdate.serverName = backend.serverName;
             routeUpdate.port = backend.port;
-            routeUpdate.targetHost = resolveWrapperRouteHost(backend.wrapperId);
+            routeUpdate.targetHost = resolveRouteHostForProxy(backend, proxyWrapperId);
             proxyWrapper.connection.sendTCP(routeUpdate);
         }
     }
@@ -1375,9 +1391,7 @@ public class Master {
             syncBackendRouteToProxies(instance, false);
         }
         stopInProgress.add(serverName);
-        instance.status = "DRAINING";
-        instance.lastUpdate = System.currentTimeMillis();
-        lifecycleOrchestrator.transition(instance, ServerLifecycleState.DRAINING, "graceful stop requested");
+        lifecycleOrchestrator.transition(instance, ServerLifecycleState.STOPPING, "graceful stop requested");
         WrapperConnection wrapper = getWrapperById(instance.wrapperId);
         if (wrapper != null) {
             Message.ServerCommand command = new Message.ServerCommand();
@@ -1390,8 +1404,6 @@ public class Master {
                     "wrapper", wrapper.wrapperId,
                     "mode", "graceful"
             ));
-            lifecycleOrchestrator.transition(instance, ServerLifecycleState.STOPPING, "stop command sent");
-            instance.status = "STOPPING";
             instance.lastUpdate = System.currentTimeMillis();
             return;
         }

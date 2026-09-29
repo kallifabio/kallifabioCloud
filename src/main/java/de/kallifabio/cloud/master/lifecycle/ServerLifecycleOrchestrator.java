@@ -89,6 +89,7 @@ public final class ServerLifecycleOrchestrator {
                     || target == ServerLifecycleState.QUEUED
                     || target == ServerLifecycleState.PREPARING;
             case OFFLINE -> target == ServerLifecycleState.QUEUED
+                    || target == ServerLifecycleState.ONLINE
                     || target == ServerLifecycleState.PREPARING
                     || target == ServerLifecycleState.STARTING;
             case QUARANTINED -> target == ServerLifecycleState.OFFLINE;

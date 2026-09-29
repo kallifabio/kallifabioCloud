@@ -238,6 +238,11 @@ public class ConsoleScreenManager {
 
     public static void printToTerminal(String message) {
         CentralLogger.info("Console", message);
+        printToTerminalOnly(message);
+    }
+
+    /** Nur Bildschirmausgabe, ohne zusaetzlichen CentralLogger-Eintrag (fuer bereits anderweitig geloggte Zeilen, z.B. Server-Output). */
+    public static void printToTerminalOnly(String message) {
         if (terminal != null && lineReader != null) {
             synchronized (OUTPUT_LOCK) {
                 try {

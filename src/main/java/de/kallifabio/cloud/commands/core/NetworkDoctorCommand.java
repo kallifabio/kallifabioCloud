@@ -437,6 +437,10 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
                 }
             }
 
+            if (checkBackendExposure(backend, expectedBackendBindForServer)) {
+                ok = false;
+            }
+
             ServerSoftware software = ServerSoftware.resolve(master().getConfigManager().getSoftwareForGroup(backend.groupName), backend.groupName);
             if (software.isSpigotLike()) {
                 File spigotYml = new File("./servers/" + backend.groupName + "/" + backend.serverName + "/spigot.yml");
@@ -582,14 +586,65 @@ public class NetworkDoctorCommand extends BaseCloudCommand {
         return configured.trim();
     }
 
+    /** WARN, wenn ein Backend mit online-mode=false nicht nur auf Loopback lauscht und keine Proxy-Allowlist hat. */
+    private boolean checkBackendExposure(ServerInstance backend, String expectedBind) {
+        try {
+            File dir = new File("./servers/" + backend.groupName + "/" + backend.serverName);
+            File propertiesFile = new File(dir, "server.properties");
+            if (!propertiesFile.exists()) {
+                return false;
+            }
+            boolean onlineModeFalse = false;
+            String serverIp = null;
+            for (String line : Files.readAllLines(propertiesFile.toPath())) {
+                String t = line.trim();
+                if (t.equalsIgnoreCase("online-mode=false")) {
+                    onlineModeFalse = true;
+                } else if (t.startsWith("server-ip=")) {
+                    serverIp = t.substring("server-ip=".length()).trim();
+                }
+            }
+            if (!onlineModeFalse) {
+                return false;
+            }
+            String effectiveBind = serverIp == null ? "" : serverIp;
+            if (!effectiveBind.isBlank() && isLoopbackHost(effectiveBind)) {
+                return false;
+            }
+            File enforcerCfg = new File(dir, "plugins/KalliCloudPermissionEnforcer/config.yml");
+            boolean hasAllowlist = false;
+            if (enforcerCfg.exists()) {
+                org.bukkit.configuration.file.YamlConfiguration cfg =
+                        org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(enforcerCfg);
+                hasAllowlist = !cfg.getStringList("security.allowedProxyAddresses").isEmpty();
+            }
+            if (hasAllowlist) {
+                return false;
+            }
+            warn("[WARN] Backend " + backend.serverName + ": online-mode=false und bindet auf "
+                    + (effectiveBind.isBlank() ? "alle Interfaces" : effectiveBind)
+                    + " ohne security.allowedProxyAddresses - direkt von aussen erreichbar (Spieler-Spoofing moeglich). "
+                    + "Loopback-Bind (Single-Host) oder Proxy-Allowlist/Firewall verwenden.");
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private String resolveExpectedBackendBindAddress(ServerInstance backend, String configuredBackendBind) {
         if (configuredBackendBind == null || configuredBackendBind.isBlank()
                 || "auto".equalsIgnoreCase(configuredBackendBind.trim())
                 || "detect".equalsIgnoreCase(configuredBackendBind.trim())) {
             String routeHost = resolveBackendRouteHost(backend);
+            if (master().getConnectedWrappers().size() <= 1) {
+                return "127.0.0.1";
+            }
             return isLoopbackHost(routeHost) ? "127.0.0.1" : "0.0.0.0";
         }
         if (isLoopbackHost(configuredBackendBind) && !isLoopbackHost(resolveBackendRouteHost(backend))) {
+            if (master().getConnectedWrappers().size() <= 1) {
+                return configuredBackendBind.trim(); // Single-Host: Loopback genuegt, nur der Proxy ist oeffentlich
+            }
             return "0.0.0.0";
         }
         return configuredBackendBind.trim();

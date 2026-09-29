@@ -1141,6 +1141,10 @@ public class ConfigManager {
             masterConfigData.set("CloudMaster.Network.EnforceBackendBind", true);
             changed = true;
         }
+        if (!masterConfigData.contains("CloudMaster.Servers.StopTimeoutSeconds")) {
+            masterConfigData.set("CloudMaster.Servers.StopTimeoutSeconds", 30);
+            changed = true;
+        }
         if (!masterConfigData.contains("CloudMaster.Network.BackendBindAddress")) {
             masterConfigData.set("CloudMaster.Network.BackendBindAddress", "auto");
             changed = true;

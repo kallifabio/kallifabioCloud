@@ -100,6 +100,37 @@ public class CloudHttpServer {
         }
     }
 
+    /** Speichert automatisch erzeugte Keys, damit Plugin-Configs (Proxy/Lobby) nach einem Neustart gültig bleiben. */
+    private void persistGeneratedKey(String configKey, String value) {
+        if (Master.getInstance() == null) {
+            return;
+        }
+        try {
+            var cm = Master.getInstance().getConfigManager();
+            String stored = sanitizeApiKey(cm.getMaster(configKey));
+            if (stored == null || stored.isBlank()) {
+                cm.getMasterConfigData().set(configKey, value);
+                cm.getMasterConfigData().save(cm.getMasterConfigFile());
+            }
+        } catch (Exception e) {
+            CentralLogger.warn("API", "Konnte " + configKey + " nicht speichern: " + e.getMessage());
+        }
+    }
+
+    /** Warnt (ohne Key zu aendern) bei trivial erratbaren Keys wie dem Rollennamen. */
+    private void warnIfWeakApiKey(String configKey, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        String v = value.trim().toLowerCase(java.util.Locale.ROOT);
+        boolean weak = v.length() < 12 || java.util.Set.of("admin", "dashboard", "owner", "operator", "changeme",
+                "password", "secret", "test", "default", "apikey").contains(v);
+        if (weak) {
+            CentralLogger.warn("API", "SICHERHEIT: " + configKey + " ist schwach/erratbar. Bitte durch einen zufaelligen Wert ersetzen "
+                    + "(z.B. UUID) und danach Plugin-Configs anpassen bzw. den Key ueber die Key-Rotation erneuern.");
+        }
+    }
+
     private void initializeApiKeys() {
         String configuredAdmin = Master.getInstance() != null
                 ? Master.getInstance().getConfigManager().getMaster("CloudMaster.API.AdminKey")
@@ -139,6 +170,12 @@ public class CloudHttpServer {
         }
         apiKeyRoles.put(configuredAdmin, "ADMIN");
         apiKeyRoles.put(configuredDashboard, "VIEWER");
+        persistGeneratedKey("CloudMaster.API.AdminKey", configuredAdmin);
+        persistGeneratedKey("CloudMaster.API.DashboardKey", configuredDashboard);
+        warnIfWeakApiKey("CloudMaster.API.AdminKey", configuredAdmin);
+        warnIfWeakApiKey("CloudMaster.API.DashboardKey", configuredDashboard);
+        warnIfWeakApiKey("CloudMaster.API.OwnerKey", configuredOwner);
+        warnIfWeakApiKey("CloudMaster.API.OperatorKey", configuredOperator);
         ConsoleScreenManager.printToTerminal(ConsoleColors.PREFIX + ConsoleColors.getCurrentTime() +
                 " API Keys loaded (owner/operator/admin/dashboard)");
     }
@@ -187,6 +224,7 @@ public class CloudHttpServer {
                 LiveWebSocketServer ws = new LiveWebSocketServer(candidate);
                 ws.setSnapshotSupplier(this::buildLiveSnapshot);
                 ws.setApiKeyValidator(this::isValidLiveToken);
+                ws.setHeaderKeyValidator(this::isKnownApiKey);
                 if (tlsEnabled && sslContext != null) {
                     ws.configureTls(sslContext);
                 }
@@ -5143,18 +5181,7 @@ public class CloudHttpServer {
         if (key == null || key.isBlank()) {
             return null;
         }
-        if ("admin".equalsIgnoreCase(key)) {
-            return apiKeys.get("admin");
-        }
-        if ("owner".equalsIgnoreCase(key)) {
-            return apiKeys.get("owner");
-        }
-        if ("operator".equalsIgnoreCase(key) || "ops".equalsIgnoreCase(key)) {
-            return apiKeys.get("operator");
-        }
-        if ("dashboard".equalsIgnoreCase(key) || "viewer".equalsIgnoreCase(key)) {
-            return apiKeys.get("dashboard");
-        }
+        // Sicherheit: Rollennamen ("admin", "owner", ...) sind KEINE gueltigen Keys. Es zaehlt nur der echte Key-Wert.
         return key;
     }
 

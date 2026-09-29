@@ -26,6 +26,7 @@ public class LiveWebSocketServer extends WebSocketServer {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory());
     private Supplier<Map<String, Object>> snapshotSupplier;
     private Predicate<String> apiKeyValidator;
+    private Predicate<String> headerKeyValidator;
 
     public LiveWebSocketServer(int port) {
         super(new InetSocketAddress(port));
@@ -37,6 +38,11 @@ public class LiveWebSocketServer extends WebSocketServer {
 
     public void setApiKeyValidator(Predicate<String> apiKeyValidator) {
         this.apiKeyValidator = apiKeyValidator;
+    }
+
+    /** Akzeptiert echte API-Keys, aber nur im X-API-Key-Header (nie in der URL). */
+    public void setHeaderKeyValidator(Predicate<String> headerKeyValidator) {
+        this.headerKeyValidator = headerKeyValidator;
     }
 
     public void configureTls(SSLContext sslContext) {
@@ -116,7 +122,8 @@ public class LiveWebSocketServer extends WebSocketServer {
 
         String headerKey = handshake.getFieldValue("X-API-Key");
         if (headerKey != null && !headerKey.isBlank()) {
-            return apiKeyValidator.test(headerKey.trim());
+            String trimmed = headerKey.trim();
+            return apiKeyValidator.test(trimmed) || (headerKeyValidator != null && headerKeyValidator.test(trimmed));
         }
 
         String token = extractTokenFromPath(handshake.getResourceDescriptor());

@@ -925,11 +925,22 @@ public class Wrapper {
         }, 2, TimeUnit.SECONDS);
     }
 
+    private int highCpuStreak = 0;
+    private long lastCpuWarnAt = 0L;
+
     private void checkWrapperHealth() {
         availableMemory = calculateAvailableMemory();
         double cpu = getCpuUsage();
+        // Nur bei anhaltend hoher (System-)Last warnen: 4 Messungen in Folge (~60s) und max. alle 10 Minuten.
         if (cpu > 95.0) {
-            CentralLogger.warn("Wrapper/" + wrapperId, "CPU kritisch: " + String.format("%.2f", cpu) + "%");
+            highCpuStreak++;
+            long now = System.currentTimeMillis();
+            if (highCpuStreak >= 4 && now - lastCpuWarnAt > 600_000L) {
+                lastCpuWarnAt = now;
+                CentralLogger.warn("Wrapper/" + wrapperId, "CPU anhaltend kritisch (System-Last): " + String.format("%.2f", cpu) + "%");
+            }
+        } else {
+            highCpuStreak = 0;
         }
         if (availableMemory < 512) {
             CentralLogger.warn("Wrapper/" + wrapperId, "Wenig freier RAM: " + availableMemory + "MB");
@@ -962,10 +973,24 @@ public class Wrapper {
         // Stop all servers
         List<Serverprocess> servers = new ArrayList<>(managedServers.values());
         managedServers.clear();
+        // Alle Server parallel sauber stoppen (Stop-Befehl, Timeout aus CloudMaster.Servers.StopTimeoutSeconds)
+        List<Thread> stopThreads = new ArrayList<>();
         for (Serverprocess server : servers) {
+            Thread t = new Thread(() -> {
+                try {
+                    server.stop(true, true);
+                } catch (Exception ignored) {
+                }
+            }, "ShutdownStop-" + server.getServerName());
+            t.start();
+            stopThreads.add(t);
+        }
+        for (Thread t : stopThreads) {
             try {
-                server.stop(false);
-            } catch (Exception ignored) {
+                t.join(120_000L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
             }
         }
 
